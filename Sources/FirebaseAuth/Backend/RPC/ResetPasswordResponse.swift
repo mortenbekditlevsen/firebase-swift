@@ -1,0 +1,55 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import Foundation
+
+/** @class FIRAuthResetPasswordResponse
+    @brief Represents the response from the resetPassword endpoint.
+    @remarks Possible error codes:
+       - FIRAuthErrorCodeWeakPassword
+       - FIRAuthErrorCodeUserDisabled
+       - FIRAuthErrorCodeOperationNotAllowed
+       - FIRAuthErrorCodeExpiredActionCode
+       - FIRAuthErrorCodeInvalidActionCode
+    @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/resetPassword
+ */
+ public struct ResetPasswordResponse: AuthRPCResponse, Decodable {
+  /** @property email
+   @brief The email address corresponding to the reset password request.
+   */
+  public var email: String
+
+  /** @property verifiedEmail
+   @brief The verified email returned from the backend.
+   */
+  public var verifiedEmail: String?
+
+  /** @property requestType
+   @brief The type of request as returned by the backend.
+   */
+  public var requestType: String?
+
+     enum CodingKeys: String, CodingKey {
+         case email
+         case verifiedEmail = "newEmail"
+         case requestType
+     }
+     
+     public init(from decoder: any Decoder) throws {
+         let container = try decoder.container(keyedBy: CodingKeys.self)
+         self.email = try container.decode(String.self, forKey: .email)
+         self.verifiedEmail = try container.decodeIfPresent(String.self, forKey: .verifiedEmail)
+         self.requestType = try container.decodeIfPresent(String.self, forKey: .requestType)
+     }
+}

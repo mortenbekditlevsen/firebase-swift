@@ -1,0 +1,318 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import Foundation
+
+enum GetOOBConfirmationCodeRequestType: Int {
+  /** @var FIRGetOOBConfirmationCodeRequestTypePasswordReset
+      @brief Requests a password reset code.
+   */
+  case passwordReset
+
+  /** @var FIRGetOOBConfirmationCodeRequestTypeVerifyEmail
+      @brief Requests an email verification code.
+   */
+  case verifyEmail
+
+  /** @var FIRGetOOBConfirmationCodeRequestTypeEmailLink
+      @brief Requests an email sign-in link.
+   */
+  case emailLink
+
+  /** @var FIRGetOOBConfirmationCodeRequestTypeVerifyBeforeUpdateEmail
+      @brief Requests an verify before update email.
+   */
+  case verifyBeforeUpdateEmail
+
+  var value: String {
+    switch self {
+    case .passwordReset:
+      return kPasswordResetRequestTypeValue
+    case .verifyEmail:
+      return kVerifyEmailRequestTypeValue
+    case .emailLink:
+      return kEmailLinkSignInTypeValue
+    case .verifyBeforeUpdateEmail:
+      return kVerifyBeforeUpdateEmailRequestTypeValue
+    }
+  }
+}
+
+private let kGetOobConfirmationCodeEndpoint = "getOobConfirmationCode"
+
+/** @var kRequestTypeKey
+    @brief The name of the required "requestType" property in the request.
+ */
+private let kRequestTypeKey = "requestType"
+
+/** @var kEmailKey
+    @brief The name of the "email" property in the request.
+ */
+private let kEmailKey = "email"
+
+/** @var kNewEmailKey
+    @brief The name of the "newEmail" property in the request.
+ */
+private let kNewEmailKey = "newEmail"
+
+/** @var kIDTokenKey
+    @brief The key for the "idToken" value in the request. This is actually the STS Access Token,
+        despite it's confusing (backwards compatiable) parameter name.
+ */
+private let kIDTokenKey = "idToken"
+
+/** @var kContinueURLKey
+    @brief The key for the "continue URL" value in the request.
+ */
+private let kContinueURLKey = "continueUrl"
+
+/** @var kIosBundeIDKey
+    @brief The key for the "iOS Bundle Identifier" value in the request.
+ */
+private let kIosBundleIDKey = "iOSBundleId"
+
+/** @var kAndroidPackageNameKey
+    @brief The key for the "Android Package Name" value in the request.
+ */
+private let kAndroidPackageNameKey = "androidPackageName"
+
+/** @var kAndroidInstallAppKey
+    @brief The key for the request parameter indicating whether the android app should be installed
+        or not.
+ */
+private let kAndroidInstallAppKey = "androidInstallApp"
+
+/** @var kAndroidMinimumVersionKey
+    @brief The key for the "minimum Android version supported" value in the request.
+ */
+private let kAndroidMinimumVersionKey = "androidMinimumVersion"
+
+/** @var kCanHandleCodeInAppKey
+    @brief The key for the request parameter indicating whether the action code can be handled in
+        the app or not.
+ */
+private let kCanHandleCodeInAppKey = "canHandleCodeInApp"
+
+/** @var kDynamicLinkDomainKey
+    @brief The key for the "dynamic link domain" value in the request.
+ */
+private let kDynamicLinkDomainKey = "dynamicLinkDomain"
+
+/** @var kPasswordResetRequestTypeValue
+    @brief The value for the "PASSWORD_RESET" request type.
+ */
+private let kPasswordResetRequestTypeValue = "PASSWORD_RESET"
+
+/** @var kEmailLinkSignInTypeValue
+    @brief The value for the "EMAIL_SIGNIN" request type.
+ */
+private let kEmailLinkSignInTypeValue = "EMAIL_SIGNIN"
+
+/** @var kVerifyEmailRequestTypeValue
+    @brief The value for the "VERIFY_EMAIL" request type.
+ */
+private let kVerifyEmailRequestTypeValue = "VERIFY_EMAIL"
+
+/** @var kVerifyBeforeUpdateEmailRequestTypeValue
+    @brief The value for the "VERIFY_AND_CHANGE_EMAIL" request type.
+ */
+private let kVerifyBeforeUpdateEmailRequestTypeValue = "VERIFY_AND_CHANGE_EMAIL"
+
+/** @var kTenantIDKey
+    @brief The key for the tenant id value in the request.
+ */
+private let kTenantIDKey = "tenantId"
+
+@available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
+
+public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
+  AuthRPCRequest, Encodable {
+    public typealias Response = GetOOBConfirmationCodeResponse
+
+  /** @property requestType
+      @brief The types of OOB Confirmation Code to request.
+   */
+  let requestType: GetOOBConfirmationCodeRequestType
+
+  /** @property email
+      @brief The email of the user.
+      @remarks For password reset.
+   */
+  public var email: String?
+
+  /** @property updatedEmail
+      @brief The new email to be updated.
+      @remarks For verifyBeforeUpdateEmail.
+   */
+  public var updatedEmail: String?
+
+  /** @property accessToken
+      @brief The STS Access Token of the authenticated user.
+      @remarks For email change.
+   */
+  public var accessToken: String?
+
+  /** @property continueURL
+      @brief This URL represents the state/Continue URL in the form of a universal link.
+   */
+  public var continueURL: String?
+
+  /** @property iOSBundleID
+      @brief The iOS bundle Identifier, if available.
+   */
+  public var iOSBundleID: String?
+
+  /** @property androidPackageName
+      @brief The Android package name, if available.
+   */
+  public var androidPackageName: String?
+
+  /** @property androidMinimumVersion
+      @brief The minimum Android version supported, if available.
+   */
+  public var androidMinimumVersion: String?
+
+  /** @property androidInstallIfNotAvailable
+      @brief Indicates whether or not the Android app should be installed if not already available.
+   */
+  public var androidInstallApp: Bool
+
+  /** @property handleCodeInApp
+      @brief Indicates whether the action code link will open the app directly or after being
+          redirected from a Firebase owned web widget.
+   */
+  public var handleCodeInApp: Bool
+
+  /** @property dynamicLinkDomain
+      @brief The Firebase Dynamic Link domain used for out of band code flow.
+   */
+  public var dynamicLinkDomain: String?
+
+  /** @fn initWithRequestType:email:APIKey:
+      @brief Designated initializer.
+      @param requestType The types of OOB Confirmation Code to request.
+      @param email The email of the user.
+      @param newEmail The email of the user to be updated.
+      @param accessToken The STS Access Token of the currently signed in user.
+      @param actionCodeSettings An object of FIRActionCodeSettings which specifies action code
+          settings to be applied to the OOB code request.
+      @param requestConfiguration An object containing configurations to be added to the request.
+   */
+    
+    
+    public var useStaging: Bool { false }
+    public var useIdentityPlatform: Bool { false }
+    public var endpoint: String { kGetOobConfirmationCodeEndpoint }
+    public var requestConfiguration: AuthRequestConfiguration
+
+    init(requestType: GetOOBConfirmationCodeRequestType,
+                email: String?,
+                newEmail: String?,
+                accessToken: String?,
+                actionCodeSettings: ActionCodeSettings?,
+                requestConfiguration: AuthRequestConfiguration) {
+    self.requestType = requestType
+    self.email = email
+    updatedEmail = newEmail
+    self.accessToken = accessToken
+    continueURL = actionCodeSettings?.url?.absoluteString
+    iOSBundleID = actionCodeSettings?.iOSBundleID
+    androidPackageName = actionCodeSettings?.androidPackageName
+    androidMinimumVersion = actionCodeSettings?.androidMinimumVersion
+    androidInstallApp = actionCodeSettings?.androidInstallIfNotAvailable ?? false
+    handleCodeInApp = actionCodeSettings?.handleCodeInApp ?? false
+    dynamicLinkDomain = actionCodeSettings?.dynamicLinkDomain
+        self.requestConfiguration = requestConfiguration
+  }
+
+  public static func passwordResetRequest(email: String,
+                                                actionCodeSettings: ActionCodeSettings?,
+                                                requestConfiguration: AuthRequestConfiguration) ->
+    GetOOBConfirmationCodeRequest {
+    Self(requestType: .passwordReset,
+         email: email,
+         newEmail: nil,
+         accessToken: nil,
+         actionCodeSettings: actionCodeSettings,
+         requestConfiguration: requestConfiguration)
+  }
+
+  public static func verifyEmailRequest(accessToken: String,
+                                              actionCodeSettings: ActionCodeSettings?,
+                                              requestConfiguration: AuthRequestConfiguration) ->
+    GetOOBConfirmationCodeRequest {
+    Self(requestType: .verifyEmail,
+         email: nil,
+         newEmail: nil,
+         accessToken: accessToken,
+         actionCodeSettings: actionCodeSettings,
+         requestConfiguration: requestConfiguration)
+  }
+
+  public static func signInWithEmailLinkRequest(_ email: String,
+                                                      actionCodeSettings: ActionCodeSettings?,
+                                                      requestConfiguration: AuthRequestConfiguration)
+    -> Self {
+    Self(requestType: .emailLink,
+         email: email,
+         newEmail: nil,
+         accessToken: nil,
+         actionCodeSettings: actionCodeSettings,
+         requestConfiguration: requestConfiguration)
+  }
+
+  public static func verifyBeforeUpdateEmail(accessToken: String,
+                                                   newEmail: String,
+                                                   actionCodeSettings: ActionCodeSettings?,
+                                                   requestConfiguration: AuthRequestConfiguration)
+    -> Self {
+    Self(requestType: .verifyBeforeUpdateEmail,
+         email: nil,
+         newEmail: newEmail,
+         accessToken: accessToken,
+         actionCodeSettings: actionCodeSettings,
+         requestConfiguration: requestConfiguration)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case requestType
+    case email
+    case updatedEmail = "newEmail"
+    case accessToken = "idToken"
+    case continueURL = "continueUrl"
+    case iOSBundleID = "iOSBundleId"
+    case androidPackageName
+    case androidMinimumVersion
+    case androidInstallApp
+    case canHandleCodeInApp
+    case dynamicLinkDomain
+    case tenantID = "tenantId"
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(requestType.value, forKey: .requestType)
+    try c.encodeIfPresent(email, forKey: .email)
+    try c.encodeIfPresent(updatedEmail, forKey: .updatedEmail)
+    try c.encodeIfPresent(accessToken, forKey: .accessToken)
+    try c.encodeIfPresent(continueURL, forKey: .continueURL)
+    try c.encodeIfPresent(iOSBundleID, forKey: .iOSBundleID)
+    try c.encodeIfPresent(androidPackageName, forKey: .androidPackageName)
+    try c.encodeIfPresent(androidMinimumVersion, forKey: .androidMinimumVersion)
+    if androidInstallApp { try c.encode(true, forKey: .androidInstallApp) }
+    if handleCodeInApp { try c.encode(true, forKey: .canHandleCodeInApp) }
+    try c.encodeIfPresent(dynamicLinkDomain, forKey: .dynamicLinkDomain)
+    try c.encodeIfPresent(tenantID, forKey: .tenantID)
+  }
+}

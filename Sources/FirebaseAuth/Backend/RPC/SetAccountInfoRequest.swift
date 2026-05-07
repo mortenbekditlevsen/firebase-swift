@@ -1,0 +1,253 @@
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import Foundation
+
+private let FIRSetAccountInfoUserAttributeEmail = "EMAIL"
+
+private let FIRSetAccountInfoUserAttributeDisplayName = "DISPLAY_NAME"
+
+private let FIRSetAccountInfoUserAttributeProvider = "PROVIDER"
+
+private let FIRSetAccountInfoUserAttributePhotoURL = "PHOTO_URL"
+
+private let FIRSetAccountInfoUserAttributePassword = "PASSWORD"
+
+/** @var kCreateAuthURIEndpoint
+    @brief The "setAccountInfo" endpoint.
+ */
+private let kSetAccountInfoEndpoint = "setAccountInfo"
+
+/** @var kIDTokenKey
+    @brief The key for the "idToken" value in the request. This is actually the STS Access Token,
+        despite it's confusing (backwards compatiable) parameter name.
+ */
+private let kIDTokenKey = "idToken"
+
+/** @var kDisplayNameKey
+    @brief The key for the "displayName" value in the request.
+ */
+private let kDisplayNameKey = "displayName"
+
+/** @var kLocalIDKey
+    @brief The key for the "localID" value in the request.
+ */
+private let kLocalIDKey = "localId"
+
+/** @var kEmailKey
+    @brief The key for the "email" value in the request.
+ */
+private let kEmailKey = "email"
+
+/** @var kPasswordKey
+    @brief The key for the "password" value in the request.
+ */
+private let kPasswordKey = "password"
+
+/** @var kPhotoURLKey
+    @brief The key for the "photoURL" value in the request.
+ */
+private let kPhotoURLKey = "photoUrl"
+
+/** @var kProvidersKey
+    @brief The key for the "providers" value in the request.
+ */
+private let kProvidersKey = "provider"
+
+/** @var kOOBCodeKey
+    @brief The key for the "OOBCode" value in the request.
+ */
+private let kOOBCodeKey = "oobCode"
+
+/** @var kEmailVerifiedKey
+    @brief The key for the "emailVerified" value in the request.
+ */
+private let kEmailVerifiedKey = "emailVerified"
+
+/** @var kUpgradeToFederatedLoginKey
+    @brief The key for the "upgradeToFederatedLogin" value in the request.
+ */
+private let kUpgradeToFederatedLoginKey = "upgradeToFederatedLogin"
+
+/** @var kCaptchaChallengeKey
+    @brief The key for the "captchaChallenge" value in the request.
+ */
+private let kCaptchaChallengeKey = "captchaChallenge"
+
+/** @var kCaptchaResponseKey
+    @brief The key for the "captchaResponse" value in the request.
+ */
+private let kCaptchaResponseKey = "captchaResponse"
+
+/** @var kDeleteAttributesKey
+    @brief The key for the "deleteAttribute" value in the request.
+ */
+private let kDeleteAttributesKey = "deleteAttribute"
+
+/** @var kDeleteProvidersKey
+    @brief The key for the "deleteProvider" value in the request.
+ */
+private let kDeleteProvidersKey = "deleteProvider"
+
+/** @var kReturnSecureTokenKey
+    @brief The key for the "returnSecureToken" value in the request.
+ */
+private let kReturnSecureTokenKey = "returnSecureToken"
+
+/** @var kTenantIDKey
+    @brief The key for the tenant id value in the request.
+ */
+private let kTenantIDKey = "tenantId"
+
+/** @class FIRSetAccountInfoRequest
+    @brief Represents the parameters for the setAccountInfo endpoint.
+    @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/setAccountInfo
+ */
+@available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
+ public struct SetAccountInfoRequest: IdentityToolkitRequest,
+  AuthRPCRequest, Encodable {
+     public typealias Response = SetAccountInfoResponse
+
+  /** @property accessToken
+      @brief The STS Access Token of the authenticated user.
+   */
+  public var accessToken: String?
+
+  /** @property displayName
+      @brief The name of the user.
+   */
+  public var displayName: String?
+
+  /** @property localID
+      @brief The local ID of the user.
+   */
+  public var localID: String?
+
+  /** @property email
+      @brief The email of the user.
+   */
+  public var email: String?
+
+  /** @property photoURL
+      @brief The photoURL of the user.
+   */
+  public var photoURL: URL?
+
+  /** @property password
+      @brief The new password of the user.
+   */
+  public var password: String?
+
+  /** @property providers
+      @brief The associated identity providers of the user.
+   */
+  public var providers: [String]?
+
+  /** @property OOBCode
+      @brief The out-of-band code of the change email request.
+   */
+   public var oobCode: String?
+
+  /** @property emailVerified
+      @brief Whether to mark the email as verified or not.
+   */
+  public var emailVerified: Bool = false
+
+  /** @property upgradeToFederatedLogin
+      @brief Whether to mark the user to upgrade to federated login.
+   */
+  public var upgradeToFederatedLogin: Bool = false
+
+  /** @property captchaChallenge
+      @brief The captcha challenge.
+   */
+  public var captchaChallenge: String?
+
+  /** @property captchaResponse
+      @brief Response to the captcha.
+   */
+  public var captchaResponse: String?
+
+  /** @property deleteAttributes
+      @brief The list of user attributes to delete.
+      @remarks Every element of the list must be one of the predefined constant starts with
+          "FIRSetAccountInfoUserAttribute".
+   */
+  public var deleteAttributes: [String]?
+
+  /** @property deleteProviders
+      @brief The list of identity providers to delete.
+   */
+  public var deleteProviders: [String]?
+
+  /** @property returnSecureToken
+      @brief Whether the response should return access token and refresh token directly.
+      @remarks The default value is @c YES .
+   */
+  public var returnSecureToken: Bool = false
+
+  /** @var response
+      @brief The corresponding response for this request
+   */
+
+     public var useStaging: Bool { false }
+     public var useIdentityPlatform: Bool { false }
+     public var endpoint: String { kSetAccountInfoEndpoint }
+     public var requestConfiguration: AuthRequestConfiguration
+     
+
+  public init(requestConfiguration: AuthRequestConfiguration) {
+    returnSecureToken = true
+      self.requestConfiguration = requestConfiguration
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case accessToken = "idToken"
+    case displayName
+    case localID = "localId"
+    case email
+    case photoURL = "photoUrl"
+    case password
+    case providers = "provider"
+    case oobCode
+    case emailVerified
+    case upgradeToFederatedLogin
+    case captchaChallenge
+    case captchaResponse
+    case deleteAttributes = "deleteAttribute"
+    case deleteProviders = "deleteProvider"
+    case returnSecureToken
+    case tenantID = "tenantId"
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encodeIfPresent(accessToken, forKey: .accessToken)
+    try c.encodeIfPresent(displayName, forKey: .displayName)
+    try c.encodeIfPresent(localID, forKey: .localID)
+    try c.encodeIfPresent(email, forKey: .email)
+    try c.encodeIfPresent(photoURL, forKey: .photoURL)
+    try c.encodeIfPresent(password, forKey: .password)
+    try c.encodeIfPresent(providers, forKey: .providers)
+    try c.encodeIfPresent(oobCode, forKey: .oobCode)
+    if emailVerified { try c.encode(true, forKey: .emailVerified) }
+    if upgradeToFederatedLogin { try c.encode(true, forKey: .upgradeToFederatedLogin) }
+    try c.encodeIfPresent(captchaChallenge, forKey: .captchaChallenge)
+    try c.encodeIfPresent(captchaResponse, forKey: .captchaResponse)
+    try c.encodeIfPresent(deleteAttributes, forKey: .deleteAttributes)
+    try c.encodeIfPresent(deleteProviders, forKey: .deleteProviders)
+    if returnSecureToken { try c.encode(true, forKey: .returnSecureToken) }
+    try c.encodeIfPresent(tenantID, forKey: .tenantID)
+  }
+}
