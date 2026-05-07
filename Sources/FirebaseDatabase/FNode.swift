@@ -8,7 +8,7 @@
 import Foundation
 import SortedCollections
 
-private class NodeBox: Hashable {
+private final class NodeBox: Hashable, Sendable {
     static func == (lhs: NodeBox, rhs: NodeBox) -> Bool {
         lhs.node == rhs.node
     }
@@ -24,29 +24,65 @@ private class NodeBox: Hashable {
     }
 }
 
-struct FNode: Equatable, Hashable {
-//    var old: FNode {
-//        switch type {
-//        case .empty:
-//            return .empty
-//        case .children(let children):
-//            return FChildrenNode(priority: getPriority(), children: children)
-//        case .leaf(let value):
-//            return FLeafNode(value: value, withPriority: getPriority())
-//        }
-//    }
+/// Represents the server operation inside a deferred value placeholder.
+/// For example, `{".sv": "timestamp"}` becomes `.timestamp`,
+/// and `{".sv": {"increment": 1}}` becomes `.increment(1.0)`.
+enum ServerValueOp: Hashable, Sendable {
+    case timestamp
+    case increment(Double)
+}
 
-    static var empty: FNode = FNode(type: .empty)
-    static func leaf(_ value: AnyHashable, priority: FNode? = nil) -> FNode {
+/// Represents the value stored in a leaf node of the Firebase Realtime Database tree.
+/// Firebase leaf values are always one of: boolean, number (double), string,
+/// or a deferred server value placeholder (e.g. `{".sv": "timestamp"}`).
+enum LeafValue: Hashable, Sendable {
+    case bool(Bool)
+    case double(Double)
+    case string(String)
+    /// Server value placeholders like `{".sv": "timestamp"}` or `{".sv": {"increment": 1}}`.
+    /// These exist transiently before being resolved to concrete values.
+    case deferredValue(ServerValueOp)
+
+    /// The ordering index for Firebase's JavaScript type system.
+    /// Order: deferredValue (object) < bool < double (number) < string
+    var typeOrder: Int {
+        switch self {
+        case .deferredValue: return 0
+        case .bool: return 1
+        case .double: return 2
+        case .string: return 3
+        }
+    }
+
+    /// Converts this leaf value to a Foundation type suitable for the public API.
+    var foundationValue: AnyHashable {
+        switch self {
+        case .bool(let v): return NSNumber(booleanLiteral: v)
+        case .double(let v): return NSNumber(value: v)
+        case .string(let v): return v as AnyHashable
+        case .deferredValue(let op):
+            switch op {
+            case .timestamp:
+                return [kServerValueSubKey: ServerValues.timestampKey] as [String: AnyHashable] as AnyHashable
+            case .increment(let delta):
+                return [kServerValueSubKey: [ServerValues.incrementKey: delta] as [String: Double]] as [String: AnyHashable] as AnyHashable
+            }
+        }
+    }
+}
+
+struct FNode: Equatable, Hashable, Sendable {
+    static let empty: FNode = FNode(type: .empty)
+    static func leaf(_ value: LeafValue, priority: FNode? = nil) -> FNode {
         FNode(type: .leaf(value), priorityNode: priority.map(NodeBox.init(node:)))
     }
     static func children(_ children: SortedDictionary<KeyIndex, FNode>, priority: FNode? = nil) -> FNode {
         FNode(type: .children(children), priorityNode: priority.map(NodeBox.init(node:)))
     }
-    static var max: FNode = FNode(type: .empty, isMax: true, priorityNode: nil)
+    static let max: FNode = FNode(type: .empty, isMax: true, priorityNode: nil)
 
-    enum NodeType: Equatable, Hashable {
-        case leaf(AnyHashable)
+    enum NodeType: Equatable, Hashable, Sendable {
+        case leaf(LeafValue)
         case empty
         case children(SortedDictionary<KeyIndex, FNode>)
     }
@@ -212,13 +248,14 @@ struct FNode: Equatable, Hashable {
     func val(forExport exp: Bool = false) -> AnyHashable {
         switch type {
         case .leaf(let value):
+            let foundationVal = value.foundationValue
             if exp && !getPriority().isEmpty {
                 return [
-                    kPayloadValue: value,
+                    kPayloadValue: foundationVal,
                     kPayloadPriority: getPriority().val()
                 ]
             } else {
-                return value
+                return foundationVal
             }
         case .empty:
             return NSNull()
@@ -425,27 +462,20 @@ struct FNode: Equatable, Hashable {
         }
     }
 
-    private static func compareLeafNodeValue(lhs: AnyHashable, rhs: AnyHashable) -> ComparisonResult {
-        let thisLeafType = FUtilities.getJavascriptType(lhs)
-        let thisIndex = thisLeafType.order
-        let otherIndex = FUtilities.getJavascriptType(rhs).order
-        if otherIndex == thisIndex {
-            // Same type.  Compare values.
-            switch thisLeafType {
-            case .object:
-                // Deferred value nodes are all equal, but we should also never get
-                // to this point...
-                return .orderedSame
-            case .string:
-                return (lhs as! String).compare(rhs as! String, options: .literal)
-            case .number, .boolean:
-                return (lhs as! NSNumber).compare(rhs as! NSNumber)
-            case .null:
-                return .orderedSame
-            }
-        } else {
-            return thisIndex > otherIndex ? .orderedDescending
-            : .orderedAscending
+    private static func compareLeafNodeValue(lhs: LeafValue, rhs: LeafValue) -> ComparisonResult {
+        switch (lhs, rhs) {
+        case (.bool(let l), .bool(let r)):
+            return l == r ? .orderedSame : (l ? .orderedDescending : .orderedAscending)
+        case (.double(let l), .double(let r)):
+            return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
+        case (.string(let l), .string(let r)):
+            return l.compare(r, options: .literal)
+        case (.deferredValue, .deferredValue):
+            // Deferred value nodes are all equal
+            return .orderedSame
+        default:
+            // Different types: compare by type order
+            return lhs.typeOrder < rhs.typeOrder ? .orderedAscending : .orderedDescending
         }
     }
 }

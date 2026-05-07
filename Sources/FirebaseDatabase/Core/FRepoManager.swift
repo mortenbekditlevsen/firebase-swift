@@ -8,8 +8,8 @@
 import Foundation
 
 class FRepoManager {
-    private static var lock = NSLock()
-    private static var configs: [String: [FRepoInfo: FRepo]] = [:]
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var configs: [String: [FRepoInfo: FRepo]] = [:]
 
     /**
      * Used for legacy unit tests.  The public API should go through

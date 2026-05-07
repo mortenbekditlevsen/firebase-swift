@@ -7,7 +7,7 @@
 
 import Atomics
 
-class FAtomicNumber {
+final class FAtomicNumber: Sendable {
     let counter = ManagedAtomic<Int>(1)
     func getAndIncrement() -> Int {
         counter.wrappingIncrement(ordering: .relaxed)

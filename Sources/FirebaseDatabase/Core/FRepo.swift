@@ -240,7 +240,7 @@ class FRepo: FPersistentConnectionDelegate {
             guard let self = self else { return }
             self.warnIfWriteFailedAtPath(path, status: status, message: "setValue: or removeValue:")
             self.ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
-            if let onComplete = onComplete {
+            if let onComplete {
                 self.callOnComplete(onComplete, withStatus: status, errorReason: errorReason, andPath: path)
             }
         }

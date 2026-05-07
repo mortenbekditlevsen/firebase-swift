@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import FirebaseSharedSwift
+import FirebaseShared
 
 public extension Database {
   typealias Encoder = FirebaseDataEncoder

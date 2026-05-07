@@ -8,7 +8,7 @@
 import Foundation
 import Logging
 
-var logger = Logger(label: "[FirebaseDatabase]")
+nonisolated(unsafe) var logger = Logger(label: "[FirebaseDatabase]")
 
 internal func FFLog(_ id: String, _ log: String) {
     logger.trace("\(id): \(log)")

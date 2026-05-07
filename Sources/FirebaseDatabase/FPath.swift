@@ -9,7 +9,7 @@ import Foundation
 
 private let emptyPath = FPath(with: "")
 
-public struct FPath: Hashable {
+public struct FPath: Hashable, Sendable {
     let pieceNum: Int
     let pieces: [String]
 

@@ -7,26 +7,52 @@
 
 import Foundation
 
-let kTimestamp = "timestamp"
-let kIncrement = "increment"
+/// Holds the resolved server values (currently just a timestamp).
+/// Replaces the previous `[String: Any]` dictionary that was passed around.
+struct ServerValues: Sendable {
+    /// The key used in scalar server value placeholders, e.g. `{".sv": "timestamp"}`.
+    static let timestampKey = "timestamp"
+    /// The key used in increment server value placeholders, e.g. `{".sv": {"increment": 1}}`.
+    static let incrementKey = "increment"
 
-func canBeRepresentedAsLong(num: NSNumber) -> Bool {
-    switch (num.objCType[0]) {
-    case "f".utf8CString[0]: // float;
-        fallthrough
-    case "d".utf8CString[0]: // double
-        return false
-    case "L".utf8CString[0]: // unsigned long;
-        fallthrough
-    case "Q".utf8CString[0]: // unsigned long long; fallthrough
-        // Only use ulong(long) if there isn't an overflow.
-        if (num.uint64Value > UInt64.max) {
-            return false
+    /// The server timestamp in milliseconds since epoch.
+    let timestamp: Double
+
+    /// Resolves a server value operation to a concrete leaf value.
+    func resolve(_ op: ServerValueOp, withExisting existing: ValueProvider) -> LeafValue {
+        switch op {
+        case .timestamp:
+            return .double(timestamp)
+        case .increment(let delta):
+            return Self.resolveIncrement(delta, withExisting: existing)
         }
-        fallthrough
-    default:
-        return true
     }
+
+    private static func resolveIncrement(_ delta: Double, withExisting jitExisting: ValueProvider) -> LeafValue {
+        // Incrementing a non-number sets the value to the incremented amount
+        guard case let .leaf(existingValue) = jitExisting.value?.type else {
+            return .double(delta)
+        }
+        guard case let .double(existingDouble) = existingValue else {
+            return .double(delta)
+        }
+        if isIntegerDouble(delta) && isIntegerDouble(existingDouble) {
+            let x = Int64(delta)
+            let y = Int64(existingDouble)
+            let (r, overflow) = x.addingReportingOverflow(y)
+            if !overflow {
+                return .double(Double(r))
+            }
+        }
+        return .double(delta + existingDouble)
+    }
+}
+
+/// Checks if a Double value can be exactly represented as an integer (Int64).
+private func isIntegerDouble(_ value: Double) -> Bool {
+    value == value.rounded(.towardZero) &&
+    value >= Double(Int64.min) &&
+    value <= Double(Int64.max)
 }
 
 protocol ValueProvider {
@@ -62,69 +88,34 @@ class ExistingValueProvider: ValueProvider {
 }
 
 class FServerValues {
-    private static func resolveScalarServerOp(_ op: String,
-                                              withServerValues serverValues: [String: Any]) -> AnyHashable? {
-        serverValues[op] as? AnyHashable
-    }
-    private static func resolveComplexServerOp(_ op: [String: Any],
-                                               withValueProvider jitExisting: ValueProvider,
-                                              serverValues: [String: Any]) -> AnyHashable? {
-        // Only increment is supported as of now
-        guard let delta = op[kIncrement] as? NSNumber else {
-            return nil
-        }
-        // Incrementing a non-number sets the value to the incremented amount
-        let existing = jitExisting.value
-        guard case let .leaf(existingValue) = existing?.type else {
-            return delta
-        }
-        guard let existingNum = existingValue as? NSNumber else {
-            return delta
-        }
-        let incrLong = canBeRepresentedAsLong(num: delta)
-        let baseLong = canBeRepresentedAsLong(num: existingNum)
-        if incrLong && baseLong {
-            let x = delta.uint64Value
-            let y = existingNum.uint64Value
-            let r = x + y
-            // See "Hacker's Delight" 2-12: Overflow if both arguments have the
-            // opposite sign of the result
-            if ((x ^ r) & (y ^ r)) >= 0 {
-                return NSNumber(value: r)
-            }
-        }
-        return NSNumber(value: delta.doubleValue + existingNum.doubleValue)
-    }
-
-    private static func resolveDeferredValue(_ val: AnyHashable, withExisting existing: ValueProvider, serverValues: [String: Any]) -> AnyHashable? {
-        guard let dict = val as? [String: AnyHashable] else {
+    private static func resolveDeferredValue(_ val: LeafValue, withExisting existing: ValueProvider, serverValues: ServerValues) -> LeafValue {
+        guard case let .deferredValue(op) = val else {
             return val
         }
-        guard let op = dict[kServerValueSubKey] else {
-            return val
-        }
-        if let stringOp = op as? String {
-            return FServerValues.resolveScalarServerOp(stringOp, withServerValues: serverValues)
-        } else if let dictOp = op as? [String: Any] {
-            return FServerValues.resolveComplexServerOp(dictOp, withValueProvider: existing, serverValues: serverValues)
-        }
-        return val
+        return serverValues.resolve(op, withExisting: existing)
     }
 
     private static func resolveDeferredValueSnapshot(_ node: FNode,
-                                                     withValueProvider existing: ValueProvider, serverValues: [String: Any]) -> FNode {
+                                                     withValueProvider existing: ValueProvider, serverValues: ServerValues) -> FNode {
 
-        let priorityVal = FServerValues.resolveDeferredValue(node.getPriority().val(), withExisting: existing.getChild(".priority"), serverValues: serverValues)
-        let priority = FSnapshotUtilities.nodeFrom(priorityVal)
+        // Resolve priority if it's a deferred value
+        let priority: FNode
+        if case let .leaf(priorityLeaf) = node.getPriority().type {
+            let resolvedPriority = FServerValues.resolveDeferredValue(priorityLeaf, withExisting: existing.getChild(".priority"), serverValues: serverValues)
+            priority = FSnapshotUtilities.nodeFrom(resolvedPriority.foundationValue)
+        } else {
+            priority = node.getPriority()
+        }
+
         switch node.type {
         case .empty:
             return .empty
-        case let .leaf(deferredValue):
-            let value = self.resolveDeferredValue(deferredValue, withExisting: existing, serverValues: serverValues)
-            if value == node.val() && priority == node.getPriority() {
+        case let .leaf(leafValue):
+            let resolvedValue = self.resolveDeferredValue(leafValue, withExisting: existing, serverValues: serverValues)
+            if resolvedValue == leafValue && priority == node.getPriority() {
                 return node
             } else {
-                return .leaf(value ?? deferredValue, priority: priority)
+                return .leaf(resolvedValue, priority: priority)
             }
         case let .children(children):
             var newNode = node
@@ -142,13 +133,12 @@ class FServerValues {
         }
     }
 
-    static func generateServerValues(_ clock: FClock) -> [String: Any] {
-        let millis = UInt64(clock.currentTime * 1000)
-        let nsnum = NSNumber(value: millis)
-        return [ kTimestamp: nsnum ]
+    static func generateServerValues(_ clock: FClock) -> ServerValues {
+        let millis = Double(UInt64(clock.currentTime * 1000))
+        return ServerValues(timestamp: millis)
     }
 
-    static func resolveDeferredValueCompoundWrite(_ write: FCompoundWrite, withSyncTree tree: FSyncTree, atPath path: FPath, serverValues: [String: Any]) -> FCompoundWrite {
+    static func resolveDeferredValueCompoundWrite(_ write: FCompoundWrite, withSyncTree tree: FSyncTree, atPath path: FPath, serverValues: ServerValues) -> FCompoundWrite {
         var resolved = write
         write.enumerateWrites { subPath, node, stop in
             let existing = DeferredValueProvider(syncTree: tree, atPath: path.child(subPath))
@@ -161,12 +151,12 @@ class FServerValues {
         return resolved
     }
 
-    static func resolveDeferredValueSnapshot(_ node: FNode, withSyncTree tree: FSyncTree, atPath path: FPath, serverValues: [String: Any]) -> FNode {
+    static func resolveDeferredValueSnapshot(_ node: FNode, withSyncTree tree: FSyncTree, atPath path: FPath, serverValues: ServerValues) -> FNode {
         let jitExisting = DeferredValueProvider(syncTree: tree, atPath: path)
         return FServerValues.resolveDeferredValueSnapshot(node, withValueProvider: jitExisting, serverValues: serverValues)
     }
 
-    static func resolveDeferredValueSnapshot(_ node: FNode, withExisting existing: FNode?, serverValues: [String: Any]) -> FNode {
+    static func resolveDeferredValueSnapshot(_ node: FNode, withExisting existing: FNode?, serverValues: ServerValues) -> FNode {
         let jitExisting = ExistingValueProvider(snapshot: existing)
         return FServerValues.resolveDeferredValueSnapshot(node, withValueProvider: jitExisting, serverValues: serverValues)
     }

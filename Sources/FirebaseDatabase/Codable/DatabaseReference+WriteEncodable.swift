@@ -15,7 +15,7 @@
  */
 
 import Foundation
-import FirebaseSharedSwift
+import FirebaseShared
 
 public extension DatabaseReference {
   /// Encodes an instance of `Encodable` and overwrites the encoded data

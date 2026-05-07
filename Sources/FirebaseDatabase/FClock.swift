@@ -11,8 +11,8 @@ protocol FClock {
     var currentTime: TimeInterval { get }
 }
 
-class FSystemClock: FClock {
-    public static var clock: FSystemClock = FSystemClock()
+struct FSystemClock: FClock {
+    public static let clock: FSystemClock = FSystemClock()
     var currentTime: TimeInterval {
         Date().timeIntervalSince1970
     }

@@ -409,7 +409,7 @@ class FWriteTree {
    * The default filter used when constructing the tree. Keep everything that's
    * visible.
    */
-  private static var defaultFilter: (FWriteRecord) -> Bool = { _ in
+  private static let defaultFilter: @Sendable (FWriteRecord) -> Bool = { _ in
     true
   }
 

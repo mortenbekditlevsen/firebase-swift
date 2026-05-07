@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import FirebaseCoreSwift
+import FirebaseCore
 
 /// This protocol is used in the interop registration process to register an
 /// instance provider for individual FIRApps.

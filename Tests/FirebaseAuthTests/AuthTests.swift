@@ -17,7 +17,7 @@ import Synchronization
 import XCTest
 
 @testable import FirebaseAuth
-@testable import FirebaseCoreSwift
+@testable import FirebaseCore
 
 /// Async-only Auth tests.
 ///

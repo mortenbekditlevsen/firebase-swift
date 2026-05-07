@@ -15,7 +15,7 @@
  */
 
 import Foundation
-import FirebaseSharedSwift
+import FirebaseShared
 
 public extension DataSnapshot {
   /// Retrieves the value of a snapshot and converts it to an instance of
@@ -31,7 +31,7 @@ public extension DataSnapshot {
   ///              default decoder.
   func data<T: Decodable>(as type: T.Type,
                           decoder: Database.Decoder =
-                            Database.Decoder()) throws -> T {
+                            Database.Decoder()) throws -> sending T {
     try decoder.decode(T.self, from: value ?? NSNull())
   }
 }

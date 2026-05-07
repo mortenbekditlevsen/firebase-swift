@@ -17,7 +17,7 @@ import Foundation
  * you can use it to read data (ie. observeEventType:withBlock:), write data
  * (ie. setValue:), and to create new FIRDatabaseReferences (ie. child:).
  */
-public class DatabaseReference: DatabaseQuery {
+public final class DatabaseReference: DatabaseQuery {
     convenience internal init(config: DatabaseConfig) {
         let parsedUrl = FUtilities.parseUrl(FirebaseApp.defaultApp!.options.databaseURL!)
         FValidation.validateFrom("initWithUrl:", validURL: parsedUrl)

@@ -5,7 +5,7 @@
 //  Created by Morten Bek Ditlevsen on 18/04/2023.
 //
 
-import FirebaseSharedSwift
+import FirebaseShared
 import Foundation
 
 enum InternalError: Error {
@@ -16,7 +16,7 @@ enum InternalError: Error {
 extension DatabaseQuery {
     public func get<T: Decodable>(as type: T.Type,
                            decoder: Database.Decoder =
-                           Database.Decoder()) async throws -> T {
+                           Database.Decoder()) async throws -> sending T {
         try await withCheckedThrowingContinuation { continuation in
             self.getData { error, snapshot in
                 if let error {
@@ -38,7 +38,7 @@ extension DatabaseQuery {
 
     public func observeSingle<T: Decodable>(as type: T.Type,
                            decoder: Database.Decoder =
-                           Database.Decoder()) async throws -> T {
+                           Database.Decoder()) async throws -> sending T {
         try await withCheckedThrowingContinuation { continuation in
             self.observeSingleEventOfType(.value) { snapshot in
                 do {

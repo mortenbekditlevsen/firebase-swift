@@ -14,7 +14,7 @@ enum FEventRegistrationMatcher: Equatable {
     case allRegular // All except 'keepSynced'
 }
 
-protocol FEventRegistration: AnyObject {
+protocol FEventRegistration: Any {
     func responseTo(_ eventType: DataEventType) -> Bool
     func createEventFrom(_ change: FChange, query: FQuerySpec) -> FDataEvent
     func fireEvent(_ event: FEvent, queue: DispatchQueue)

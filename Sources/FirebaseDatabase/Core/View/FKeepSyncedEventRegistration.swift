@@ -7,8 +7,8 @@
 
 import Foundation
 
-class FKeepSyncedEventRegistration: FEventRegistration {
-    public static var instance: FKeepSyncedEventRegistration = .init()
+struct FKeepSyncedEventRegistration: FEventRegistration {
+    static let instance: FKeepSyncedEventRegistration = .init()
     func responseTo(_ eventType: DataEventType) -> Bool {
         false
     }

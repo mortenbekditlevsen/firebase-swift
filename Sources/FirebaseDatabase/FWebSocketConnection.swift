@@ -32,7 +32,7 @@ extension String {
     }
 }
 
-class FWebSocketConnection {
+class FWebSocketConnection: @unchecked Sendable {
     var connectionId: Int
     var totalFrames: Int
     var buffering: Bool {

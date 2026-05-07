@@ -47,9 +47,9 @@ final class WebSocketClient {
 
     init(url: URL,
          headers: HTTPHeaders,
-         onOpen: @escaping () -> Void,
-         onMessage: @escaping (String) -> Void,
-         onClose: @escaping () -> Void) {
+         onOpen: @escaping @Sendable () -> Void,
+         onMessage: @escaping @Sendable (String) -> Void,
+         onClose: @escaping @Sendable () -> Void) {
         self.webSocketHandler = WebSocketHandler(
             onOpen: onOpen,
             onMessage: onMessage,
@@ -167,15 +167,14 @@ private final class WebSocketHandler: ChannelInboundHandler, Sendable {
     typealias InboundIn = WebSocketFrame
     typealias OutboundOut = WebSocketFrame
 
-    // TODO: Protect state to ensure sendability?
-    var context: ChannelHandlerContext?
-    private let onClose: () -> Void
-    private let onMessage: (String) -> Void
-    private let onOpen: () -> Void
+    nonisolated(unsafe) var context: ChannelHandlerContext?
+    private let onClose: @Sendable () -> Void
+    private let onMessage: @Sendable (String) -> Void
+    private let onOpen: @Sendable () -> Void
 
-    init(onOpen: @escaping () -> Void,
-                onMessage: @escaping (String) -> Void,
-                onClose: @escaping () -> Void) {
+    init(onOpen: @escaping @Sendable () -> Void,
+                onMessage: @escaping @Sendable (String) -> Void,
+                onClose: @escaping @Sendable () -> Void) {
         self.onOpen = onOpen
         self.onClose = onClose
         self.onMessage = onMessage
