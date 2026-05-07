@@ -108,7 +108,7 @@ enum FIndex: Equatable, Hashable {
             return FNamedNode(name: name, andNode: indexValue)
 
         case .priority:
-            let node = FNode.leaf("[PRIORITY-POST]", priority: indexValue)
+            let node = FNode.leaf(.string("[PRIORITY-POST]"), priority: indexValue)
             return FNamedNode(name: name, andNode: node)
 
         case .path(let path):

@@ -36,7 +36,7 @@ private struct QueryParams: Hashable, Equatable {
     var index: FIndex
 }
 
-public struct FQueryParams: Hashable {
+public struct FQueryParams: Hashable, Sendable {
 
     private var params: QueryParams
     var limitSet: Bool { params.limitSet }
@@ -165,7 +165,7 @@ public struct FQueryParams: Hashable {
         return FQueryParams(params: params)
     }
 
-    public static var defaultInstance: FQueryParams = FQueryParams()
+    public static let defaultInstance: FQueryParams = FQueryParams()
 
     private init(params: QueryParams) {
         self.params = params

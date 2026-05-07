@@ -183,7 +183,7 @@ public enum FValidation {
         }
     }
 
-    static var invalidPathCharacters: CharacterSet = CharacterSet(charactersIn: "[].#$")
+    static let invalidPathCharacters: CharacterSet = CharacterSet(charactersIn: "[].#$")
 
     static func isValidPathString(_ pathString: String) -> Bool {
         !pathString.isEmpty && pathString.rangeOfCharacter(from: invalidPathCharacters) == nil
@@ -195,7 +195,7 @@ public enum FValidation {
         }
     }
 
-    static var dotInfoRegex: NSRegularExpression = try! NSRegularExpression(pattern: "^\\/*\\.info(\\/|$)", options: [])
+    static let dotInfoRegex: NSRegularExpression = try! NSRegularExpression(pattern: "^\\/*\\.info(\\/|$)", options: [])
     static func validateFrom(_ fn: String, validRootPathString pathString: String) {
         var tempPath = pathString
         // HACK: Obj-C regex are kinda' slow.  Do a plain string search first before
@@ -211,7 +211,7 @@ public enum FValidation {
         self.validateFrom(fn, validRootPathString: pathString)
     }
 
-    static var invalidKeyCharacters: CharacterSet = CharacterSet(charactersIn: "[].#$/")
+    static let invalidKeyCharacters: CharacterSet = CharacterSet(charactersIn: "[].#$/")
     static func isValidKey(_ key: String) -> Bool {
         !key.isEmpty && key.rangeOfCharacter(from: invalidKeyCharacters) == nil
     }

@@ -34,8 +34,8 @@ struct FNamedNode: Hashable {
     static func nodeWithName(_ name: String, node: FNode) -> FNamedNode {
         FNamedNode(name: name, andNode: node)
     }
-    public static var min: FNamedNode = FNamedNode(name: kMinName, andNode: .empty)
-    public static var max: FNamedNode = FNamedNode(name: kMaxName, andNode: .empty)
+    public static let min: FNamedNode = FNamedNode(name: kMinName, andNode: .empty)
+    public static let max: FNamedNode = FNamedNode(name: kMaxName, andNode: .empty)
 
     var description: String {
         "NamedNode[\(name)] \(node)"

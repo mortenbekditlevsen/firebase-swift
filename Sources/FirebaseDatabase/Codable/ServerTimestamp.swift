@@ -61,7 +61,7 @@ public struct ServerTimestamp: Codable, Equatable, Hashable {
       let interval = value.timeIntervalSince1970
       try container.encode(Int(interval * 1000))
     } else {
-      let dictionary = ServerValue.timestamp as! [String: String]
+      let dictionary = ServerValue.timestamp
       try container.encode(dictionary)
     }
   }

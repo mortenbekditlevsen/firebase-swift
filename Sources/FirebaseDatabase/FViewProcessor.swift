@@ -8,7 +8,7 @@
 import Foundation
 
 class FNoCompleteChildSource: FCompleteChildSource {
-    public static var instance: FNoCompleteChildSource = .init()
+    nonisolated(unsafe) public static let instance: FNoCompleteChildSource = .init()
     func completeChild(_ childKey: String) -> FNode? {
         nil
     }

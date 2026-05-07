@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct FWriteRecord: Hashable, Equatable {
+struct FWriteRecord: Hashable, Equatable, Sendable {
     enum Record: Hashable, Equatable {
         case overwrite(FNode)
         case merge(FCompoundWrite)

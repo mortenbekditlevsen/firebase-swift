@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import FirebaseCoreSwift
+import FirebaseCore
 
 class DatabaseConnectionContext {
     /// Auth token if available.

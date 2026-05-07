@@ -7,15 +7,15 @@
 
 import Foundation
 
-let prunePredicate: (Any?) -> (Bool) = { ($0 as? Bool) ?? false }
-let keepPredicate: (Any?) -> (Bool) = { !(($0 as? Bool) ?? false) }
+let prunePredicate: @Sendable (Any?) -> (Bool) = { ($0 as? Bool) ?? false }
+let keepPredicate: @Sendable (Any?) -> (Bool) = { !(($0 as? Bool) ?? false) }
 
 // TODO: When more is swiftified, FImmutableTree really, really ought to be generic
 class FPruneForest {
-    static var kPruneTree = FImmutableTree<Bool>(value: true)
-    static var kKeepTree = FImmutableTree<Bool>(value: false)
-    static var kPruneForest = FPruneForest(forest: kPruneTree)
-    static var kKeepForest = FPruneForest(forest: kKeepTree)
+    static let kPruneTree = FImmutableTree<Bool>(value: true)
+    static let kKeepTree = FImmutableTree<Bool>(value: false)
+    nonisolated(unsafe) static let kPruneForest = FPruneForest(forest: kPruneTree)
+    nonisolated(unsafe) static let kKeepForest = FPruneForest(forest: kKeepTree)
 
     let pruneForest: FImmutableTree<Bool>
     init(forest: FImmutableTree<Bool>) {

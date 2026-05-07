@@ -17,8 +17,8 @@ let MAX_PUSH_CHAR: Character = "z"
 let MAX_KEY_LEN = 786
 
 class FNextPushId {
-    private static var lastPushTime: Int64 = 0
-    private static var lastRandChars: [UInt8] = Array<UInt8>(repeating: 0, count: 12)
+    nonisolated(unsafe) private static var lastPushTime: Int64 = 0
+    nonisolated(unsafe) private static var lastRandChars: [UInt8] = Array<UInt8>(repeating: 0, count: 12)
     static func get(_ currentTime: TimeInterval) -> String {
         var now: Int64 = Int64(currentTime * 1000)
         let duplicateTime = now == lastPushTime

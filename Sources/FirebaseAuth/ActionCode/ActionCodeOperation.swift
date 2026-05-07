@@ -17,7 +17,7 @@ import Foundation
 /**
     @brief Operations which can be performed with action codes.
   */
- public enum ActionCodeOperation : Int, @unchecked Sendable {
+ public enum ActionCodeOperation : Int, Sendable {
 
     /** Action code for unknown operation. */
     case unknown = 0

@@ -768,7 +768,7 @@ public class DatabaseQuery {
     // Needs to be marked public due to tests...
     // We use this shared queue across all of the FQueries so things happen FIFO
     // (as opposed to dispatch_get_global_queue(0, 0) which is concurrent)
-    public static var sharedQueue: DispatchQueue = .init(label: "FirebaseWorker")
+    public static let sharedQueue: DispatchQueue = .init(label: "FirebaseWorker")
 
     convenience init(repo: FRepo, path: FPath) {
         self.init(repo: repo, path: path, params: nil, orderByCalled: false, priorityMethodCalled: false)

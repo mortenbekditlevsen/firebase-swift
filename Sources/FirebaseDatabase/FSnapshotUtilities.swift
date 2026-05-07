@@ -94,8 +94,31 @@ public enum FSnapshotUtilities {
              isLeafNode = true
          }
 
-         if isLeafNode, let hashable = value as? AnyHashable {
-             return FNode.leaf(hashable, priority: priority)
+         if isLeafNode {
+             let leafValue: LeafValue
+             if let boolVal = value as? Bool {
+                 // Check Bool before NSNumber since Bool bridges to NSNumber
+                 leafValue = .bool(boolVal)
+             } else if let numVal = value as? NSNumber {
+                 leafValue = .double(numVal.doubleValue)
+             } else if let strVal = value as? String {
+                 leafValue = .string(strVal)
+             } else if let dict = value as? [String: Any], let svValue = dict[kServerValueSubKey] {
+                 // Deferred server value placeholder
+                 let op: ServerValueOp
+                 if let scalar = svValue as? String, scalar == ServerValues.timestampKey {
+                     op = .timestamp
+                 } else if let complex = svValue as? [String: Any],
+                           let delta = complex[ServerValues.incrementKey] as? NSNumber {
+                     op = .increment(delta.doubleValue)
+                 } else {
+                     fatalError("(\(fn)) Unexpected server value type: \(type(of: svValue))")
+                 }
+                 leafValue = .deferredValue(op)
+             } else {
+                 fatalError("(\(fn)) Unexpected leaf value type: \(type(of: value))")
+             }
+             return FNode.leaf(leafValue, priority: priority)
          }
 
          // Unlike with JS, we have to handle the dictionary and array cases
@@ -150,13 +173,14 @@ public enum FSnapshotUtilities {
      }
 
     static func validatePriorityNode(_ priorityNode: FNode) {
-        if priorityNode.isLeafNode() {
-            let val = priorityNode.val()
-            if let valDict = val as? [String: Any] {
-                assert(valDict[kServerValueSubKey] != nil, "Priority can't be object unless it's a deferred value")
-            } else {
-                let jsType = FUtilities.getJavascriptType(val)
-                assert(jsType == .string || jsType == .number, "Priority of unexpected type.")
+        if case let .leaf(leafValue) = priorityNode.type {
+            switch leafValue {
+            case .string, .double:
+                break // valid priority types
+            case .bool:
+                assertionFailure("Priority of unexpected type (bool).")
+            case .deferredValue:
+                break // deferred values are allowed as priority
             }
         } else {
             assert (priorityNode == .max || priorityNode.isEmpty, "Priority of unexpected type.")
@@ -182,68 +206,38 @@ public enum FSnapshotUtilities {
         }
     }
 
-    static func estimateLeafNodeSize(_ value: Any, priority: FNode) -> Int {
+    static func estimateLeafNodeSize(_ value: LeafValue, priority: FNode) -> Int {
         // These values are somewhat arbitrary, but we don't need an exact value so
         // prefer performance over exact value
         let valueSize: Int
-        switch FUtilities.getJavascriptType(value) {
-        case .number:
+        switch value {
+        case .double:
             valueSize = 8 // estimate each float with 8 bytes
-        case .boolean:
+        case .bool:
             valueSize = 4 // true or false need roughly 4 bytes
-        case .string:
-            // If we are measuring bytes here then we should use the utf8 view here, right?
-            valueSize = 2 + ((value as? String)?.utf8.count ?? 0) // add 2 for quotes
-        default:
-            fatalError("Unknown leaf value type: \(value)")
+        case .string(let s):
+            valueSize = 2 + s.utf8.count // add 2 for quotes
+        case .deferredValue:
+            valueSize = 8 // rough estimate for deferred values
         }
         if priority.isEmpty {
             return valueSize
-        } else {
+        } else if case let .leaf(priorityValue) = priority.type {
             // Account for extra overhead due to the extra JSON object and the
             // ".value" and ".priority" keys, colons, comma
             let leafPriorityOverhead = 2 + 8 + 11 + 2 + 1;
             return leafPriorityOverhead + valueSize +
-            estimateLeafNodeSize(priority.val(), priority: .empty)
+            estimateLeafNodeSize(priorityValue, priority: .empty)
+        } else {
+            return valueSize
         }
     }
 
 
-//    static func appendHashRepresentation(for leafNode: FNode, to output: inout String, hashVersion: FDataHashVersion) {
-//        if !leafNode.getPriority().isEmpty {
-//            output += "priority:"
-//            appendHashRepresentation(for: leafNode.getPriority(),
-//                                        to: &output,
-//                                        hashVersion: hashVersion)
-//            output += ":"
-//        }
-//        let jsType = FUtilities.getJavascriptType(leafNode.val())
-//        output += jsType.rawValue + ":"
-//        switch jsType {
-//        case .object:
-//            fatalError("Unknown value for hashing: \(leafNode)")
-//
-//        case .boolean:
-//            let numberVal = (leafNode.val() as? NSNumber) ?? NSNumber(booleanLiteral: false)
-//            output += numberVal.boolValue ? "true" : "false"
-//        case .number:
-//            let numberVal = (leafNode.val() as? NSNumber) ?? NSNumber(integerLiteral: 0)
-//
-//            output += FUtilities.ieee754String(for: numberVal)
-//        case .string:
-//            let stringVal = (leafNode.val() as? String) ?? ""
-//            switch hashVersion {
-//            case .v1:
-//                output += stringVal
-//            case .v2:
-//                appendHashV2Representation(for: stringVal, to: &output)
-//            }
-//        case .null:
-//            ()
-//        }
-//    }
-
     static func appendHashRepresentation(for leafNode: FNode, to output: inout String, hashVersion: FDataHashVersion) {
+        guard case let .leaf(leafValue) = leafNode.type else {
+            return
+        }
         if !leafNode.getPriority().isEmpty {
             output += "priority:"
             appendHashRepresentation(for: leafNode.getPriority(),
@@ -251,29 +245,23 @@ public enum FSnapshotUtilities {
                                         hashVersion: hashVersion)
             output += ":"
         }
-        let jsType = FUtilities.getJavascriptType(leafNode.val())
-        output += jsType.rawValue + ":"
-        switch jsType {
-        case .object:
-            fatalError("Unknown value for hashing: \(leafNode)")
-
-        case .boolean:
-            let numberVal = (leafNode.val() as? NSNumber) ?? NSNumber(booleanLiteral: false)
-            output += numberVal.boolValue ? "true" : "false"
-        case .number:
-            let numberVal = (leafNode.val() as? NSNumber) ?? NSNumber(integerLiteral: 0)
-
-            output += FUtilities.ieee754String(for: numberVal)
-        case .string:
-            let stringVal = (leafNode.val() as? String) ?? ""
+        switch leafValue {
+        case .bool(let v):
+            output += "boolean:"
+            output += v ? "true" : "false"
+        case .double(let v):
+            output += "number:"
+            output += FUtilities.ieee754String(for: NSNumber(value: v))
+        case .string(let v):
+            output += "string:"
             switch hashVersion {
             case .v1:
-                output += stringVal
+                output += v
             case .v2:
-                appendHashV2Representation(for: stringVal, to: &output)
+                appendHashV2Representation(for: v, to: &output)
             }
-        case .null:
-            ()
+        case .deferredValue:
+            fatalError("Deferred values should be resolved before hashing")
         }
     }
 

@@ -36,8 +36,8 @@ class FLRUCachePolicy: FCachePolicy {
     var maxNumberOfQueriesToKeep: Int { kFMaxNumberOfPrunableQueriesToKeep }
 }
 
-class FNoCachePolicy: FCachePolicy {
-    public static var noCachePolicy: FNoCachePolicy = FNoCachePolicy()
+struct FNoCachePolicy: FCachePolicy {
+    public static let noCachePolicy: FNoCachePolicy = FNoCachePolicy()
     func shouldCheckCacheSize(_ serverUpdatesSinceLastCheck: Int) -> Bool {
         false
     }

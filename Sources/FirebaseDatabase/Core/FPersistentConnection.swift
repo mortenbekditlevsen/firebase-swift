@@ -89,7 +89,7 @@ typealias PutToAckTuple = (block: ((String, String) -> Void),
                            status: String,
                            errorReason: String)
 
-class FPersistentConnection: FConnectionDelegate {
+class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
     var connectionState: ConnectionState
     var firstConnection: Bool
     var reconnectDelay: TimeInterval

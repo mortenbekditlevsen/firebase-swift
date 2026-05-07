@@ -8,6 +8,8 @@
 import SortedCollections
 import Foundation
 
+extension FImmutableTree: Sendable where Element: Sendable {}
+
 internal struct FImmutableTree<Element> {
     internal private(set) var value: Element?
     // TODO: Perhaps both have a version of this type that is sorted and one that is not. Not all users of the type relies on sorting.

@@ -13,7 +13,7 @@ import Foundation
  * write modifying that path. Any write to an existing path or shadowing an
  * existing path will modify that existing write to reflect the write added.
  */
-struct FCompoundWrite: Hashable {
+struct FCompoundWrite: Hashable, Sendable {
 
     let writeTree: FImmutableTree<FNode>
     init(writeTree: FImmutableTree<FNode>) {
