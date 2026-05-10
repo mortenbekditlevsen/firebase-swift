@@ -13,7 +13,8 @@ enum FConnectionState {
     case disconnected
 }
 
-public final class FConnection: FWebSocketDelegate {
+@DatabaseActor
+final class FConnection: FWebSocketDelegate {
     weak var delegate: FConnectionDelegate?
     var state: FConnectionState
     var conn: FWebSocketConnection?
@@ -21,7 +22,6 @@ public final class FConnection: FWebSocketDelegate {
 
     init(
         with aRepoInfo: FRepoInfo,
-        andDispatchQueue queue: DispatchQueue,
         googleAppID: String,
         lastSessionID: String?,
         appCheckToken: String?,
@@ -33,7 +33,6 @@ public final class FConnection: FWebSocketDelegate {
 
         conn = FWebSocketConnection(with:
             connectionURL,
-            andQueue: queue,
             googleAppID: googleAppID,
             appCheckToken: appCheckToken,
             userAgent: userAgent)

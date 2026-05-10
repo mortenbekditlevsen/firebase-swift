@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct FQuerySpec: Hashable {
+public struct FQuerySpec: Hashable, Sendable {
     public let path: FPath
     public let params: FQueryParams
     init(path: FPath, params: FQueryParams) {

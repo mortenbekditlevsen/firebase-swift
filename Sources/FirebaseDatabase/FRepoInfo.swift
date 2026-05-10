@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct FRepoInfo: Hashable {
+public struct FRepoInfo: Hashable, Sendable {
 
     /// The host that the database should connect to.
     public let host: String

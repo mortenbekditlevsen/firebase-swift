@@ -16,7 +16,7 @@ let MAX_PUSH_CHAR: Character = "z"
 
 let MAX_KEY_LEN = 786
 
-class FNextPushId {
+struct FNextPushId {
     nonisolated(unsafe) private static var lastPushTime: Int64 = 0
     nonisolated(unsafe) private static var lastRandChars: [UInt8] = Array<UInt8>(repeating: 0, count: 12)
     static func get(_ currentTime: TimeInterval) -> String {

@@ -7,7 +7,7 @@
 
 import Foundation
 
-class FSparseSnapshotTree {
+struct FSparseSnapshotTree {
     var value: FNode?
     var children: [String: FSparseSnapshotTree] = [:]
 
@@ -25,7 +25,7 @@ class FSparseSnapshotTree {
         }
     }
 
-    func rememberData(_ data: FNode, onPath path: FPath) {
+    mutating func rememberData(_ data: FNode, onPath path: FPath) {
         if path.isEmpty {
             value = data
             children = [:]
@@ -35,35 +35,38 @@ class FSparseSnapshotTree {
             guard let childKey = path.getFront() else {
                 return
             }
-            let child = children[childKey, default: FSparseSnapshotTree()]
+            var child = children[childKey, default: FSparseSnapshotTree()]
             child.rememberData(data, onPath: path.popFront())
             children[childKey] = child
         }
     }
 
-    func forgetPath(_ path: FPath) -> Bool {
+    mutating func forgetPath(_ path: FPath) -> Bool {
         guard let childKey = path.getFront() else {
             value = nil
             children = [:]
             return true
         }
-        if let value = value {
-            if value.isLeafNode() {
-                // non-empty path at leaf. the path leads to nowhere
+        if let value {
+            switch value.type {
+            case .leaf:
                 return false
-            } else {
-                let tmp = value
-                self.value = nil
-                tmp.enumerateChildren { key, node, stop in
-                    self.rememberData(node, onPath: FPath(with: key))
+            case .children(let children):
+                for child in children {
+                    self.rememberData(child.value, onPath: FPath(with: child.key.key))
                 }
+                // we've cleared out the value and set children. Call ourself
+                // again to hit the next case
+                return self.forgetPath(path)
+
+            case .empty:
                 // we've cleared out the value and set children. Call ourself
                 // again to hit the next case
                 return self.forgetPath(path)
             }
         } else if !children.isEmpty {
             let p = path.popFront()
-            if let child = children[childKey] {
+            if var child = children[childKey] {
                 let safeToRemove = child.forgetPath(p)
                 if safeToRemove {
                     children.removeValue(forKey: childKey)

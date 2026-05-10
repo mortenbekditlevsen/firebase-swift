@@ -6,10 +6,10 @@
 //
 
 import Foundation
+import Synchronization
 
 class FRepoManager {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var configs: [String: [FRepoInfo: FRepo]] = [:]
+    private static let configs: Mutex<[String: [FRepoInfo: FRepo]]> = Mutex([:])
 
     /**
      * Used for legacy unit tests.  The public API should go through
@@ -17,11 +17,9 @@ class FRepoManager {
      */
 
     class func getRepo(_ repoInfo: FRepoInfo, config: DatabaseConfig) -> FRepo {
-        // NOTE: Using an NSLock is a replacement for objc @synchronized
-        // Perhaps switch to a non-NS-prefixed alternative later
-        lock.lock()
-        defer { lock.unlock() }
-        let repos = configs[config.sessionIdentifier]
+        let repos = configs.withLock {
+            $0[config.sessionIdentifier]
+        }
         if let repo = repos?[repoInfo] {
             return repo
         } else {
@@ -31,26 +29,28 @@ class FRepoManager {
         }
     }
 
-    class func createRepo(_ repoInfo: FRepoInfo, config: DatabaseConfig, database: Database) -> FRepo {
+    class func createRepo(_ repoInfo: FRepoInfo, config: inout DatabaseConfig, database: Database) -> FRepo {
         config.freeze()
-        // NOTE: Using an NSLock is a replacement for objc @synchronized
-        // Perhaps switch to a non-NS-prefixed alternative later
-        lock.lock()
-        defer { lock.unlock() }
-        var repos = configs[config.sessionIdentifier, default: [:]]
-        if repos[repoInfo] != nil {
-            fatalError("createRepo called for Repo that already exists.")
-        } else {
-            let repo = FRepo(repoInfo: repoInfo, config: config, database: database)
-            repos[repoInfo] = repo
-            configs[config.sessionIdentifier] = repos
-            return repo
+        let sessionIdentifier = config.sessionIdentifier
+        let repo = FRepo(repoInfo: repoInfo, config: config, database: database)
+
+        configs.withLock {
+            var repos = $0[sessionIdentifier, default: [:]]
+            if repos[repoInfo] != nil {
+                fatalError("createRepo called for Repo that already exists.")
+            } else {
+                repos[repoInfo] = repo
+                $0[sessionIdentifier] = repos
+            }
         }
+        return repo
     }
 
     class func interruptAll() {
-        DatabaseQuery.sharedQueue.async {
-            for repos in configs.values {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
+            let configValues = configs.withLock { $0.values }
+            for repos in configValues {
                 for repo in repos.values {
                     repo.interrupt()
                 }
@@ -59,16 +59,21 @@ class FRepoManager {
     }
     
     class func interrupt(_ config: DatabaseConfig) {
-        DatabaseQuery.sharedQueue.async {
-            guard let repos = configs[config.sessionIdentifier] else { return }
+        let sessionIdentifier = config.sessionIdentifier
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
+            let repos = configs.withLock { $0[sessionIdentifier] }
+            guard let repos else { return }
             for repo in repos.values {
                 repo.interrupt()
             }
         }
     }
     class func resumeAll() {
-        DatabaseQuery.sharedQueue.async {
-            for repos in configs.values {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
+            let configValues = configs.withLock { $0.values }
+            for repos in configValues {
                 for repo in repos.values {
                     repo.resume()
                 }
@@ -77,8 +82,11 @@ class FRepoManager {
 
     }
     class func resume(_ config: DatabaseConfig) {
-        DatabaseQuery.sharedQueue.async {
-            guard let repos = configs[config.sessionIdentifier] else { return }
+        let sessionIdentifier = config.sessionIdentifier
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
+            let repos = configs.withLock { $0[sessionIdentifier] }
+            guard let repos else { return }
             for repo in repos.values {
                 repo.resume()
             }
@@ -88,13 +96,18 @@ class FRepoManager {
         // Do this synchronously to make sure we release our references to LevelDB
         // before returning, allowing LevelDB to close and release its exclusive
         // locks.
-        DatabaseQuery.sharedQueue.sync {
+        let sessionIdentifier = config.sessionIdentifier
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             FFLog("I-RDB040001", "Disposing all repos for Config with name \(config.sessionIdentifier)")
-            guard let repos = configs[config.sessionIdentifier] else { return }
+            let repos = configs.withLock { $0[sessionIdentifier] }
+            guard let repos else { return }
             for repo in repos.values {
                 repo.dispose()
             }
-            configs.removeValue(forKey: config.sessionIdentifier)
+            configs.withLock {
+                _ = $0.removeValue(forKey: sessionIdentifier)
+            }
         }
     }
 }

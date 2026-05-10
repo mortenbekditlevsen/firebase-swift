@@ -82,55 +82,56 @@ class FWriteTree {
    * reevaluate / raise events as a result).
    */
     func removeWriteId(_ writeId: Int) -> Bool {
-    guard let index = allWrites.firstIndex(where: { $0.writeId == writeId }) else {
-      assert(false,
-               "[FWriteTree removeWriteId:] called with nonexistent writeId.")
+        guard let index = allWrites.firstIndex(where: { $0.writeId == writeId }) else {
+            assert(false,
+                   "[FWriteTree removeWriteId:] called with nonexistent writeId.")
+            return false
+        }
+        let writeToRemove = allWrites[index]
+        allWrites.remove(at: index)
+        
+        var removedWriteWasVisible = writeToRemove.visible
+        var removedWriteOverlapsWithOtherWrites = false
+        var i = allWrites.count - 1
+        
+        while (removedWriteWasVisible && i >= 0) {
+            let currentWrite = allWrites[i]
+            if currentWrite.visible {
+                if i >= index && self.record(currentWrite,
+                                             containsPath:writeToRemove.path) {
+                    // The removed write was completely shadowed by a subsequent
+                    // write.
+                    removedWriteWasVisible = false
+                } else if writeToRemove.path.contains(currentWrite.path) {
+                    // Either we're covering some writes or they're covering part of
+                    // us (depending on which came first).
+                    removedWriteOverlapsWithOtherWrites = true
+                }
+            }
+            i -= 1
+        }
+        
+        if !removedWriteWasVisible {
+            return false
+        } else if removedWriteOverlapsWithOtherWrites {
+            // There's some shadowing going on. Just rebuild the visible writes from
+            // scratch.
+            resetTree()
+            return true
+        } else {
+            // There's no shadowing.  We can safely just remove the write(s) from
+            // visibleWrites.
+            if case let .merge(merge) = writeToRemove.record {
+                merge.enumerateWrites { path, _, _ in
+                    self.visibleWrites = self.visibleWrites.removeWriteAtPath(writeToRemove.path.child(path))
+                }
+            } else {
+                // Write is overwrite
+                visibleWrites = visibleWrites.removeWriteAtPath(writeToRemove.path)
+            }
+            return true
+        }
     }
-    let writeToRemove = allWrites[index]
-    allWrites.remove(at: index)
-
-    var removedWriteWasVisible = writeToRemove.visible
-    var removedWriteOverlapsWithOtherWrites = false
-    var i = allWrites.count - 1
-
-     while (removedWriteWasVisible && i >= 0) {
-       let currentWrite = allWrites[i]
-       if currentWrite.visible {
-         if i >= index && self.record(currentWrite,
-                                      containsPath:writeToRemove.path) {
-                 // The removed write was completely shadowed by a subsequent
-                 // write.
-                 removedWriteWasVisible = false
-         } else if writeToRemove.path.contains(currentWrite.path) {
-                 // Either we're covering some writes or they're covering part of
-                 // us (depending on which came first).
-                 removedWriteOverlapsWithOtherWrites = true
-             }
-         }
-         i -= 1
-     }
-
-     if !removedWriteWasVisible {
-         return false
-     } else if removedWriteOverlapsWithOtherWrites {
-         // There's some shadowing going on. Just rebuild the visible writes from
-         // scratch.
-         resetTree()
-         return true
-     } else {
-         // There's no shadowing.  We can safely just remove the write(s) from
-         // visibleWrites.
-         if case let .merge(merge) = writeToRemove.record {
-         merge.enumerateWrites { path, _, _ in
-           self.visibleWrites = self.visibleWrites.removeWriteAtPath(writeToRemove.path.child(path))
-         }
-       } else {
-         // Write is overwrite
-         visibleWrites = visibleWrites.removeWriteAtPath(writeToRemove.path)
-       }
-         return true
-     }
-  }
 
     func removeAllWrites() -> [FWriteRecord] {
     let writes = allWrites

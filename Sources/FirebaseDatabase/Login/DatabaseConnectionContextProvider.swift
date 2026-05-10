@@ -7,8 +7,9 @@
 
 import Foundation
 import FirebaseCore
+import Synchronization
 
-class DatabaseConnectionContext {
+struct DatabaseConnectionContext: Sendable {
     /// Auth token if available.
     var authToken: String?
 
@@ -21,18 +22,18 @@ class DatabaseConnectionContext {
     }
 }
 
-protocol DatabaseConnectionContextProviderProtocol {
+protocol DatabaseConnectionContextProviderProtocol: Sendable {
     func fetchContextForcingRefresh(_ forceRefresh: Bool) async throws -> DatabaseConnectionContext
 
     /// Adds a listener to the Auth token updates.
     /// @param listener A block that will be invoked each time the Auth token is
     /// updated.
-    func listenForAuthTokenChanges(_ listener:  @escaping (String) -> Void)
+    func listenForAuthTokenChanges(_ listener:  @escaping @DatabaseActor (String) -> Void)
 
     /// Adds a listener to the FAC token updates.
     /// @param listener A block that will be invoked each time the FAC token is
     /// updated.
-    func listenForAppCheckTokenChanges(_ listener: @escaping (String) -> Void)
+    func listenForAppCheckTokenChanges(_ listener: @escaping @DatabaseActor (String) -> Void)
 }
 
 extension Notification.Name {
@@ -41,39 +42,23 @@ extension Notification.Name {
 
 let FIRAuthStateDidChangeInternalNotificationTokenKey = "FIRAuthStateDidChangeInternalNotificationTokenKey"
 
-private class FAuthStateListenerWrapper {
-    private let listener: (String) -> Void
+private final class FAuthStateListenerWrapper: @unchecked Sendable {
+    private let listener: @DatabaseActor (String) -> Void
     private weak var auth: AuthInterop?
-    private let queue: DispatchQueue
 
-    init(listener: @escaping (String) -> Void, auth: AuthInterop, queue: DispatchQueue) {
+    init(listener: @escaping @DatabaseActor (String) -> Void, auth: AuthInterop) {
         self.listener = listener
         self.auth = auth
-        self.queue = queue
         NotificationCenter.default.addObserver(forName: .FIRAuthStateDidChangeInternalNotification, object: nil, queue: nil) { [weak self] notification in
             let userInfo = notification.userInfo
             guard (notification.object as? AnyObject) === self?.auth else { return }
             guard let token = userInfo?[FIRAuthStateDidChangeInternalNotificationTokenKey] as? String else { return }
-            queue.async {
+            Task { @DatabaseActor in
                 self?.listener(token)
             }
         }
-//        NotificationCenter
-//            .default
-//            .addObserver(self,
-//                         selector: #selector(authStateDidChangeNotification),
-//                         name: .FIRAuthStateDidChangeInternalNotification,
-//                         object: nil)
     }
 
-//    func authStateDidChangeNotification(_ notification: Notification) {
-//        let userInfo = notification.userInfo
-//        guard (notification.object as? AnyObject) === self.auth else { return }
-//        guard let token = userInfo?[FIRAuthStateDidChangeInternalNotificationTokenKey] as? String else { return }
-//        queue.async {
-//            self.listener(token)
-//        }
-//    }
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
@@ -88,7 +73,7 @@ protocol DatabaseAppCheckTokenResultInterop {
     var error: Error? { get }
 }
 
-protocol DatabaseAppCheckInterop {
+protocol DatabaseAppCheckInterop: Sendable {
     func getTokenForcingRefresh(_ forceRefresh: Bool) async throws -> String
     var notificationTokenKey: String { get }
     var tokenDidChangeNotificationName: Notification.Name { get }
@@ -98,44 +83,33 @@ protocol DatabaseAppCheckInterop {
 // TODO: Make FIRAppCheckTokenResultInterop conform to FIRDatabaseAppCheckTokenResultInterop
 // TODO: Make FIRAuthInterop conform to FIRDatabaseAuthInterop
 
-class DatabaseConnectionContextProvider: DatabaseConnectionContextProviderProtocol {
+struct SendableObserver: @unchecked Sendable {
+    let observer: Any
+}
 
-    var appCheck: DatabaseAppCheckInterop? // FIRAppCheckInterop
-    var auth: AuthInterop? // FIRAuthInterop
+final class DatabaseConnectionContextProvider: DatabaseConnectionContextProviderProtocol {
+
+    let appCheck: DatabaseAppCheckInterop? // FIRAppCheckInterop
+    let auth: AuthInterop? // FIRAuthInterop
 
     /// Strong references to the auth listeners as they are only weak in
     /// FIRFirebaseApp.
-    private var authListeners: [FAuthStateListenerWrapper] = []
+    private let authListeners: Mutex<[FAuthStateListenerWrapper]> = .init([])
 
     /// Observer objects returned by
     /// `-[NSNotificationCenter addObserverForName:object:queue:usingBlock:]`
     /// method. Required to cleanup the observers on dealloc.
-    var appCheckNotificationObservers: [Any] = []
-
-    /// An NSOperationQueue to call listeners on.
-    var listenerQueue: OperationQueue
-
-    private let dispatchQueue: DispatchQueue
+    let appCheckNotificationObservers: Mutex<[SendableObserver]> = .init([])
 
     private init(auth: AuthInterop?,
-                 appCheck: DatabaseAppCheckInterop?,
-                 dispatchQueue: DispatchQueue) {
+                 appCheck: DatabaseAppCheckInterop?) {
         self.appCheck = appCheck
         self.auth = auth
-        self.dispatchQueue = dispatchQueue
-        self.listenerQueue = OperationQueue()
-        self.listenerQueue.underlyingQueue = dispatchQueue
     }
 
-    var lock = NSLock()
-
     deinit {
-        // NOTE: Using an NSLock is a replacement for objc @synchronized
-        // Perhaps switch to a non-NS-prefixed alternative later
-        lock.lock()
-        defer { lock.unlock() }
-        for observer in self.appCheckNotificationObservers {
-            NotificationCenter.default.removeObserver(observer)
+        for wrapper in self.appCheckNotificationObservers.withLock({ $0 }) {
+            NotificationCenter.default.removeObserver(wrapper.observer)
         }
     }
 
@@ -158,16 +132,18 @@ class DatabaseConnectionContextProvider: DatabaseConnectionContextProviderProtoc
         return DatabaseConnectionContext(authToken: authToken, appCheckToken: appCheckToken)
     }
 
-    func listenForAuthTokenChanges(_ listener: @escaping (String) -> Void) {
+    func listenForAuthTokenChanges(_ listener: @escaping @DatabaseActor (String) -> Void) {
         guard let auth = auth else {
             return
         }
 
-        let wrapper = FAuthStateListenerWrapper(listener: listener, auth: auth, queue: dispatchQueue)
-        authListeners.append(wrapper)
+        let wrapper = FAuthStateListenerWrapper(listener: listener, auth: auth)
+        authListeners.withLock({
+            $0.append(wrapper)
+        })
     }
 
-    func listenForAppCheckTokenChanges(_ listener: @escaping (String) -> Void) {
+    func listenForAppCheckTokenChanges(_ listener: @escaping @DatabaseActor (String) -> Void) {
         guard let appCheck = appCheck else {
             return
         }
@@ -175,21 +151,21 @@ class DatabaseConnectionContextProvider: DatabaseConnectionContextProviderProtoc
         let observer = NotificationCenter.default
             .addObserver(forName: appCheck.tokenDidChangeNotificationName,
                          object: appCheck,
-                         queue: listenerQueue) { notification in
+                         queue: nil) { notification in
                 guard let appCheckToken = notification.userInfo?[appCheckTokenKey] as? String else {
                     return
                 }
-                listener(appCheckToken)
+                Task { @DatabaseActor in
+                    listener(appCheckToken)
+                }
             }
-
-        // NOTE: Using an NSLock is a replacement for objc @synchronized
-        // Perhaps switch to a non-NS-prefixed alternative later
-        lock.lock()
-        defer { lock.unlock() }
-        self.appCheckNotificationObservers.append(observer)
+        let sendableObserver = SendableObserver(observer: observer)
+        self.appCheckNotificationObservers.withLock {
+            $0.append(sendableObserver)
+        }
     }
 
-    class func contextProvider(auth: AuthInterop?, appCheck: DatabaseAppCheckInterop?, dispatchQueue: DispatchQueue) -> DatabaseConnectionContextProviderProtocol {
-        DatabaseConnectionContextProvider(auth: auth, appCheck: appCheck, dispatchQueue: dispatchQueue)
+    class func contextProvider(auth: AuthInterop?, appCheck: DatabaseAppCheckInterop?) -> DatabaseConnectionContextProviderProtocol {
+        DatabaseConnectionContextProvider(auth: auth, appCheck: appCheck)
     }
 }

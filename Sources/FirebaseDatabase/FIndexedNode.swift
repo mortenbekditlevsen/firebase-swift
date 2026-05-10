@@ -16,7 +16,7 @@ import Foundation
  * fallback index.
  */
 
-public struct FIndexedNode {
+public struct FIndexedNode: Sendable {
     struct IndexedNamedNode: Comparable, Equatable {
 
         static func < (lhs: IndexedNamedNode, rhs: IndexedNamedNode) -> Bool {

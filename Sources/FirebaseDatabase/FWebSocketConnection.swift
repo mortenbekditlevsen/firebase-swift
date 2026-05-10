@@ -8,6 +8,7 @@
 import Foundation
 import NIOHTTP1
 
+@DatabaseActor
 protocol FWebSocketDelegate: AnyObject {
     func onMessage(_ fwebSocket: AnyObject, withMessage message: [String: Any])
     func onDisconnect(_ fwebSocket: AnyObject, wasEverConnected: Bool)
@@ -32,13 +33,13 @@ extension String {
     }
 }
 
-class FWebSocketConnection: @unchecked Sendable {
+@DatabaseActor
+class FWebSocketConnection {
     var connectionId: Int
     var totalFrames: Int
     var buffering: Bool {
         frame != nil
     }
-    var dispatchQueue: DispatchQueue
     var frame: String?
     var everConnected: Bool
     var isClosed: Bool
@@ -55,8 +56,9 @@ class FWebSocketConnection: @unchecked Sendable {
         } catch {
             // print("ERROR connecting: \(error)")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + kWebsocketConnectTimeout) { [weak self] in
-            self?.closeIfNeverConnected()
+        Task { @DatabaseActor in
+            try? await Task.sleep(for: .seconds(kWebsocketConnectTimeout))
+            closeIfNeverConnected()
         }
     }
 
@@ -111,15 +113,13 @@ class FWebSocketConnection: @unchecked Sendable {
     }
 
     init(with connectionURL: String,
-                      andQueue queue: DispatchQueue,
-                      googleAppID: String,
-                      appCheckToken: String?,
-                      userAgent: String) {
+         googleAppID: String,
+         appCheckToken: String?,
+         userAgent: String) {
         self.everConnected = false
         self.isClosed = false
         self.connectionId =  FUtilities.LUIDGenerator()
         self.totalFrames = 0
-        self.dispatchQueue = queue
         self.frame = nil
 
         FFLog("I-RDB083001", "(wsc: \(connectionId)) Connecting to:\(connectionURL) as \(userAgent))")
@@ -135,7 +135,7 @@ class FWebSocketConnection: @unchecked Sendable {
                                       headers: headers,
                                       onOpen: { [weak self] in
 
-            DispatchQueue.main.async { [weak self] in
+            Task { @DatabaseActor in
                 guard let self = self else { return }
                 FFLog("I-RDB083008", "(wsc:\(self.connectionId)) webSocketDidOpen")
                 self.everConnected = true
@@ -156,11 +156,17 @@ class FWebSocketConnection: @unchecked Sendable {
                 FFLog("I-RDB083009", "(wsc:\(self.connectionId) nop timer kicked off")
             }
         }, onMessage: { [weak self] message in
-            guard let self = self else { return }
-            self.handleIncomingFrame(message)
+            guard let self else { return }
+            // XXX TODO?
+            Task { @DatabaseActor in
+                self.handleIncomingFrame(message)
+            }
         }, onClose: { [weak self] in
-            guard let self = self else { return }
-            self.onClose()
+            guard let self  else { return }
+            // XXX TODO?
+            Task { @DatabaseActor in
+                self.onClose()
+            }
         })
     }
 
@@ -257,6 +263,7 @@ enum FDisconnectReason {
     }
 }
 
+@DatabaseActor
 protocol FConnectionDelegate: AnyObject {
     func onReady(_ connection: FConnection,
                  atTime timestamp: Double,

@@ -8,7 +8,7 @@
 import Foundation
 
 #if os(iOS) || os(tvOS) || os(macOS)
-import SystemConfiguration
+@preconcurrency import SystemConfiguration
 #endif
 #if os(iOS) || os(tvOS)
 import UIKit
@@ -29,7 +29,12 @@ class FOutstandingQuery {
 }
 
 fileprivate class FOutstandingPut {
-    fileprivate init(action: String, request: [String : Any], onComplete: ((String, String?) -> Void)?, sent: Bool) {
+    fileprivate init(
+        action: String,
+        request: [String : Any],
+        onComplete: CheckedContinuation<(String, String?), Never>,
+        sent: Bool
+    ) {
         self.action = action
         self.request = request
         self.onComplete = onComplete
@@ -38,19 +43,26 @@ fileprivate class FOutstandingPut {
 
     let action: String
     let request: [String : Any]
-    let onComplete: ((String, String?) -> Void)?
+    let onComplete: CheckedContinuation<(String, String?), Never>?
     var sent: Bool
 }
 
+struct FOutstandingGetResultData: @unchecked Sendable {
+    let status: String
+    let data: AnyHashable?
+    let errorReason: String?
+}
+
 fileprivate class FOutstandingGet {
-    fileprivate init(request: [String : Any], onComplete: @escaping (String, AnyHashable?, String?) -> Void, sent: Bool) {
+    // AnyHashble is not Sendable, but we use it to store strings, ints, doubles, dicts and arrays
+    fileprivate init(request: [String : Any], onComplete: CheckedContinuation<FOutstandingGetResultData, Never>, sent: Bool) {
         self.request = request
         self.onComplete = onComplete
         self.sent = sent
     }
 
     let request: [String : Any]
-    let onComplete: (String, AnyHashable?, String?) -> Void
+    let onComplete: CheckedContinuation<FOutstandingGetResultData, Never>
     var sent: Bool
 }
 
@@ -62,6 +74,7 @@ enum ConnectionState {
     case connected
 }
 
+@DatabaseActor
 protocol FPersistentConnectionDelegate: AnyObject {
     func onDataUpdate(_ fpconnection: FPersistentConnection,
                       forPath pathString: String,
@@ -85,11 +98,12 @@ typealias OnDisconnectTuple = (pathString: String,
                                data: Any,
                                onComplete: (String, String?) -> Void)
 
-typealias PutToAckTuple = (block: ((String, String) -> Void),
+typealias PutToAckTuple = (continuation: CheckedContinuation<(String, String?), Never>,
                            status: String,
                            errorReason: String)
 
-class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
+@DatabaseActor
+class FPersistentConnection: FConnectionDelegate {
     var connectionState: ConnectionState
     var firstConnection: Bool
     var reconnectDelay: TimeInterval
@@ -101,19 +115,19 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
 #endif
 
     var realtime: FConnection?
-    private var listens: [FQuerySpec: FOutstandingQuery]
-    private var outstandingPuts: [Int: FOutstandingPut]
-    private var outstandingGets: [Int: FOutstandingGet]
-    var onDisconnectQueue: [OnDisconnectTuple]
+    private var listens: [FQuerySpec: FOutstandingQuery] = [:]
+    private var outstandingPuts: [Int: FOutstandingPut] = [:]
+    private var outstandingGets: [Int: FOutstandingGet] = [:]
+    var onDisconnectQueue: [OnDisconnectTuple] = []
     let repoInfo: FRepoInfo
     let putCounter: FAtomicNumber
     let getCounter: FAtomicNumber
     let requestNumber: FAtomicNumber
-    var requestCBHash: [Int: ([String: Any]?) -> Void]
+    var requestCBHash: [Int: ([String: Any]?) -> Void] = [:]
     let config: DatabaseConfig
     var unackedListentsCount: Int
     var putsToAck: [PutToAckTuple]
-    let dispatchQueue: DispatchQueue
+//    let dispatchQueue: DispatchQueue
     var lastSessionID: String?
     var interruptReasons: Set<String>
     let retryHelper: FIRRetryHelper
@@ -128,7 +142,8 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
     weak var delegate: FPersistentConnectionDelegate?
     var pauseWrites: Bool
 
-    init(repoInfo: FRepoInfo, dispatchQueue: DispatchQueue, config: DatabaseConfig) {
+    nonisolated
+    init(repoInfo: FRepoInfo, config: DatabaseConfig) {
         self.lastConnectionEstablishedTime = 0
         self.lastConnectionAttemptTime = 0
         self.forceTokenRefreshes = false
@@ -136,31 +151,27 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
         self.pauseWrites = false
         self.config = config
         self.repoInfo = repoInfo
-        self.dispatchQueue = dispatchQueue
         self.contextProvider = config.contextProvider
         self.interruptReasons = []
-        self.listens = [:]
-        self.outstandingGets = [:]
-        self.outstandingPuts = [:]
-        self.onDisconnectQueue = []
         self.putCounter = FAtomicNumber()
         self.getCounter = FAtomicNumber()
         self.requestNumber = FAtomicNumber()
-        self.requestCBHash = [:]
         self.unackedListentsCount = 0
         self.putsToAck = []
         self.connectionState = .disconnected
         self.firstConnection = true
         self.reconnectDelay = kPersistentConnReconnectMinDelay
-        self.retryHelper = FIRRetryHelper(dispatchQueue: dispatchQueue,
-                                          minRetryDelayAfterFailure: kPersistentConnReconnectMinDelay,
+        self.retryHelper = FIRRetryHelper(minRetryDelayAfterFailure: kPersistentConnReconnectMinDelay,
                                           maxRetryDelay: kPersistentConnReconnectMaxDelay,
                                           retryExponent: kPersistentConnReconnectMultiplier,
                                           jitterFactor: 0.7)
 
         setupNotifications()
         // Make sure we don't actually connect until open is called
-        interruptForReason(kFInterruptReasonWaitingForOpen)
+        Task { @DatabaseActor in
+            // XXXX TODO: likely no good
+            interruptForReason(kFInterruptReasonWaitingForOpen)
+        }
         // nb: The reason establishConnection isn't called here like the JS version
         // is because callers need to set the delegate first. The ctor can be
         // modified to accept the delegate but that deviates from normal ios
@@ -240,24 +251,20 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
 //    }
 
     func putData(_ data: Any,
-                              forPath pathString: String,
-                              withHash hash: String?,
-                              withCallback onComplete: @escaping (String, String?) -> Void) {
-        putInternal(data,
-                    forAction: kFWPRequestActionPut,
-                    forPath: pathString,
-                    withHash: hash,
-                    withCallback: onComplete)
+                 forPath pathString: String,
+                 withHash hash: String?) async -> (String, String?) {
+        await putInternal(data,
+                          forAction: kFWPRequestActionPut,
+                          forPath: pathString,
+                          withHash: hash)
     }
 
     func mergeData(_ data: Any,
-                              forPath pathString: String,
-                              withCallback onComplete: @escaping (String, String?) -> Void) {
-        putInternal(data,
-                    forAction: kFWPRequestActionMerge,
-                    forPath: pathString,
-                    withHash: nil,
-                    withCallback: onComplete)
+                   forPath pathString: String) async -> (String, String?) {
+        await putInternal(data,
+                          forAction: kFWPRequestActionMerge,
+                          forPath: pathString,
+                          withHash: nil)
     }
 
     func onDisconnectPutData(_ data: Any,
@@ -376,9 +383,8 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
         }
         restoreAuth()
         lastSessionID = sessionID
-        dispatchQueue.async {
-            self.delegate?.onConnect(self)
-        }
+
+        self.delegate?.onConnect(self)
     }
 
     func onDataMessage(_ connection: FConnection, withMessage message: [String: Any]) {
@@ -435,7 +441,7 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
     func interruptForReason(_ reason: String) {
         FFLog("I-RDB034006", "Connection interrupted for: \(reason)")
         interruptReasons.insert(reason)
-        if let realtime = realtime {
+        if let realtime {
             // Will call onDisconnect and set the connection state to Disconnected
             realtime.close()
             self.realtime = nil
@@ -515,7 +521,6 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
         authToken = context.authToken
         connectionState = .connecting
         let connection = FConnection(with: repoInfo,
-                                     andDispatchQueue: dispatchQueue,
                                      googleAppID: config.googleAppID,
                                      lastSessionID: lastSessionID,
                                      appCheckToken: context.appCheckToken,
@@ -526,15 +531,14 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
     }
 
     private func enteringForeground() {
-        dispatchQueue.async {
-            // Reset reconnect delay
-            self.retryHelper.signalSuccess()
-            if self.connectionState == .disconnected {
-                self.tryScheduleReconnect()
-            }
+        // Reset reconnect delay
+        self.retryHelper.signalSuccess()
+        if self.connectionState == .disconnected {
+            self.tryScheduleReconnect()
         }
     }
 
+    nonisolated
     private func setupNotifications() {
 #if os(watchOS)
         let center = NotificationCenter.default
@@ -686,14 +690,14 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
             let currentPut = self.outstandingPuts[index]
             if currentPut === put {
                 self.outstandingPuts.removeValue(forKey: index)
-                if let onComplete = onComplete,
+                if let onComplete,
                    let status = data?[kFWPResponseForActionStatus] as? String,
                    let errorReason = data?[kFWPResponseForActionData] as? String {
 
                     if self.unackedListentsCount == 0 {
-                        onComplete(status, errorReason)
+                        onComplete.resume(returning: (status, errorReason))
                     } else {
-                        let putToAck: PutToAckTuple = (block: onComplete, status: status, errorReason: errorReason)
+                        let putToAck: PutToAckTuple = (continuation: onComplete, status: status, errorReason: errorReason)
                         self.putsToAck.append(putToAck)
                     }
                 } else {
@@ -725,12 +729,12 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
             if (resultData as? AnyObject) === NSNull() {
                 resultData = nil
             }
-            if let status = status {
+            if let status {
                 if status == kFWPResponseForActionStatusOk {
-                    get.onComplete(status, resultData as? AnyHashable, nil)
+                    get.onComplete.resume(returning: .init(status: status, data: resultData as? AnyHashable, errorReason: nil))
                     return
                 }
-                get.onComplete(status, Optional<String>.none /* <- Dummy nil type*/, resultData as? String)
+                get.onComplete.resume(returning: .init(status: status, data: nil, errorReason: resultData as? String))
             }
         }
     }
@@ -749,59 +753,66 @@ class FPersistentConnection: FConnectionDelegate, @unchecked Sendable {
                    sensitive: false, callback: { _ in })
     }
 
-    private func putInternal(_ data: Any, forAction action: String, forPath pathString: String, withHash hash: String?, withCallback onComplete: @escaping (String, String?) -> Void) {
-        var request: [String: Any] = [kFWPRequestPath: pathString,
-                                      kFWPRequestData: data]
-        if let hash = hash {
-            request[kFWPRequestHash] = hash
-        }
-        let put = FOutstandingPut(action: action,
-                                  request: request,
-                                  onComplete: onComplete,
-                                  sent: false)
-        let index = putCounter.getAndIncrement()
-        outstandingPuts[index] = put
-        if canSendWrites {
-            FFLog("I-RDB034024", "Was connected, and added as index: \(index)")
-            sendPut(index)
-        } else {
-            FFLog("I-RDB034025",
-                  "Wasn't connected or writes paused, so added to outstanding puts only. Path: \(pathString)")
-
+    private func putInternal(_ data: Any, forAction action: String, forPath pathString: String, withHash hash: String?) async -> (String, String?) {
+        await withCheckedContinuation { continuation in
+            var request: [String: Any] = [kFWPRequestPath: pathString,
+                                          kFWPRequestData: data]
+            if let hash = hash {
+                request[kFWPRequestHash] = hash
+            }
+            let put = FOutstandingPut(action: action,
+                                      request: request,
+                                      onComplete: continuation,
+                                      sent: false)
+            let index = putCounter.getAndIncrement()
+            outstandingPuts[index] = put
+            if canSendWrites {
+                FFLog("I-RDB034024", "Was connected, and added as index: \(index)")
+                sendPut(index)
+            } else {
+                FFLog("I-RDB034025",
+                      "Wasn't connected or writes paused, so added to outstanding puts only. Path: \(pathString)")
+                
+            }
         }
     }
 
     func getDataAtPath(_ pathString: String,
-                               withParams queryWireProtocolParams: [String: Any],
-                               withCallback onComplete: @escaping (String, AnyHashable?, String?) -> Void) {
-        let request: [String: Any] = [
-            kFWPRequestPath: pathString,
-            kFWPRequestQueries: queryWireProtocolParams
-        ]
-        let get = FOutstandingGet(request: request,
-                                  onComplete: onComplete,
-                                  sent: false)
-        let index = getCounter.getAndIncrement()
-        outstandingGets[index] = get
+                       withParams queryWireProtocolParams: [String: Any]) async -> FOutstandingGetResultData {
+        await withCheckedContinuation { continuation in
+            let request: [String: Any] = [
+                kFWPRequestPath: pathString,
+                kFWPRequestQueries: queryWireProtocolParams
+            ]
+            let get = FOutstandingGet(request: request,
+                                      onComplete: continuation,
+                                      sent: false)
+            let index = getCounter.getAndIncrement()
+            outstandingGets[index] = get
 
-        if !connected {
-            dispatchQueue.asyncAfter(deadline: .now() + .seconds(kPersistentConnectionGetConnectTimeout)) {
-                let currentGet = self.outstandingGets[index]
-                if currentGet?.sent == true || currentGet == nil {
-                    return
+            if !connected {
+                // Was: dispatchQueue.asyncAfter
+                Task { @DatabaseActor in
+                    try? await Task.sleep(for: .seconds(kPersistentConnectionGetConnectTimeout))
+                    let currentGet = self.outstandingGets[index]
+                    if currentGet?.sent == true || currentGet == nil {
+                        return
+                    }
+                    FFLog("I-RDB034045",
+                          "get \(index) timed out waiting for a connection")
+                    currentGet?.sent = true
+                    currentGet?.onComplete.resume(returning: .init(status: kFWPResponseForActionStatusFailed, data: nil , errorReason: kPersistentConnectionOffline))
+                    self.outstandingGets.removeValue(forKey: index)
+
                 }
-                FFLog("I-RDB034045",
-                      "get \(index) timed out waiting for a connection")
-                currentGet?.sent = true
-                currentGet?.onComplete(kFWPResponseForActionStatusFailed, Optional<String>.none /* <- dummy nil value */, kPersistentConnectionOffline)
-                self.outstandingGets.removeValue(forKey: index)
+                return
             }
-            return
+            if canSendReads {
+                FFLog("I-RDB034024", "Sending get: \(index)")
+                sendGet(index)
+            }
         }
-        if canSendReads {
-            FFLog("I-RDB034024", "Sending get: \(index)")
-            sendGet(index)
-        }
+
     }
 
     private func sendListen(_ listenSpec: FOutstandingQuery) {
@@ -873,14 +884,14 @@ better performance
     }
     
     private func sendAction(_ action: String, body: [String: Any], sensitive: Bool, callback: (([String: Any]?) -> Void)?) {
-        guard let realtime = realtime else { return }
+        guard let realtime else { return }
         // Hold onto the onMessage callback for this request before firing it off
         let rn = getNextRequestNumber()
         let msg: [String: Any] = [kFWPRequestNumber: rn, kFWPRequestAction: action, kFWPRequestPayloadBody: body]
 
         realtime.sendRequest(msg, sensitive: sensitive)
 
-        if let callback = callback {
+        if let callback {
             // Debug message without a callback; bump the rn, but don't hold onto
             // the cb
             requestCBHash[rn] = callback
@@ -899,8 +910,8 @@ better performance
             // `onCompleteBlock:` may invoke `rerunTransactionsForPath:` and
             // enqueue new writes. We defer calling it until we have finished
             // enumerating all existing writes.
-            outstandingPut.onComplete?(kFTransactionDisconnect,
-                                      "Client was disconnected while running a transaction")
+            outstandingPut.onComplete?.resume(returning: (kFTransactionDisconnect,
+                                      "Client was disconnected while running a transaction"))
             outstandingPuts.removeValue(forKey: index)
         }
     }
@@ -1051,7 +1062,7 @@ better performance
         let keys = outstandingPuts.keys.sorted()
         for key in keys {
             guard let put = outstandingPuts[key] else { continue }
-            put.onComplete?(kFErrorWriteCanceled, nil)
+            put.onComplete?.resume(returning: (kFErrorWriteCanceled, nil))
         }
         for onDisconnect in onDisconnectQueue {
             onDisconnect.onComplete(kFErrorWriteCanceled, nil)
@@ -1062,7 +1073,7 @@ better performance
 
     private func ackPuts() {
         for put in putsToAck {
-            put.block(put.status, put.errorReason)
+            put.continuation.resume(returning: (put.status, put.errorReason))
         }
         putsToAck.removeAll()
     }

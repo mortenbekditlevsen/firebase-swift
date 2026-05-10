@@ -7,12 +7,12 @@
 
 import Foundation
 
-class FValueEventRegistration: FEventRegistration {
+final class FValueEventRegistration: FEventRegistration, Sendable {
     let repo: FRepo
     let handle: DatabaseHandle
-    let callback: ((DataSnapshot) -> Void)?
-    let cancelCallback: ((Error) -> Void)?
-    init(repo: FRepo, handle: DatabaseHandle, callback: ((DataSnapshot) -> Void)?, cancelCallback: ((Error) -> Void)?) {
+    let callback: (@Sendable (DataSnapshot) -> Void)?
+    let cancelCallback: (@Sendable (Error) -> Void)?
+    init(repo: FRepo, handle: DatabaseHandle, callback: (@Sendable (DataSnapshot) -> Void)?, cancelCallback: (@Sendable (Error) -> Void)?) {
         self.repo = repo
         self.handle = handle
         self.callback = callback

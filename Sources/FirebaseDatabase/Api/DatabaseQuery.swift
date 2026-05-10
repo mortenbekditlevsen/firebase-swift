@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Synchronization
 
 /**
  * A FIRDatabaseHandle is used to identify listeners of Firebase Database
@@ -22,7 +23,9 @@ public typealias DatabaseHandle = Int
  * queryStartingAtValue:, etc.) on a FIRDatabaseReference. The query methods can
  * be chained to further specify the data you are interested in observing
  */
-public class DatabaseQuery {
+// XXX TODO: Marking this as final does make the compiler aware that this is Sendable
+// So we only need to ensure that the DatabaseReference is also Sendable
+public class DatabaseQuery: @unchecked Sendable {
 
     // MARK: - Attach observers to read data
 
@@ -41,7 +44,7 @@ public class DatabaseQuery {
      * removeObserverWithHandle:
      */
     public func observeEventType(_ eventType: DataEventType,
-                                       withBlock block: @escaping (DataSnapshot) -> Void) -> DatabaseHandle {
+                                       withBlock block: @escaping @Sendable (DataSnapshot) -> Void) -> DatabaseHandle {
         FValidation.validateFrom("observeEventType:withBlock:", knownEventType: eventType)
         return observeEventType(eventType, withBlock: block, withCancelBlock: nil)
     }
@@ -62,7 +65,7 @@ public class DatabaseQuery {
      * removeObserverWithHandle:
      */
     public func observeEventType(_ eventType: DataEventType,
-                                       andPreviousSiblingKeyWithBlock block: @escaping (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void) -> DatabaseHandle {
+                                       andPreviousSiblingKeyWithBlock block: @escaping @Sendable(_ snapshot: DataSnapshot, _ prevKey: String?) -> Void) -> DatabaseHandle {
         FValidation.validateFrom("observeEventType:andPreviousSiblingKeyWithBlock:", knownEventType: eventType)
         return observeEventType(eventType, andPreviousSiblingKeyWithBlock: block, withCancelBlock: nil)
     }
@@ -87,8 +90,8 @@ public class DatabaseQuery {
      * removeObserverWithHandle:
      */
     public func observeEventType(_ eventType: DataEventType,
-                                       withBlock block: @escaping (_ snapshot: DataSnapshot) -> Void,
-                                       withCancelBlock cancelBlock: ((Error) -> Void)?) -> DatabaseHandle {
+                                       withBlock block: @escaping @Sendable (_ snapshot: DataSnapshot) -> Void,
+                                       withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) -> DatabaseHandle {
         FValidation.validateFrom("observeEventType:withBlock:withCancelBlock:",
                                       knownEventType: eventType)
         if eventType == .value {
@@ -131,7 +134,7 @@ public class DatabaseQuery {
      * removeObserverWithHandle:
      */
     public func observeEventType(_ eventType: DataEventType,
-                                       andPreviousSiblingKeyWithBlock block: @escaping (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void, withCancelBlock cancelBlock: ((Error) -> Void)?) -> DatabaseHandle {
+                                       andPreviousSiblingKeyWithBlock block: @escaping @Sendable (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void, withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) -> DatabaseHandle {
         FValidation.validateFrom("observeEventType:andPreviousSiblingKeyWithBlock:withCancelBlock:", knownEventType: eventType)
         if eventType == .value {
             // TODO: This gets hit by observeSingleEventOfType.  Need to fix.
@@ -153,24 +156,26 @@ public class DatabaseQuery {
     // listeners, like in the Java client, we can consider exporting this. If we do,
     // add argument validation. Otherwise, arguments are validated in the
     // public-facing portions of the API. Also, move the FIRDatabaseHandle logic.
-    private func observeValueEventWithHandle(_ handle: DatabaseHandle, withBlock block: @escaping (DataSnapshot) -> Void, cancelCallback: ((Error) -> Void)?) {
+    private func observeValueEventWithHandle(_ handle: DatabaseHandle, withBlock block: @escaping @Sendable (DataSnapshot) -> Void, cancelCallback: (@Sendable (Error) -> Void)?) {
         // Note that we don't need to copy the callbacks here, FEventRegistration
         // callback properties set to copy
         let registration = FValueEventRegistration(repo: repo, handle: handle, callback: block, cancelCallback: cancelCallback)
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.addEventRegistration(registration, forQuery: self.querySpec)
         }
     }
 
     // Note: as with the above method, we may wish to expose this at some point.
-    private func observeChildEventWithHandle(_ handle: DatabaseHandle, withCallbacks callbacks: [DataEventType : (DataSnapshot, String?) -> Void], cancelCallback: ((Error) -> Void)?) {
+    private func observeChildEventWithHandle(_ handle: DatabaseHandle, withCallbacks callbacks: [DataEventType : @Sendable (DataSnapshot, String?) -> Void], cancelCallback: (@Sendable (Error) -> Void)?) {
         // Note that we don't need to copy the callbacks here, FEventRegistration
         // callback properties set to copy
         let registration = FChildEventRegistration(repo: repo,
                                                    handle: handle,
                                                    callbacks: callbacks,
                                                    cancelCallback: cancelCallback)
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.addEventRegistration(registration, forQuery: self.querySpec)
         }
     }
@@ -183,10 +188,9 @@ public class DatabaseQuery {
      * @param block The block that should be called with the most up-to-date value
      * of this query, or an error if no such value could be retrieved.
      */
-    public func getData(completion block: @escaping (_ error: Error?, _ snapshot: DataSnapshot?) -> Void) {
-        DatabaseQuery.sharedQueue.async {
-            self.repo.getData(self, withCompletionBlock: block)
-        }
+    public func getData() async throws -> DataSnapshot {
+        let repo = self.repo
+        return try await repo.getData(self)
     }
 
     /**
@@ -198,7 +202,7 @@ public class DatabaseQuery {
      * FIRDataSnapshot.
      */
     public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               withBlock block: @escaping (_ snapshot: DataSnapshot) -> Void) {
+                                               withBlock block: @escaping @Sendable (_ snapshot: DataSnapshot) -> Void) {
         observeSingleEventOfType(eventType,
                                  withBlock:block,
                                  withCancelBlock:nil)
@@ -217,7 +221,7 @@ public class DatabaseQuery {
      * FIRDataSnapshot and the previous child's key.
      */
     public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               andPreviousSiblingKeyWithBlock block: @escaping (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void) {
+                                               andPreviousSiblingKeyWithBlock block: @escaping @Sendable (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void) {
         observeSingleEventOfType(eventType,
                                  andPreviousSiblingKeyWithBlock: block,
                                  withCancelBlock: nil)
@@ -237,8 +241,8 @@ public class DatabaseQuery {
      * to access this data
      */
     public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               withBlock block: @escaping (_ snapshot: DataSnapshot) -> Void,
-                                               withCancelBlock cancelBlock: ((Error) -> Void)?) {
+                                               withBlock block: @escaping @Sendable (_ snapshot: DataSnapshot) -> Void,
+                                               withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) {
         // XXX: user reported memory leak in method
 
         // "When you copy a block, any references to other blocks from within that
@@ -272,8 +276,8 @@ public class DatabaseQuery {
      * to access this data
      */
     public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               andPreviousSiblingKeyWithBlock block: @escaping (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void,
-                                               withCancelBlock cancelBlock: ((Error) -> Void)?) {
+                                               andPreviousSiblingKeyWithBlock block: @escaping @Sendable (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void,
+                                               withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) {
         // XXX: user reported memory leak in method
 
         // "When you copy a block, any references to other blocks from within that
@@ -285,20 +289,21 @@ public class DatabaseQuery {
         // off the stack to the heap.
         // __block fbt_void_datasnapshot userCallback = [callback copy];
 
-        var handle: DatabaseHandle = 0
-        var firstCall = true
-        let wrappedCallback: (DataSnapshot, String?) -> Void = { snapshot, prevName in
-            guard firstCall else { return }
-            firstCall = false
-            self.removeObserverWithHandle(handle)
+        let handle: Mutex<DatabaseHandle> = .init(0)
+        let firstCall: Mutex<Bool> = .init(true)
+        let wrappedCallback: @Sendable (DataSnapshot, String?) -> Void = { snapshot, prevName in
+            guard firstCall.withLock({ $0 }) else { return }
+            firstCall.withLock { $0 = false }
+            self.removeObserverWithHandle(handle.withLock { $0 })
             block(snapshot, prevName)
         }
-        handle = observeEventType(eventType,
+        let _handle = observeEventType(eventType,
                                   andPreviousSiblingKeyWithBlock: wrappedCallback,
                                   withCancelBlock: { error in
-            self.removeObserverWithHandle(handle)
+            self.removeObserverWithHandle(handle.withLock { $0 })
             cancelBlock?(error)
         })
+        handle.withLock { $0 = _handle }
     }
 
     // MARK: - Detaching observers
@@ -314,7 +319,8 @@ public class DatabaseQuery {
     }
 
     private func removeObserverWithMatcher(_ matcher: FEventRegistrationMatcher) {
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.removeEventRegistration(matcher, forQuery: self.querySpec)
         }
     }
@@ -341,7 +347,8 @@ public class DatabaseQuery {
         if path.getFront() == kDotInfoPrefix {
             fatalError("Can't keep query on .info tree synced (this already is the case).")
         }
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.keepQuery(self.querySpec, synced: keepSynced)
         }
     }
@@ -764,11 +771,6 @@ public class DatabaseQuery {
     }
 
     // MARK: Private
-
-    // Needs to be marked public due to tests...
-    // We use this shared queue across all of the FQueries so things happen FIFO
-    // (as opposed to dispatch_get_global_queue(0, 0) which is concurrent)
-    public static let sharedQueue: DispatchQueue = .init(label: "FirebaseWorker")
 
     convenience init(repo: FRepo, path: FPath) {
         self.init(repo: repo, path: path, params: nil, orderByCalled: false, priorityMethodCalled: false)
