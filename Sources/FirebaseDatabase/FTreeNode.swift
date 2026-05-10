@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct FTreeNode<T> {
+struct FTreeNode<T: Sendable>: Sendable {
   var children: [String: FTreeNode] = [:]
   var childCount: Int = 0
   var value: T? = nil

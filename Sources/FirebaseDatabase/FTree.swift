@@ -7,14 +7,17 @@
 
 import Foundation
 
-internal class FTree<T> {
+@DatabaseActor
+internal final class FTree<T: Sendable> {
     internal var parent: FTree<T>?
     internal var name: String
     private var node: FTreeNode<T>
+    nonisolated
     internal init() {
         self.name = ""
         self.node = FTreeNode()
     }
+    nonisolated
     init(name: String?, parent: FTree<T>?, node: FTreeNode<T>?) {
         self.name = name ?? ""
         self.parent = parent
@@ -94,6 +97,13 @@ internal class FTree<T> {
       action(FTree(name: key, parent: self, node: node))
     }
   }
+    
+    internal func forEachChild(_ action: (FTree<T>) async -> Void) async {
+      for (key, node) in node.children {
+        await action(FTree(name: key, parent: self, node: node))
+      }
+    }
+
 
   internal func forEachDescendant(_ action: (FTree) -> Void) {
     forEachDescendant(action, includeSelf: false, childrenFirst: false)

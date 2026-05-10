@@ -7,6 +7,7 @@
 
 import Foundation
 
+// XXX: Appears to be legacy - and not in use while we have commented out migration in FLevelDBStorageEngine
 class FPendingPut: NSCoding {
     public let path: FPath
     public let priority: Any

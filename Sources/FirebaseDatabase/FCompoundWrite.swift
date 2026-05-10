@@ -206,6 +206,17 @@ struct FCompoundWrite: Hashable, Sendable {
             }
         }
     }
+    
+    func enumerateWrites(_ block: @escaping @Sendable (FPath, FNode, inout Bool) async -> Void) async {
+        var stop = false
+        // TODO: add stop to tree iterator...
+        await writeTree.forEach { path, value in
+            if !stop {
+                await block(path, value, &stop)
+            }
+        }
+    }
+
 
     func valForExport(_ exportFormat: Bool) -> [String: Any] {
         var dictionary: [String: Any] = [:]

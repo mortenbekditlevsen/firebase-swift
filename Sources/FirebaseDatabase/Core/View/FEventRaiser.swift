@@ -7,8 +7,10 @@
 
 import Foundation
 
-class FEventRaiser {
+@DatabaseActor
+final class FEventRaiser: Sendable {
     private let queue: DispatchQueue
+    nonisolated
     init(queue: DispatchQueue) {
         self.queue = queue
     }
@@ -19,13 +21,13 @@ class FEventRaiser {
         }
     }
 
-    func raiseCallback(_ callback: @escaping () -> Void) {
+    func raiseCallback(_ callback: @escaping @Sendable () -> Void) {
         queue.async {
             callback()
         }
     }
 
-    func raiseCallbacks(_ callbackList: [() -> Void]) {
+    func raiseCallbacks(_ callbackList: [@Sendable () -> Void]) {
         for callback in callbackList {
             queue.async {
                 callback()

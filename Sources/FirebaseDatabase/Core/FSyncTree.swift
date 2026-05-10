@@ -16,11 +16,11 @@ protocol FSyncTreeHash {
 // Size after which we start including the compound hash
 let kFSizeThresholdForCompoundHash = 1024
 
-class FListenContainer: FSyncTreeHash {
+struct FListenContainer: FSyncTreeHash {
     var view: FView
-    var onComplete: (String) -> [FEvent]
+    var onComplete: @Sendable (String) -> [FEvent]
 
-    init(view: FView, onComplete: @escaping (String) -> [FEvent]) {
+    init(view: FView, onComplete: @escaping @Sendable (String) -> [FEvent]) {
         self.view = view
         self.onComplete = onComplete
     }
@@ -67,7 +67,8 @@ class FListenContainer: FSyncTreeHash {
  * raise, the actual events are returned to the caller rather than raised
  * synchronously.
  */
-class FSyncTree {
+// XXX TODO UNCHECKED SENDABLE
+class FSyncTree: @unchecked Sendable {
     /**
      * Tree of SyncPoints. There's a SyncPoint at any location that has 1 or more
      * views.

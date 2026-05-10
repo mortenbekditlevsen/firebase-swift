@@ -7,16 +7,32 @@
 
 import Foundation
 @_exported import FirebaseCore
+import Synchronization
+
+/// A small wrapper so a `weak` reference can be stored inside a `Mutex`.
+private struct WeakAppRef: @unchecked Sendable {
+    weak var value: FirebaseApp?
+    init(_ value: FirebaseApp?) { self.value = value }
+}
+
 /**
  * The entry point for accessing a Firebase Database.  You can get an instance
  * by calling [FIRDatabase database]. To access a location in the database and
  * read or write data, use [FIRDatabase reference].
  */
-public class Database {
-    private var repo: FRepo?
-    private var repoInfo: FRepoInfo
-    public let config: DatabaseConfig
-    
+// XXX TODO: Unchecked Sendable
+public final class Database:  Sendable {
+    private var repo: FRepo? { _repo.withLock { $0 }}
+    private let _repo: Mutex<FRepo?> = .init(nil)
+    private var repoInfo: FRepoInfo { _repoInfo.withLock { $0 } }
+    private let _repoInfo: Mutex<FRepoInfo>
+    public var config: DatabaseConfig {
+        get { _config.withLock { $0 } }
+        set { _config.withLock { $0 = newValue } }
+    }
+
+    private let _config: Mutex<DatabaseConfig>
+
     /**
      * Gets the instance of FIRDatabase for the default FIRApp.
      *
@@ -82,7 +98,8 @@ public class Database {
     }
 
     /** The FIRApp instance to which this FIRDatabase belongs. */
-    public weak var app: FirebaseApp?
+    public var app: FirebaseApp? { _app.withLock { $0.value } }
+    private let _app: Mutex<WeakAppRef>
 
     /**
      * Gets a FIRDatabaseReference for the root of your Firebase Database.
@@ -140,7 +157,8 @@ public class Database {
     func purgeOutstandingWrites() {
         let repo = ensureRepo()
 
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             repo.purgeOutstandingWrites()
         }
     }
@@ -152,7 +170,8 @@ public class Database {
     func goOffline() {
         let repo = ensureRepo()
 
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             repo.interrupt()
         }
     }
@@ -164,7 +183,8 @@ public class Database {
     func goOnline() {
         let repo = ensureRepo()
 
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             repo.resume()
         }
     }
@@ -245,9 +265,9 @@ public class Database {
             return repo
         }
         let r = FRepoManager.createRepo(repoInfo,
-                                        config: self.config,
+                                        config: &config,
                                         database: self)
-        self.repo = r
+        self._repo.withLock { $0 = r }
         return r
     }
 
@@ -280,13 +300,13 @@ public class Database {
         }
         let fullHost = "\(host):\(port)"
         let emulatorInfo = FRepoInfo(info: repoInfo, emulatedHost: fullHost)
-        self.repoInfo = emulatorInfo
+        self._repoInfo.withLock { $0 = emulatorInfo }
     }
 
     init(app: FirebaseApp?, repoInfo: FRepoInfo, config: DatabaseConfig) {
-        self.app = app
-        self.repoInfo = repoInfo
-        self.config = config
+        self._app = .init(WeakAppRef(app))
+        self._repoInfo = .init(repoInfo)
+        self._config = .init(config)
     }
 
     class func createDatabaseForTests(_ repoInfo: FRepoInfo, config: DatabaseConfig) -> (Database, FRepo) {

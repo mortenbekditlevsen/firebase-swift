@@ -300,6 +300,11 @@ internal struct FImmutableTree<Element> {
     func forEach(_ block: @escaping (_ path: FPath, _ value: Element) -> Void) {
         forEachPathSoFar(.empty, withBlock: block)
     }
+    
+    func forEach(_ block: @escaping (_ path: FPath, _ value: Element) async -> Void) async  {
+        await forEachPathSoFar(.empty, withBlock: block)
+    }
+
 
     func forEachPathSoFar(
         _ pathSoFar: FPath,
@@ -312,6 +317,19 @@ internal struct FImmutableTree<Element> {
             block(pathSoFar, value)
         }
     }
+    
+    func forEachPathSoFar(
+        _ pathSoFar: FPath,
+        withBlock block: @escaping (_ path: FPath, _ value: Element) async -> Void
+    ) async {
+        for (childKey, childTree) in children {
+            await childTree.forEachPathSoFar(pathSoFar.child(fromString: childKey), withBlock: block)
+        }
+        if let value = value {
+            await block(pathSoFar, value)
+        }
+    }
+
 
     func forEachChild(_ block: @escaping (_ childKey: String, _ childValue: Element?) -> Void) {
         for (childKey, childTree) in children {

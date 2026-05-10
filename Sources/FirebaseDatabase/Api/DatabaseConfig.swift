@@ -7,15 +7,11 @@
 
 import Foundation
 
-public class DatabaseConfig {
-    var sessionIdentifier: String
-    var googleAppID: String
+public struct DatabaseConfig: Sendable {
+    let sessionIdentifier: String
+    let googleAppID: String
 
-    var contextProvider: DatabaseConnectionContextProviderProtocol {
-        willSet {
-            assertUnfrozen()
-        }
-    }
+    let contextProvider: DatabaseConnectionContextProviderProtocol
 
     init(sessionIdentifier: String, googleAppID: String, contextProvider: DatabaseConnectionContextProviderProtocol) {
         self.sessionIdentifier = sessionIdentifier
@@ -34,11 +30,11 @@ public class DatabaseConfig {
         }
     }
 
-    func freeze() {
+    mutating func freeze() {
         isFrozen = true
     }
 
-    var forceStorageEngine: FStorageEngine?
+    var forceStorageEngine: FStorageEngine? { nil }
 
     /**
      * By default the Firebase Database client will keep data in memory while your

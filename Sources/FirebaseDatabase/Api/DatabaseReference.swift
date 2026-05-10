@@ -17,7 +17,8 @@ import Foundation
  * you can use it to read data (ie. observeEventType:withBlock:), write data
  * (ie. setValue:), and to create new FIRDatabaseReferences (ie. child:).
  */
-public final class DatabaseReference: DatabaseQuery {
+/// XXX UNchecked Sendable
+public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
     convenience internal init(config: DatabaseConfig) {
         let parsedUrl = FUtilities.parseUrl(FirebaseApp.defaultApp!.options.databaseURL!)
         FValidation.validateFrom("initWithUrl:", validURL: parsedUrl)
@@ -93,8 +94,12 @@ public final class DatabaseReference: DatabaseQuery {
 
     @param value The value to be written.
      */
-    public func setValue(_ value: Any?) {
-        setValueInternal(value, andPriority: nil, completionBlock: nil, from: "setValue:")
+    // XXX TODO: Model allowed types better!
+    public func setValue(_ value: Sendable?) {
+        // XXX TODO. Best way to wrap this?
+        Task {
+            _ = try await setValueInternal(value, andPriority: nil, from: "setValue:")
+        }
     }
 
     /**
@@ -105,8 +110,8 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block The block to be called after the write has been committed to the
      * Firebase Database servers.
      */
-    public func setValue(_ value: Any?, withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
-        setValueInternal(value, andPriority: nil, completionBlock: block, from: "setValue:withCompletionBlock:")
+    public func setValue(_ value: Any?) async throws -> DatabaseReference {
+        try await setValueInternal(value, andPriority: nil, from: "setValue:withCompletionBlock:")
     }
 
     /**
@@ -116,8 +121,11 @@ public final class DatabaseReference: DatabaseQuery {
      * @param value The value to be written.
      * @param priority The priority to be attached to that data.
      */
-    public func setValue(_ value: Any?, andPriority priority: Any?) {
-        setValueInternal(value, andPriority: priority, completionBlock: nil, from: "setValue:andPriority:")
+    public func setValue(_ value: Sendable?, andPriority priority: Sendable?) {
+        // XXX TODO. Best way to wrap this?
+        Task {
+            _ = try await setValueInternal(value, andPriority: priority, from: "setValue:andPriority:")
+        }
     }
 
     /**
@@ -129,16 +137,18 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block The block to be called after the write has been committed to the
      * Firebase Database servers.
      */
-    public func setValue(_ value: Any?, andPriority priority: Any?, withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
-        setValueInternal(value, andPriority: priority, completionBlock: block, from: "setValue:andPriority:withCompletionBlock")
+    public func setValue(_ value: Any?, andPriority priority: Any?) async throws -> DatabaseReference {
+        try await setValueInternal(
+            value,
+            andPriority: priority,
+            from: "setValue:andPriority:withCompletionBlock"
+        )
     }
 
-    private func setValueInternal(_ value: Any?, andPriority priority: Any?, completionBlock: ((Error?, DatabaseReference) -> Void)?, from fn: String) {
+    private func setValueInternal(_ value: Any?, andPriority priority: Any?, from fn: String) async throws -> DatabaseReference {
         FValidation.validateFrom(fn, writablePath: self.path)
         let newNode = FSnapshotUtilities.nodeFrom(value, priority: priority, withValidationFrom: fn)
-        DatabaseQuery.sharedQueue.async {
-            self.repo.set(self.path, withNode: newNode, withCallback: completionBlock)
-        }
+        return try await self.repo.set(self.path, withNode: newNode)
     }
 
     /**
@@ -152,7 +162,9 @@ public final class DatabaseReference: DatabaseQuery {
      * remove: is equivalent to calling setValue:nil
      */
     public func removeValue() {
-        setValueInternal(nil, andPriority: nil, completionBlock: nil, from: "removeValue:")
+        Task {
+            _ = try await setValueInternal(nil, andPriority: nil, from: "removeValue:")
+        }
     }
 
     /**
@@ -162,8 +174,8 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block The block to be called after the remove has been committed to
      * the Firebase Database servers.
      */
-    public func removeValue(completionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
-        setValueInternal(nil, andPriority: nil, completionBlock: block, from: "removeValue:withCompletionBlock:")
+    public func removeValue() async throws -> DatabaseReference {
+        try await setValueInternal(nil, andPriority: nil, from: "removeValue:withCompletionBlock:")
     }
 
     /**
@@ -192,8 +204,11 @@ public final class DatabaseReference: DatabaseQuery {
      *
      * @param priority The priority to set at the specified location.
      */
-    public func setPriority(_ priority: AnyHashable?) {
-        setPriorityInternal(priority, withCompletionBlock: nil, from: "setPriority:")
+    public func setPriority(_ priority: Sendable?) {
+        // XXX TODO. Best way to wrap this?
+        Task {
+            _ = try await setPriorityInternal(priority, from: "setPriority:")
+        }
     }
 
     /**
@@ -204,15 +219,13 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block The block that is triggered after the priority has been written
      * on the servers.
      */
-    public func setPriority(_ priority: AnyHashable?, withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
-        setPriorityInternal(priority, withCompletionBlock: block, from: "setPriority:withCompletionBlock:")
+    public func setPriority(_ priority: Sendable?) async throws -> DatabaseReference {
+        try await setPriorityInternal(priority, from: "setPriority:withCompletionBlock:")
     }
 
-    private func setPriorityInternal(_ priority: AnyHashable?, withCompletionBlock block: ((Error?, DatabaseReference) -> Void)?, from fn: String) {
+    private func setPriorityInternal(_ priority: Sendable?, from fn: String) async throws -> DatabaseReference {
         FValidation.validateFrom(fn, writablePath: self.path)
-        DatabaseQuery.sharedQueue.async {
-            self.repo.set(self.path.child(fromString: ".priority"), withNode: FSnapshotUtilities.nodeFrom(priority), withCallback: block)
-        }
+        return try await self.repo.set(self.path.child(fromString: ".priority"), withNode: FSnapshotUtilities.nodeFrom(priority))
     }
 
     /**
@@ -221,8 +234,11 @@ public final class DatabaseReference: DatabaseQuery {
      *
      * @param values A dictionary of the keys to change and their new values
      */
-    public func updateChildValues(_ values: [String: Any]) {
-        updateChildValuesInternal(values, withCompletionBlock: nil, from: "updateChildValues:")
+    public func updateChildValues(_ values: [String: Sendable]) {
+        // XXX TODO: Best way to handle this?
+        Task {
+            _ = try await updateChildValuesInternal(values, from: "updateChildValues:")
+        }
     }
 
     /**
@@ -233,16 +249,14 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block The block that is triggered after the update has been written on
      * the Firebase Database servers
      */
-    public func updateChildValues(_ values: [String: Any], withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
-        updateChildValuesInternal(values, withCompletionBlock: block, from: "updateChildValues:withCompletionBlock:")
+    public func updateChildValues(_ values: [String: Any]) async throws -> DatabaseReference {
+        try await updateChildValuesInternal(values, from: "updateChildValues:withCompletionBlock:")
     }
 
-    private func updateChildValuesInternal(_ values: [String: Any], withCompletionBlock block: ((Error?, DatabaseReference) -> Void)?, from fn: String) {
+    private func updateChildValuesInternal(_ values: [String: Any], from fn: String) async throws -> DatabaseReference {
         FValidation.validateFrom(fn, writablePath: self.path)
         let merge = FSnapshotUtilities.compoundWriteFromDictionary(values, withValidationFrom: fn)
-        DatabaseQuery.sharedQueue.async {
-            self.repo.update(self.path, withNodes: merge, withCallback: block)
-        }
+        return try await self.repo.update(self.path, withNodes: merge)
     }
 
     // MARK: - Attaching observers to read data
@@ -647,7 +661,7 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block Block to be triggered when the operation has been queued up on
      * the Firebase Database servers
      */
-    func onDisconnectSetValue(_ value: AnyHashable?, withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
+    func onDisconnectSetValue(_ value: AnyHashable?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
         onDisconnectSetValueInternal(value, andPriority: nil, withCompletionBlock: block, from: "onDisconnectSetValue:withCompletionBlock:")
     }
 
@@ -676,14 +690,15 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block Block to be triggered when the operation has been queued up on
      * the Firebase Database servers
      */
-    func onDisconnectSetValue(_ value: AnyHashable?, andPriority priority: AnyHashable?, withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
+    func onDisconnectSetValue(_ value: AnyHashable?, andPriority priority: AnyHashable?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
         onDisconnectSetValueInternal(value, andPriority: priority, withCompletionBlock: block, from: "onDisconnectSetValue:andPriority:withCompletionBlock:")
     }
 
-    private func onDisconnectSetValueInternal(_ value: AnyHashable?, andPriority priority: AnyHashable?, withCompletionBlock block: ((Error?, DatabaseReference) -> Void)?, from fn: String) {
+    private func onDisconnectSetValueInternal(_ value: AnyHashable?, andPriority priority: AnyHashable?, withCompletionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?, from fn: String) {
         FValidation.validateFrom(fn, writablePath: path)
         let newNodeUnresolved = FSnapshotUtilities.nodeFrom(value, priority: priority, withValidationFrom: fn)
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.onDisconnectSet(self.path, withNode: newNodeUnresolved, withCallback: block)
         }
     }
@@ -711,7 +726,7 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block Block to be triggered when the operation has been queued up on
      * the Firebase Database servers
      */
-    func onDisconnectRemoveValue(completionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
+    func onDisconnectRemoveValue(completionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
         onDisconnectSetValueInternal(nil, andPriority: nil, withCompletionBlock: block, from: "onDisconnectRemoveValueWithCompletionBlock:")
     }
 
@@ -739,14 +754,15 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block A block that will be called once the operation has been queued
      * up on the Firebase Database servers
      */
-    func onDisconnectUpdateChildValues(_ values: [String: Any], withCompletionBlock block: @escaping (Error?, DatabaseReference) -> Void) {
+    func onDisconnectUpdateChildValues(_ values: [String: Any], withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
         onDisconnectUpdateChildValuesInternal(values, withCompletionBlock: block, from: "onDisconnectUpdateChildValues:withCompletionBlock:")
     }
 
-    private func onDisconnectUpdateChildValuesInternal(_ values: [String: Any], withCompletionBlock block: ((Error?, DatabaseReference) -> Void)?, from fn: String) {
+    private func onDisconnectUpdateChildValuesInternal(_ values: [String: Any], withCompletionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?, from fn: String) {
         FValidation.validateFrom(fn, writablePath: path)
         let merge = FSnapshotUtilities.compoundWriteFromDictionary(values, withValidationFrom: fn)
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.onDisconnectUpdate(self.path, withNodes: merge, withCallback: block)
         }
     }
@@ -770,8 +786,9 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block A block that will be triggered once the Firebase Database
      * servers have acknowledged the cancel request.
      */
-    func cancelDisconnectOperations(completionBlock block: ((Error?, DatabaseReference) -> Void)?) {
-        DatabaseQuery.sharedQueue.async {
+    func cancelDisconnectOperations(completionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?) {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.onDisconnectCancel(self.path, withCallback: block)
         }
     }
@@ -847,7 +864,7 @@ public final class DatabaseReference: DatabaseQuery {
      * @param block This block receives the current data at this location and must
      * return an instance of FIRTransactionResult
      */
-    func runTransactionBlock(_ block: @escaping (MutableData) -> TransactionResult) {
+    func runTransactionBlock(_ block: @escaping @Sendable (MutableData) -> TransactionResult) {
         FValidation.validateFrom("runTransactionBlock:", writablePath: path)
         runTransactionBlock(block, andCompletionBlock: nil, withLocalEvents: true)
     }
@@ -873,7 +890,7 @@ public final class DatabaseReference: DatabaseQuery {
      * error, whether or not the data was committed, and what the current value of
      * the data at this location is.
      */
-    func runTransactionBlock(_ block: @escaping (MutableData) -> TransactionResult, andCompletionBlock completionBlock: @escaping (Error?, Bool, DataSnapshot?) -> Void) {
+    func runTransactionBlock(_ block: @escaping @Sendable (MutableData) -> TransactionResult, andCompletionBlock completionBlock: @escaping @Sendable (Error?, Bool, DataSnapshot?) -> Void) {
         FValidation.validateFrom("runTransactionBlock:andCompletionBlock:", writablePath: path)
         runTransactionBlock(block, andCompletionBlock: completionBlock, withLocalEvents: true)
     }
@@ -906,9 +923,10 @@ public final class DatabaseReference: DatabaseQuery {
      * @param localEvents Set this to NO to suppress events raised for intermediate
      * states, and only get events based on the final state of the transaction.
      */
-    func runTransactionBlock(_ block: @escaping (MutableData) -> TransactionResult, andCompletionBlock onComplete: ((Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents localEvents: Bool) {
+    func runTransactionBlock(_ block: @escaping @Sendable (MutableData) -> TransactionResult, andCompletionBlock onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents localEvents: Bool) {
         FValidation.validateFrom("runTransactionBlock:andCompletionBlock:withLocalEvents", writablePath: path)
-        DatabaseQuery.sharedQueue.async {
+        // was: DatabaseQuery.sharedQueue.async {
+        Task { @DatabaseActor in
             self.repo.startTransactionOnPath(self.path, update: block, onComplete: onComplete, withLocalEvents: localEvents)
         }
     }

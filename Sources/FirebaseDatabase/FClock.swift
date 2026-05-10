@@ -7,7 +7,7 @@
 
 import Foundation
 
-protocol FClock {
+protocol FClock: Sendable {
     var currentTime: TimeInterval { get }
 }
 
@@ -18,7 +18,7 @@ struct FSystemClock: FClock {
     }
 }
 
-class FOffsetClock: FClock {
+final class FOffsetClock: FClock, Sendable {
     private let clock: FClock
     private let offset: TimeInterval
     init(clock: FClock, offset: TimeInterval) {

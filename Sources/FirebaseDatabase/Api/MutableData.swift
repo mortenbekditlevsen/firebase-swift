@@ -155,11 +155,11 @@ class MutableData {
         data.getNode(prefixPath)
     }
 
-    internal let data: FSnapshotHolder
+    internal var data: FSnapshotHolder
     internal let prefixPath: FPath
 
     public convenience init(node: FNode) {
-        let holder = FSnapshotHolder()
+        var holder = FSnapshotHolder()
         let path = FPath.empty
         holder.updateSnapshot(path, withNewSnapshot: node)
         self.init(prefixPath: path, andSnapshotHolder: holder)

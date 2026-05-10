@@ -17,23 +17,8 @@ extension DatabaseQuery {
     public func get<T: Decodable>(as type: T.Type,
                            decoder: Database.Decoder =
                            Database.Decoder()) async throws -> sending T {
-        try await withCheckedThrowingContinuation { continuation in
-            self.getData { error, snapshot in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let snapshot {
-                    do {
-                        let data = try snapshot.data(as: T.self, decoder: decoder)
-                        continuation.resume(returning: data)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                } else {
-                    continuation.resume(throwing: InternalError.error)
-                }
-            }
-
-        }
+        let snapshot = try await self.getData()
+        return try snapshot.data(as: T.self, decoder: decoder)
     }
 
     public func observeSingle<T: Decodable>(as type: T.Type,

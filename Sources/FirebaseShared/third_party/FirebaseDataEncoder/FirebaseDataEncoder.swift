@@ -108,7 +108,7 @@ extension Dictionary : _JSONStringDictionaryDecodableMarker where Key == String,
 // used in the new runtime. _TtC10Foundation13__JSONEncoder is the
 // mangled name for Foundation.__JSONEncoder.
 
-public class FirebaseDataEncoder {
+public class FirebaseDataEncoder: @unchecked Sendable {
   // MARK: Options
 
   /// The strategy to use for encoding `Date` values.
@@ -1067,7 +1067,7 @@ fileprivate class __JSONReferencingEncoder : __JSONEncoder {
 // The two must coexist, so it was renamed. The old name must not be
 // used in the new runtime. _TtC10Foundation13__JSONDecoder is the
 // mangled name for Foundation.__JSONDecoder.
-public class FirebaseDataDecoder {
+public class FirebaseDataDecoder: @unchecked Sendable {
   // MARK: Options
 
   /// The strategy to use for decoding `Date` values.

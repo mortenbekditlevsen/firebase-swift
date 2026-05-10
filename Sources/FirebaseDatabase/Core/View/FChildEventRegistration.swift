@@ -7,9 +7,10 @@
 
 import Foundation
 
-class FChildEventRegistration: FEventRegistration {
+// XXX TODO: unchecked
+final class FChildEventRegistration: FEventRegistration, @unchecked Sendable {
     private let repo: FRepo
-    init(repo: FRepo, handle: DatabaseHandle, callbacks: [DataEventType: (DataSnapshot, String?) -> Void], cancelCallback: ((Error) -> Void)?) {
+    init(repo: FRepo, handle: DatabaseHandle, callbacks: [DataEventType: @Sendable (DataSnapshot, String?) -> Void], cancelCallback: (@Sendable (Error) -> Void)?) {
         self.repo = repo
         self.handle = handle
         self.callbacks = callbacks
@@ -18,8 +19,8 @@ class FChildEventRegistration: FEventRegistration {
     /**
      * Maps FIRDataEventType (as NSNumber) to fbt_void_datasnapshot_nsstring
      */
-    private var callbacks: [DataEventType: (DataSnapshot, String?) -> Void]
-    var cancelCallback: ((Error) -> Void)?
+    private var callbacks: [DataEventType: @Sendable (DataSnapshot, String?) -> Void]
+    var cancelCallback: (@Sendable (Error) -> Void)?
     var handle: DatabaseHandle
 
     func responseTo(_ eventType: DataEventType) -> Bool {

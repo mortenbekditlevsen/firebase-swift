@@ -168,13 +168,13 @@ private final class WebSocketHandler: ChannelInboundHandler, Sendable {
     typealias OutboundOut = WebSocketFrame
 
     nonisolated(unsafe) var context: ChannelHandlerContext?
-    private let onClose: @Sendable () -> Void
+    private let onClose: @Sendable  () -> Void
     private let onMessage: @Sendable (String) -> Void
     private let onOpen: @Sendable () -> Void
 
     init(onOpen: @escaping @Sendable () -> Void,
-                onMessage: @escaping @Sendable (String) -> Void,
-                onClose: @escaping @Sendable () -> Void) {
+         onMessage: @escaping @Sendable (String) -> Void,
+         onClose: @escaping @Sendable () -> Void) {
         self.onOpen = onOpen
         self.onClose = onClose
         self.onMessage = onMessage
@@ -198,13 +198,12 @@ private final class WebSocketHandler: ChannelInboundHandler, Sendable {
     }
 
     func send(string: String) {
-//        print("SENDING", string)
         self.send(stringData: string, x: { $0.channel.allocator.buffer(string: $1) })
     }
 
     func send<T: StringProtocol>(stringData: T, x: @escaping (ChannelHandlerContext, T) -> ByteBuffer) {
         guard let context else { return }
-        let send = {
+        let send = { 
             let buffer = x(context, stringData)
             let frame = WebSocketFrame(fin: true, opcode: .text, maskKey: .random(), data: buffer)
             context.write(self.wrapOutboundOut(frame), promise: nil)

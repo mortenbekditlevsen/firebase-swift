@@ -7,7 +7,7 @@
 
 import Foundation
 
-class FSnapshotHolder {
+struct FSnapshotHolder: Sendable {
     var rootNode = FNode.empty
 
     init() {}
@@ -16,7 +16,7 @@ class FSnapshotHolder {
         rootNode.getChild(path)
     }
 
-    func updateSnapshot(_ path: FPath, withNewSnapshot newSnapshotNode: FNode) {
+    mutating func updateSnapshot(_ path: FPath, withNewSnapshot newSnapshotNode: FNode) {
         self.rootNode = self.rootNode.updateChild(path, withNewChild: newSnapshotNode)
     }
 }

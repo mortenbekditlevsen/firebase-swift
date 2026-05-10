@@ -17,7 +17,7 @@ import Foundation
  * location. They can't be modified and will never change. To modify data at a
  * location, use a FIRDatabaseReference (e.g. with setValue:).
  */
-public class DataSnapshot {
+public struct DataSnapshot: Sendable {
     let node: FIndexedNode
 
     init(ref: DatabaseReference, indexedNode: FIndexedNode) {

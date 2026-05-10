@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import Foundation
+@preconcurrency import Foundation
 import FirebaseShared
 
 public extension DatabaseReference {
@@ -32,14 +32,16 @@ public extension DatabaseReference {
   ///                 the client is offline, though local changes will be visible
   ///                 immediately.
   func setValue<T: Encodable>(from value: T,
-                              encoder: Database.Encoder = Database.Encoder(),
-                              completion: ((Error?) -> Void)? =
-                                nil) throws {
-    let encoded = try encoder.encode(value)
-    if let completion = completion {
-      setValue(encoded, withCompletionBlock: { error, _ in completion(error) })
-    } else {
+                              encoder: Database.Encoder = Database.Encoder()) throws {
+      /// XXX Cast to sendable..
+    let encoded = try encoder.encode(value) as? NSObject
       setValue(encoded)
-    }
   }
+    
+    func setValue<T: Encodable>(from value: T,
+                                encoder: Database.Encoder = Database.Encoder()) async throws {
+        let encoded = try encoder.encode(value)
+        _ = try await setValue(encoded)
+    }
+
 }

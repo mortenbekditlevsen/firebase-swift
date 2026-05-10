@@ -21,9 +21,8 @@ private class FIRRetryHelperTask {
     }
 }
 
-
+@DatabaseActor
 class FIRRetryHelper {
-    let dispatchQueue: DispatchQueue
     let minRetryDelayAfterFailure: TimeInterval
     let maxRetryDelay: TimeInterval
     let retryExponent: Double
@@ -32,18 +31,16 @@ class FIRRetryHelper {
     var currentRetryDelay: TimeInterval = 0
     fileprivate var scheduledRetry: FIRRetryHelperTask?
     
-    init(dispatchQueue: DispatchQueue,
-                      minRetryDelayAfterFailure: TimeInterval,
-                      maxRetryDelay: TimeInterval,
-                      retryExponent: Double,
-                      jitterFactor: Double) {
-        self.dispatchQueue = dispatchQueue
+    nonisolated
+    init(minRetryDelayAfterFailure: TimeInterval,
+         maxRetryDelay: TimeInterval,
+         retryExponent: Double,
+         jitterFactor: Double) {
         self.minRetryDelayAfterFailure = minRetryDelayAfterFailure
         self.maxRetryDelay = maxRetryDelay
         self.retryExponent = retryExponent
         self.jitterFactor = jitterFactor
         self.lastWasSuccess = true
-
     }
     func retry(_ block: @escaping () -> Void) {
         if let scheduledRetry {
@@ -51,7 +48,7 @@ class FIRRetryHelper {
             scheduledRetry.cancel()
             self.scheduledRetry = nil
         }
-        let delay: DispatchTimeInterval
+        let delay: Duration
         if lastWasSuccess {
             delay = .seconds(0)
         } else {
@@ -67,8 +64,8 @@ class FIRRetryHelper {
         lastWasSuccess = false
         let task = FIRRetryHelperTask(block: block)
         scheduledRetry = task
-        let popTime = DispatchTime.now() + delay
-        dispatchQueue.asyncAfter(deadline: popTime) {
+        Task { @DatabaseActor in
+            try? await Task.sleep(for: delay)
             if !task.isCancelled {
                 self.scheduledRetry = nil
                 task.execute()
