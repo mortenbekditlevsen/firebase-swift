@@ -22,8 +22,8 @@ class FCancelEvent: FEvent {
         self._path = path
     }
 
-    func fireEventOnQueue(_ queue: DispatchQueue) {
-        eventRegistration.fireEvent(self, queue: queue)
+    func fireEventOnQueue() {
+        eventRegistration.fireEvent(self)
     }
     var isCancelEvent: Bool { true }
     var description: String {

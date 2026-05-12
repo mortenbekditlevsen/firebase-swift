@@ -16,7 +16,7 @@ struct FKeepSyncedEventRegistration: FEventRegistration {
         fatalError("Should never create event for FKeepSyncedEventRegistration")
     }
 
-    func fireEvent(_ event: FEvent, queue: DispatchQueue) {
+    func fireEvent(_ event: FEvent) {
         fatalError("Should never raise event for FKeepSyncedEventRegistration")
     }
     func createCancelEventFromError(_ error: Error, path: FPath) -> FCancelEvent? {

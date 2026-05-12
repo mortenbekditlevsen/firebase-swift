@@ -34,18 +34,23 @@ final class FChildEventRegistration: FEventRegistration, @unchecked Sendable {
         return eventData
     }
 
-    func fireEvent(_ event: FEvent, queue: DispatchQueue) {
+    func fireEvent(_ event: FEvent) {
         if let cancelEvent = event as? FCancelEvent {
             FFLog("I-RDB061001", "Raising cancel value event on \(event.path?.description ?? "nil")")
             assert(cancelCallback != nil, "Raising a cancel event on a listener with no cancel callback")
-            queue.async {
-                self.cancelCallback?(cancelEvent.error)
+            // XXX TODO: Just call?
+            let error = cancelEvent.error
+            Task { @DatabaseActor in
+                self.cancelCallback?(error)
             }
         } else if let dataEvent = event as? FDataEvent {
             FFLog("I-RDB061002", "Raising event callback (\(dataEvent.eventType)) on \(dataEvent.path?.description ?? "nil")")
             if let callback: (DataSnapshot, String?) -> Void = callbacks[dataEvent.eventType] {
-                queue.async {
-                    callback(dataEvent.snapshot, dataEvent.prevName)
+                // XXX TODO: Just call?
+                let snapshot = dataEvent.snapshot
+                let prevName = dataEvent.prevName
+                Task { @DatabaseActor in
+                    callback(snapshot, prevName)
                 }
             }
         }

@@ -18,7 +18,6 @@ public struct DatabaseConfig: Sendable {
         self.googleAppID = googleAppID
         self.contextProvider = contextProvider
         self.persistenceCacheSizeBytes = 10 * 1024 * 1024 // Default cache size is 10MB
-        self.callbackQueue = DispatchQueue.main
         self.persistenceEnabled = false
     }
 
@@ -80,16 +79,6 @@ public struct DatabaseConfig: Sendable {
             if newValue > 100 * 1024 * 1024 {
                 fatalError("Firebase Database currently doesn't support a cache size larger than 100MB")
             }
-        }
-    }
-
-    /**
-     * Sets the dispatch queue on which all events are raised. The default queue is
-     * the main queue.
-     */
-    public var callbackQueue: DispatchQueue {
-        willSet {
-            assertUnfrozen()
         }
     }
 }

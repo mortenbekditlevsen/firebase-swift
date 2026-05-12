@@ -75,7 +75,7 @@ class FRepo: FPersistentConnectionDelegate {
         self.connection = FPersistentConnection(repoInfo: info, config: config)
 
         // Needs to be called before authentication manager is instantiated
-        self.eventRaiser = FEventRaiser(queue: config.callbackQueue)
+        self.eventRaiser = FEventRaiser()
 
         // A list of data pieces and paths to be set when this client disconnects
         self.onDisconnect = FSparseSnapshotTree()
@@ -138,9 +138,9 @@ class FRepo: FPersistentConnectionDelegate {
             // endpoints. We don't raise null events on initial data...
             if !node.isEmpty {
                 infoEvents = self.infoSyncTree.applyServerOverwriteAtPath(query.path, newData: node)
-                self.eventRaiser.raiseCallback {
+//                self.eventRaiser.raiseCallback {
                     _ = onComplete(kFWPResponseForActionStatusOk)
-                }
+//                }
             }
             return infoEvents
         }, stopListening: { _, _ in })
@@ -160,7 +160,7 @@ class FRepo: FPersistentConnectionDelegate {
         self.serverSyncTree = FSyncTree(persistenceManager: self.persistenceManager, listenProvider: serverListenProvider)
 
         // XXX TODO
-        Task {
+        Task { @DatabaseActor in
             await restoreWrites()
         }
         
@@ -471,9 +471,9 @@ class FRepo: FPersistentConnectionDelegate {
         } else {
             error = nil
         }
-        eventRaiser.raiseCallback {
+//        eventRaiser.raiseCallback {
             onComplete(error, ref)
-        }
+//        }
     }
 
     private func ackWrite(_ writeId: Int, rerunTransactionsAtPath path: FPath, status: String) {
@@ -752,9 +752,9 @@ offline for more details.
                 let ref = DatabaseReference(repo: self, path: path)
                 let indexedNode = FIndexedNode(node: currentState)
                 let snap = DataSnapshot(ref: ref, indexedNode: indexedNode)
-                eventRaiser.raiseCallback {
+//                eventRaiser.raiseCallback {
                     onComplete(nil, false, snap)
-                }
+//                }
             }
 
         }
@@ -848,7 +848,10 @@ offline for more details.
                 await self.sendAllReadyTransactions()
                 
                 // Finally, trigger onComplete callbacks
-                self.eventRaiser.raiseCallbacks(callbacks)
+//                self.eventRaiser.raiseCallbacks(callbacks)
+                for callback in callbacks {
+                    callback()
+                }
             } else {
                 // transactions are no longer sent. Update their status
                 // appropriately.
@@ -992,7 +995,10 @@ offline for more details.
         pruneCompletedTransactionsBelowNode(transactionQueueTree)
 
         // Now fire callbacks, now that we're in a good, known state.
-        eventRaiser.raiseCallbacks(callbacks)
+//        eventRaiser.raiseCallbacks(callbacks)
+        for callback in callbacks {
+            callback()
+        }
 
         // Try to send the transaction result to the server
         await sendAllReadyTransactions()
@@ -1127,7 +1133,10 @@ offline for more details.
                 queue.removeLast(queue.count - (lastSent + 1))
             }
             // Now fire the callbacks
-            self.eventRaiser.raiseCallbacks(callbacks)
+//            self.eventRaiser.raiseCallbacks(callbacks)
+            for callback in callbacks {
+                callback()
+            }
         }
     }
 

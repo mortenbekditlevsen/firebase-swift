@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "FirebaseCore", targets: ["FirebaseCore"]),
         .library(name: "FirebaseAuth", targets: ["FirebaseAuth"]),
         .library(name: "FirebaseDatabase", targets: ["FirebaseDatabase"]),
+        .library(name: "FirebaseFunctions", targets: ["FirebaseFunctions"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
@@ -53,6 +54,49 @@ let package = Package(
             ],
             path: "Sources/FirebaseAuth"
         ),
+        .target(
+          name: "FirebaseFunctions",
+          dependencies: [
+            "FirebaseCore",
+            "FirebaseShared",
+          ],
+          path: "Sources/FirebaseFunctions"
+        ),
+//        .testTarget(
+//          name: "FirebaseFunctionsUnit",
+//          dependencies: ["FirebaseFunctions",
+//                         "FirebaseAppCheckInterop",
+//                         "FirebaseAuthInterop",
+//                         "FirebaseMessagingInterop",
+//                         "SharedTestUtilities"],
+//          path: "FirebaseFunctions/Tests/Unit",
+//          cSettings: [
+//            .headerSearchPath("../../../"),
+//          ],
+//          swiftSettings: [
+//            .swiftLanguageMode(SwiftLanguageMode.v5),
+//          ]
+//        ),
+//        .testTarget(
+//          name: "FirebaseFunctionsIntegration",
+//          dependencies: ["FirebaseFunctions",
+//                         "SharedTestUtilities"],
+//          path: "FirebaseFunctions/Tests/Integration"
+//        ),
+//        .testTarget(
+//          name: "FirebaseFunctionsObjCIntegration",
+//          dependencies: ["FirebaseFunctions",
+//                         "SharedTestUtilities"],
+//          path: "FirebaseFunctions/Tests/ObjCIntegration",
+//          // See https://forums.swift.org/t/importing-swift-libraries-from-objective-c/56730
+//          exclude: [
+//            "ObjCPPAPITests.mm",
+//          ],
+//          cSettings: [
+//            .headerSearchPath("../../.."),
+//          ]
+//        ),
+
         .target(
             name: "FirebaseDatabase",
             dependencies: [

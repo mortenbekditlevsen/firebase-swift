@@ -36,8 +36,8 @@ class FDataEvent: FEvent {
         }
     }
 
-    func fireEventOnQueue(_ queue: DispatchQueue) {
-        eventRegistration.fireEvent(self, queue: queue)
+    func fireEventOnQueue() {
+        eventRegistration.fireEvent(self)
     }
     var isCancelEvent: Bool { false }
 

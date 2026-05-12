@@ -237,22 +237,6 @@ public final class Database:  Sendable {
         }
     }
 
-    /**
-     * Sets the dispatch queue on which all events are raised. The default queue is
-     * the main queue.
-     *
-     * Note that this must be set before creating your first Database reference.
-     */
-    var callbackQueue: DispatchQueue {
-        set {
-            assertUnfrozen("setCallbackQueue")
-            config.callbackQueue = newValue
-        }
-        get {
-            config.callbackQueue
-        }
-    }
-
     private func assertUnfrozen(_ methodName: String) {
         guard repo == nil else {
             fatalError("Calls to \(methodName) must be made before any other usage of FIRDatabase instance.")

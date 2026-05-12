@@ -9,27 +9,27 @@ import Foundation
 
 @DatabaseActor
 final class FEventRaiser: Sendable {
-    private let queue: DispatchQueue
     nonisolated
-    init(queue: DispatchQueue) {
-        self.queue = queue
+    init() {
     }
 
     func raiseEvents(_ eventDataList: [FEvent]) {
         for event in eventDataList {
-            event.fireEventOnQueue(queue)
+            event.fireEventOnQueue()
         }
     }
 
+    // XXX TODO: JUST CALL?
     func raiseCallback(_ callback: @escaping @Sendable () -> Void) {
-        queue.async {
+        Task { @DatabaseActor in
             callback()
         }
     }
 
     func raiseCallbacks(_ callbackList: [@Sendable () -> Void]) {
         for callback in callbackList {
-            queue.async {
+            // XXX TODO: JUST CALL?
+            Task { @DatabaseActor in
                 callback()
             }
         }
