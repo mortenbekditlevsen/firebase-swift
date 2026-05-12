@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//import FirebaseAppCheckInterop
-//import FirebaseAuthInterop
 import FirebaseCore
-//import FirebaseMessagingInterop
 import FirebaseShared
 import Foundation
 import Synchronization
-
-//internal import FirebaseCoreExtension
-//private import FirebaseCoreInternal
 
 /// File specific constants.
 private enum Constants {
@@ -35,7 +29,7 @@ enum FunctionsConstants {
 }
 
 /// `Functions` is the client for Cloud Functions for a Firebase project.
-open class Functions: @unchecked Sendable {
+public final class Functions: Sendable {
   // MARK: - Private Variables
 
   /// The network client to use for http requests.
@@ -62,14 +56,14 @@ open class Functions: @unchecked Sendable {
   // MARK: - Public APIs
 
   /// The current emulator origin, or `nil` if it is not set.
-  open var emulatorOrigin: String? {
+  public var emulatorOrigin: String? {
       _emulatorOrigin.withLock { $0 }
   }
 
   /// Creates a Cloud Functions client using the default or returns a pre-existing instance if it
   /// already exists.
   /// - Returns: A shared Functions instance initialized with the default `FirebaseApp`.
-  open class func functions() -> Functions {
+    public class func functions() -> Functions {
     return functions(
       app: FirebaseApp.defaultApp,
       region: FunctionsConstants.defaultRegion,
@@ -81,7 +75,7 @@ open class Functions: @unchecked Sendable {
   /// instance if one already exists.
   /// - Parameter app: The app for the Firebase project.
   /// - Returns: A shared Functions instance initialized with the specified `FirebaseApp`.
-  open class func functions(app: FirebaseApp) -> Functions {
+    public class func functions(app: FirebaseApp) -> Functions {
     return functions(app: app, region: FunctionsConstants.defaultRegion, customDomain: nil)
   }
 
@@ -89,7 +83,7 @@ open class Functions: @unchecked Sendable {
   ///  - Parameter region: The region for the HTTP trigger, such as `us-central1`.
   ///  - Returns: A shared Functions instance initialized with the default `FirebaseApp` and a
   /// custom region.
-  open class func functions(region: String) -> Functions {
+    public class func functions(region: String) -> Functions {
     return functions(app: FirebaseApp.defaultApp, region: region, customDomain: nil)
   }
 
@@ -99,7 +93,7 @@ open class Functions: @unchecked Sendable {
   /// "https://mydomain.com".
   ///  - Returns: A shared Functions instance initialized with the default `FirebaseApp` and a
   /// custom HTTP trigger domain.
-  open class func functions(customDomain: String) -> Functions {
+    public class func functions(customDomain: String) -> Functions {
     return functions(app: FirebaseApp.defaultApp,
                      region: FunctionsConstants.defaultRegion, customDomain: customDomain)
   }
@@ -110,7 +104,7 @@ open class Functions: @unchecked Sendable {
   ///    - app: The app for the Firebase project.
   ///    - region: The region for the HTTP trigger, such as `us-central1`.
   ///  - Returns: An instance of `Functions` with a custom app and region.
-  open class func functions(app: FirebaseApp,
+    public class func functions(app: FirebaseApp,
                                                            region: String) -> Functions {
     return functions(app: app, region: region, customDomain: nil)
   }
@@ -122,7 +116,7 @@ open class Functions: @unchecked Sendable {
   ///    - app: The app for the Firebase project.
   ///    - customDomain: A custom domain for the HTTP trigger, such as `https://mydomain.com`.
   ///  - Returns: An instance of `Functions` with a custom app and HTTP trigger domain.
-  open class func functions(app: FirebaseApp,
+    public class func functions(app: FirebaseApp,
                                                                  customDomain: String)
     -> Functions {
     return functions(app: app, region: FunctionsConstants.defaultRegion, customDomain: customDomain)
@@ -131,7 +125,7 @@ open class Functions: @unchecked Sendable {
   /// Creates a reference to the Callable HTTPS trigger with the given name.
   /// - Parameter name: The name of the Callable HTTPS trigger.
   /// - Returns: A reference to a Callable HTTPS trigger.
-  open func httpsCallable(_ name: String) -> HTTPSCallable {
+    public func httpsCallable(_ name: String) -> HTTPSCallable {
     HTTPSCallable(functions: self, url: functionURL(for: name)!)
   }
 
@@ -150,7 +144,7 @@ open class Functions: @unchecked Sendable {
   /// Creates a reference to the Callable HTTPS trigger with the given name.
   /// - Parameter url: The URL of the Callable HTTPS trigger.
   /// - Returns: A reference to a Callable HTTPS trigger.
-  open func httpsCallable(_ url: URL) -> HTTPSCallable {
+    public func httpsCallable(_ url: URL) -> HTTPSCallable {
     return HTTPSCallable(functions: self, url: url)
   }
 
@@ -177,7 +171,7 @@ open class Functions: @unchecked Sendable {
   ///   - decoder: The decoder instance to use to perform decoding.
   /// - Returns: A reference to an HTTPS-callable Cloud Function that can be used to make Cloud
   /// Functions invocations.
-  open func httpsCallable<Request: Encodable,
+    public func httpsCallable<Request: Encodable,
     Response: Decodable>(_ name: String,
                          requestAs: Request.Type = Request.self,
                          responseAs: Response.Type = Response.self,
@@ -205,7 +199,7 @@ open class Functions: @unchecked Sendable {
   ///   - decoder: The decoder instance to use to perform decoding.
   /// - Returns: A reference to an HTTPS-callable Cloud Function that can be used to make Cloud
   /// Functions invocations.
-  open func httpsCallable<Request: Encodable,
+    public func httpsCallable<Request: Encodable,
     Response: Decodable>(_ name: String,
                          options: HTTPSCallableOptions,
                          requestAs: Request.Type = Request.self,
@@ -233,7 +227,7 @@ open class Functions: @unchecked Sendable {
   ///   - decoder: The decoder instance to use to perform decoding.
   /// - Returns: A reference to an HTTPS-callable Cloud Function that can be used to make Cloud
   /// Functions invocations.
-  open func httpsCallable<Request: Encodable,
+    public func httpsCallable<Request: Encodable,
     Response: Decodable>(_ url: URL,
                          requestAs: Request.Type = Request.self,
                          responseAs: Response.Type = Response.self,
@@ -261,7 +255,7 @@ open class Functions: @unchecked Sendable {
   ///   - decoder: The decoder instance to use to perform decoding.
   /// - Returns: A reference to an HTTPS-callable Cloud Function that can be used to make Cloud
   /// Functions invocations.
-  open func httpsCallable<Request: Encodable,
+    public func httpsCallable<Request: Encodable,
     Response: Decodable>(_ url: URL,
                          options: HTTPSCallableOptions,
                          requestAs: Request.Type = Request.self,
@@ -285,7 +279,7 @@ open class Functions: @unchecked Sendable {
    *   - host: The host of the local emulator, such as "localhost".
    *   - port: The port of the local emulator, for example 5005.
    */
-  open func useEmulator(withHost host: String, port: Int) {
+    public func useEmulator(withHost host: String, port: Int) {
     let prefix = host.hasPrefix("http") ? "" : "http://"
     let origin = String(format: "\(prefix)\(host):%li", port)
     _emulatorOrigin.withLock { emulatorOrigin in
@@ -341,20 +335,12 @@ open class Functions: @unchecked Sendable {
     contextProvider = FunctionsContextProvider(auth: auth,
                                                /* messaging: messaging, */
                                                appCheck: appCheck)
-//    self.fetcherService = fetcherService
   }
 
   /// Using the component system for initialization.
   convenience init(app: FirebaseApp,
                    region: String,
                    customDomain: String?) {
-    // TODO: These are not optionals, but they should be.
-//    let auth = ComponentType<AuthInterop>.instance(for: AuthInterop.self, in: app.container)
-//    let messaging = ComponentType<MessagingInterop>.instance(for: MessagingInterop.self,
-//                                                             in: app.container)
-//    let appCheck = ComponentType<AppCheckInterop>.instance(for: AppCheckInterop.self,
-//                                                           in: app.container)
-
       let auth = app.auth
       let appCheck = app.appCheck
     guard let projectID = app.options.projectID else {

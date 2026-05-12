@@ -21,7 +21,7 @@ extension FunctionsSerializer {
   }
 }
 
-final class FunctionsSerializer: Sendable {
+struct FunctionsSerializer: Sendable {
   // MARK: - Internal APIs
 
   // This function only supports the following types and will otherwise throw
