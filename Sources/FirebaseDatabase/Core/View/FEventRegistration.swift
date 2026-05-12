@@ -17,7 +17,7 @@ enum FEventRegistrationMatcher: Equatable {
 protocol FEventRegistration: Any {
     func responseTo(_ eventType: DataEventType) -> Bool
     func createEventFrom(_ change: FChange, query: FQuerySpec) -> FDataEvent
-    func fireEvent(_ event: FEvent, queue: DispatchQueue)
+    func fireEvent(_ event: FEvent)
     func createCancelEventFromError(_ error: Error, path: FPath) -> FCancelEvent?
     /**
      * Used to figure out what event registration that needs to be removed.

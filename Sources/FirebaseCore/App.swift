@@ -50,15 +50,14 @@ public final class FirebaseApp: Equatable, Sendable {
         set { _heartbeatLogger.withLock { $0 = newValue} }
     }
 
-    private let _auth: Mutex<AuthInterop?>
+    private let _auth: Mutex<AuthInterop?> = .init(nil)
+    private let _appCheck: Mutex<AppCheckInterop?> = .init(nil)
     private let _name: Mutex<String>
     private let _options: Mutex<Options>
-    private let _heartbeatLogger: Mutex<FIRHeartbeatLoggerProtocol?>
+    private let _heartbeatLogger: Mutex<FIRHeartbeatLoggerProtocol?> = .init(nil)
     public init(options: Options, name: String) {
         self._options = .init(options)
         self._name = .init(name)
-        self._auth = .init(nil)
-        self._heartbeatLogger = .init(nil)
     }
     public static var isDefaultAppConfigured: Bool { defaultApp != nil }
     public static func configure(name: String? = nil, options: Options) {
@@ -69,6 +68,10 @@ public final class FirebaseApp: Equatable, Sendable {
     public static var defaultApp: FirebaseApp? { _defaultApp.withLock { $0 } }
     private static let _defaultApp: Mutex<FirebaseApp?> = .init(nil)
 
+    public var appCheck: AppCheckInterop? {
+        get { _appCheck.withLock { $0 } }
+        set { _appCheck.withLock { $0 = newValue } }
+    }
 }
 
 public protocol AuthInterop: AnyObject, Sendable {
