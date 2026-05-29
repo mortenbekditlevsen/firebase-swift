@@ -19,7 +19,7 @@ import Foundation
  * A snapshot contains a task, storage reference, metadata (if it exists),
  * progress, and an error (if one occurred).
  */
-open class StorageTaskSnapshot: NSObject {
+public struct StorageTaskSnapshot {
   /**
    * The task this snapshot represents.
    */
@@ -52,7 +52,7 @@ open class StorageTaskSnapshot: NSObject {
 
   // MARK: NSObject overrides
 
-   override public var description: String {
+    public var description: String {
     switch status {
     case .resume: return "<State: Resume>"
     case .progress: return "<State: Progress, Progress: \(String(describing: progress))>"

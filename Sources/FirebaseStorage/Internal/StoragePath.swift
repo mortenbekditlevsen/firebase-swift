@@ -24,7 +24,7 @@ enum StoragePathError: Error {
  * This class also includes helper methods to parse those URI/Ls, as well as to
  * add and remove path segments.
  */
-final class StoragePath: Equatable, Sendable {
+struct StoragePath: Equatable, Sendable {
   // MARK: Class methods
 
   /**
@@ -142,14 +142,6 @@ final class StoragePath: Equatable, Sendable {
     }
   }
 
-  static func == (lhs: StoragePath, rhs: StoragePath) -> Bool {
-    return lhs.bucket == rhs.bucket && lhs.object == rhs.object
-  }
-
-  func copy(with zone: NSZone? = nil) -> Any {
-    return StoragePath(with: bucket, object: object)
-  }
-
   /**
    * Creates a new path based off of the current path and a string appended to it.
    * Note that all slashes are compressed to a single slash, and leading and trailing slashes
@@ -159,7 +151,7 @@ final class StoragePath: Equatable, Sendable {
    */
   func child(_ path: String) -> StoragePath {
     if path.count == 0 {
-      return copy() as! StoragePath
+      return self
     }
     var childObject: String
     if let object = object as? NSString {
@@ -176,8 +168,8 @@ final class StoragePath: Equatable, Sendable {
    * or nil if the current path points to the root.
    */
   func parent() -> StoragePath? {
-    guard let object = object,
-          object.count > 0 else {
+    guard let object,
+          !object.isEmpty else {
       return nil
     }
     let parentObject = (object as NSString).deletingLastPathComponent

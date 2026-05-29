@@ -21,8 +21,8 @@ private import UniformTypeIdentifiers
   import CoreServices
 #endif // os(iOS) || os(tvOS)
 
-class StorageUtils {
-  class func defaultRequestForReference(reference: StorageReference,
+enum StorageUtils {
+  static func defaultRequestForReference(reference: StorageReference,
                                         queryParams: [String: String]? = nil)
     -> URLRequest {
     var components = URLComponents()
@@ -52,7 +52,7 @@ class StorageUtils {
     return URLRequest(url: url)
   }
 
-  class func encodedURL(for path: StoragePath) -> String {
+  static func encodedURL(for path: StoragePath) -> String {
     let bucketString = "/b/\(GCSEscapedString(path.bucket))"
     var objectString: String
     if let objectName = path.object {
@@ -63,7 +63,7 @@ class StorageUtils {
     return "/v0\(bucketString)\(objectString)"
   }
 
-  class func GCSEscapedString(_ string: String) -> String {
+    static func GCSEscapedString(_ string: String) -> String {
     // This is the list at https://cloud.google.com/storage/docs/json_api/ without &, ; and +.
     let allowedSet =
       CharacterSet(
