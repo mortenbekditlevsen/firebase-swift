@@ -17,7 +17,7 @@ import Foundation
 import FirebaseCore
 
 
-class StorageTokenAuthorizer {
+struct StorageTokenAuthorizer {
     func authorizeRequest(_ request: inout URLRequest) async throws {
         // Set version header on each request
         let versionString = "ios/\(FirebaseVersion())"

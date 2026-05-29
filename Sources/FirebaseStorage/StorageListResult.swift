@@ -15,7 +15,7 @@
 import Foundation
 
 /** Contains the prefixes and items returned by a `StorageReference.list()` call. */
-final public class StorageListResult: Sendable {
+public struct StorageListResult: Sendable {
   /**
    * The prefixes (folders) returned by a `list()` operation.
    */
@@ -35,7 +35,7 @@ final public class StorageListResult: Sendable {
 
   // MARK: - Internal APIs
 
-  convenience init(with dictionary: [String: Any], reference: StorageReference) {
+    init(with dictionary: [String: Any], reference: StorageReference) {
     var prefixes = [StorageReference]()
     var items = [StorageReference]()
 
