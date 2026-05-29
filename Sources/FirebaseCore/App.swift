@@ -8,6 +8,12 @@
 import Foundation
 import Synchronization
 
+// XXX TODO: Update this somehow
+public func FirebaseVersion() -> String {
+    "1"
+}
+
+
 // Dummy protocol since I don't have heartbeatlogger working yet
 public protocol FIRHeartbeatLoggerProtocol: Sendable {
 
@@ -25,12 +31,20 @@ public final class FirebaseApp: Equatable, Sendable {
     }
 
     public struct Options: Equatable, Sendable {
-        public init(databaseURL: String? = nil, projectID: String? = nil, googleAppID: String, apiKey: String?, clientID: String?) {
+        public init(
+            databaseURL: String? = nil,
+            projectID: String? = nil,
+            googleAppID: String,
+            apiKey: String?,
+            clientID: String?,
+            storageBucket: String?
+        ) {
             self.databaseURL = databaseURL
             self.projectID = projectID
             self.googleAppID = googleAppID
             self.apiKey = apiKey
             self.clientID = clientID
+            self.storageBucket = storageBucket
         }
 
         public var databaseURL: String?
@@ -38,6 +52,8 @@ public final class FirebaseApp: Equatable, Sendable {
         public var googleAppID: String
         public var apiKey: String?
         public var clientID: String?
+        public var storageBucket: String?
+
     }
     public var name: String { _name.withLock { $0} }
     public var options: Options { _options.withLock { $0 } }
@@ -68,6 +84,11 @@ public final class FirebaseApp: Equatable, Sendable {
     public static var defaultApp: FirebaseApp? { _defaultApp.withLock { $0 } }
     private static let _defaultApp: Mutex<FirebaseApp?> = .init(nil)
 
+    // XXX TODO: Should this call configure and return non-nil?
+    public static func app() -> FirebaseApp? {
+        defaultApp
+    }
+    
     public var appCheck: AppCheckInterop? {
         get { _appCheck.withLock { $0 } }
         set { _appCheck.withLock { $0 = newValue } }

@@ -14,7 +14,8 @@ let package = Package(
         .library(name: "FirebaseCore", targets: ["FirebaseCore"]),
         .library(name: "FirebaseAuth", targets: ["FirebaseAuth"]),
         .library(name: "FirebaseDatabase", targets: ["FirebaseDatabase"]),
-        .library(name: "FirebaseFunctions", targets: ["FirebaseFunctions"])
+        .library(name: "FirebaseFunctions", targets: ["FirebaseFunctions"]),
+        .library(name: "FirebaseStorage", targets: ["FirebaseStorage"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
@@ -96,6 +97,43 @@ let package = Package(
 //            .headerSearchPath("../../.."),
 //          ]
 //        ),
+
+            .target(
+              name: "FirebaseStorage",
+              dependencies: [
+                "FirebaseCore",
+              ],
+              path: "Sources/FirebaseStorage",
+              swiftSettings: [
+                .swiftLanguageMode(SwiftLanguageMode.v6),
+              ]
+            ),
+//            .testTarget(
+//              name: "FirebaseStorageUnit",
+//              dependencies: ["FirebaseStorage",
+//                             "SharedTestUtilities"],
+//              path: "FirebaseStorage/Tests/Unit",
+//              cSettings: [
+//                .headerSearchPath("../../../"),
+//              ],
+//              swiftSettings: [
+//                .swiftLanguageMode(SwiftLanguageMode.v5),
+//              ]
+//            ),
+//            .testTarget(
+//              name: "StorageObjCIntegration",
+//              dependencies: ["FirebaseStorage"],
+//              path: "FirebaseStorage/Tests/ObjCIntegration",
+//              exclude: [
+//                // See https://forums.swift.org/t/importing-swift-libraries-from-objective-c/56730
+//                "FIRStorageIntegrationTests.m",
+//                "ObjCPPAPITests.mm",
+//                "Credentials.h",
+//              ],
+//              cSettings: [
+//                .headerSearchPath("../../.."),
+//              ]
+//            ),
 
         .target(
             name: "FirebaseDatabase",
