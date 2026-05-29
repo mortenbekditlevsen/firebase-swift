@@ -17,7 +17,7 @@ import Foundation
 /// `StorageReference` represents a reference to a Google Cloud Storage object. Developers can
 /// upload and download objects, as well as get/set object metadata, and delete an object at the
 /// path. See the [Cloud docs](https://cloud.google.com/storage/)  for more details.
-public final class StorageReference: Sendable {
+public struct StorageReference: Sendable {
   // MARK: - Public APIs
 
   /// The `Storage` service object which created this reference.
@@ -312,11 +312,6 @@ public final class StorageReference: Sendable {
     var prefixes = [StorageReference]()
     var items = [StorageReference]()
 
-    #if swift(>=6.2)
-      weak let weakSelf = self
-    #else
-      weak var weakSelf = self
-    #endif
 
     var paginatedCompletion: ((_: StorageListResult?, _: Error?) -> Void)?
     paginatedCompletion = { (_ listResult: StorageListResult?, _ error: Error?) in
@@ -324,7 +319,6 @@ public final class StorageReference: Sendable {
         completion(nil, error)
         return
       }
-      guard let strongSelf = weakSelf else { return }
       guard let listResult = listResult else {
         fatalError("internal error: both listResult and error are nil")
       }
@@ -332,8 +326,8 @@ public final class StorageReference: Sendable {
       items.append(contentsOf: listResult.items)
 
       if let pageToken = listResult.pageToken {
-        StorageListTask.listTask(reference: strongSelf,
-                                 queue: strongSelf.storage.dispatchQueue,
+        StorageListTask.listTask(reference: self,
+                                 queue: self.storage.dispatchQueue,
                                  pageSize: nil,
                                  previousPageToken: pageToken,
                                  completion: paginatedCompletion)
