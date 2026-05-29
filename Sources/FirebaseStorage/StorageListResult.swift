@@ -15,7 +15,7 @@
 import Foundation
 
 /** Contains the prefixes and items returned by a `StorageReference.list()` call. */
-open class StorageListResult: NSObject, @unchecked Sendable {
+final public class StorageListResult: Sendable {
   /**
    * The prefixes (folders) returned by a `list()` operation.
    */
@@ -32,13 +32,6 @@ open class StorageListResult: NSObject, @unchecked Sendable {
    */
    public let pageToken: String?
 
-  // MARK: - NSObject overrides
-
-   override open func copy() -> Any {
-    return StorageListResult(withPrefixes: prefixes,
-                             items: items,
-                             pageToken: pageToken)
-  }
 
   // MARK: - Internal APIs
 
