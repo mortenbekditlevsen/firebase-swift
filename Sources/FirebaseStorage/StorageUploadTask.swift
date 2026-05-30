@@ -103,16 +103,12 @@ open class StorageUploadTask: StorageObservableTask,
         // Process fetches
         self.state = .running
         do {
-          let data = try await self.uploadFetcher?.beginFetch()
+          let data = try await uploadFetcher.beginFetch()
           // Fire last progress updates
           self.fire(for: .progress, snapshot: self.snapshot)
 
           // Upload completed successfully, fire completion callbacks
           self.state = .success
-
-          guard let data = data else {
-            fatalError("Internal Error: uploadFetcher returned with nil data and no error")
-          }
 
           if let responseDictionary = try? JSONSerialization
             .jsonObject(with: data) as? [String: AnyHashable] {

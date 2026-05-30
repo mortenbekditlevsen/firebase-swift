@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import Synchronization
 
 /**
  * An extended `StorageTask` providing observable semantics that can be used for responding to changes
@@ -22,6 +23,39 @@ import Foundation
  * observers at a later date.
  */
 open class StorageObservableTask: StorageTask, @unchecked Sendable {
+  // MARK: - Mutex-protected mutable state
+
+  struct ObserverState: ~Copyable, Sendable {
+    var handlerDictionaries: [StorageTaskStatus: [String: @Sendable (StorageTaskSnapshot) -> Void]]
+    var handleToStatusMap: [String: StorageTaskStatus]
+  }
+
+  let observerState: Mutex<ObserverState>
+
+  /**
+   * The file to download to or upload from
+   */
+  let fileURL: URL?
+
+  // MARK: - Internal Implementations
+
+  init(reference: StorageReference,
+       queue: DispatchQueue,
+       file: URL?) {
+    observerState = Mutex(ObserverState(
+      handlerDictionaries: [
+        .resume: [String: @Sendable (StorageTaskSnapshot) -> Void](),
+        .pause: [String: @Sendable (StorageTaskSnapshot) -> Void](),
+        .progress: [String: @Sendable (StorageTaskSnapshot) -> Void](),
+        .success: [String: @Sendable (StorageTaskSnapshot) -> Void](),
+        .failure: [String: @Sendable (StorageTaskSnapshot) -> Void](),
+      ],
+      handleToStatusMap: [:]
+    ))
+    fileURL = file
+    super.init(reference: reference, queue: queue)
+  }
+
   /**
    * Observes changes in the upload status: Resume, Pause, Progress, Success, and Failure.
    * - Parameters:
@@ -32,15 +66,17 @@ open class StorageObservableTask: StorageTask, @unchecked Sendable {
    */
   @discardableResult
   open func observe(_ status: StorageTaskStatus,
-                    handler: @escaping (StorageTaskSnapshot) -> Void) -> String {
-    let callback = handler
-
+                    handler: @escaping @Sendable (StorageTaskSnapshot) -> Void) -> String {
     // Note: self.snapshot is synchronized
     let snapshot = self.snapshot
 
     // TODO: use an increasing counter instead of a random UUID
-    let uuidString = updateHandlerDictionary(for: status, with: callback)
-    if let handlerDictionary = handlerDictionaries[status] {
+    let uuidString = updateHandlerDictionary(for: status, with: handler)
+
+    let handlerDictionary = observerState.withLock {
+      $0.handlerDictionaries[status]
+    }
+    if let handlerDictionary {
       switch status {
       case .pause:
         if state == .pausing || state == .paused {
@@ -66,9 +102,8 @@ open class StorageObservableTask: StorageTask, @unchecked Sendable {
           "of: Pause, Resume, Progress, Complete, or Failure")
       }
     }
-    objc_sync_enter(StorageObservableTask.self)
-    handleToStatusMap[uuidString] = status
-    objc_sync_exit(StorageObservableTask.self)
+
+    observerState.withLock { $0.handleToStatusMap[uuidString] = status }
 
     return uuidString
   }
@@ -78,11 +113,11 @@ open class StorageObservableTask: StorageTask, @unchecked Sendable {
    * - Parameter handle: The handle of the task to remove.
    */
   open func removeObserver(withHandle handle: String) {
-    if let status = handleToStatusMap[handle] {
-      objc_sync_enter(StorageObservableTask.self)
-      handlerDictionaries[status]?.removeValue(forKey: handle)
-      handleToStatusMap.removeValue(forKey: handle)
-      objc_sync_exit(StorageObservableTask.self)
+    observerState.withLock { state in
+      if let status = state.handleToStatusMap[handle] {
+        state.handlerDictionaries[status]?.removeValue(forKey: handle)
+        state.handleToStatusMap.removeValue(forKey: handle)
+      }
     }
   }
 
@@ -91,80 +126,51 @@ open class StorageObservableTask: StorageTask, @unchecked Sendable {
    * - Parameter status: A `StorageTaskStatus` to remove all listeners for.
    */
   open func removeAllObservers(for status: StorageTaskStatus) {
-    if let handlerDictionary = handlerDictionaries[status] {
-      objc_sync_enter(StorageObservableTask.self)
-      for (key, _) in handlerDictionary {
-        handleToStatusMap.removeValue(forKey: key)
+    observerState.withLock { state in
+      if let handlerDictionary = state.handlerDictionaries[status] {
+        for (key, _) in handlerDictionary {
+          state.handleToStatusMap.removeValue(forKey: key)
+        }
+        state.handlerDictionaries[status]?.removeAll()
       }
-      handlerDictionaries[status]?.removeAll()
-      objc_sync_exit(StorageObservableTask.self)
     }
   }
 
   /**
    * Removes all observers.
    */
-   open func removeAllObservers() {
-    objc_sync_enter(StorageObservableTask.self)
-    for (status, _) in handlerDictionaries {
-      handlerDictionaries[status]?.removeAll()
+  open func removeAllObservers() {
+    observerState.withLock { state in
+      for (status, _) in state.handlerDictionaries {
+        state.handlerDictionaries[status]?.removeAll()
+      }
+      state.handleToStatusMap.removeAll()
     }
-    handleToStatusMap.removeAll()
-    objc_sync_exit(StorageObservableTask.self)
-  }
-
-  // MARK: - Private Handler Dictionaries
-
-  var handlerDictionaries: [StorageTaskStatus: [String: (StorageTaskSnapshot) -> Void]]
-  var handleToStatusMap: [String: StorageTaskStatus]
-
-  /**
-   * The file to download to or upload from
-   */
-  let fileURL: URL?
-
-  // MARK: - Internal Implementations
-
-  init(reference: StorageReference,
-       queue: DispatchQueue,
-       file: URL?) {
-    handlerDictionaries = [
-      .resume: [String: (StorageTaskSnapshot) -> Void](),
-      .pause: [String: (StorageTaskSnapshot) -> Void](),
-      .progress: [String: (StorageTaskSnapshot) -> Void](),
-      .success: [String: (StorageTaskSnapshot) -> Void](),
-      .failure: [String: (StorageTaskSnapshot) -> Void](),
-    ]
-    handleToStatusMap = [:]
-    fileURL = file
-    super.init(reference: reference, queue: queue)
   }
 
   func updateHandlerDictionary(for status: StorageTaskStatus,
-                               with handler: @escaping ((StorageTaskSnapshot) -> Void))
+                               with handler: @escaping (@Sendable (StorageTaskSnapshot) -> Void))
     -> String {
     // TODO: use an increasing counter instead of a random UUID
     let uuidString = NSUUID().uuidString
-    objc_sync_enter(StorageObservableTask.self)
-    handlerDictionaries[status]?[uuidString] = handler
-    objc_sync_exit(StorageObservableTask.self)
+    observerState.withLock { $0.handlerDictionaries[status]?[uuidString] = handler }
     return uuidString
   }
 
   func fire(for status: StorageTaskStatus, snapshot: StorageTaskSnapshot) {
-    if let observerDictionary = handlerDictionaries[status] {
+    let observerDictionary = observerState.withLock {
+      $0.handlerDictionaries[status]
+    }
+    if let observerDictionary {
       fire(handlers: observerDictionary, snapshot: snapshot)
     }
   }
 
   func fire(handlers: [String: (StorageTaskSnapshot) -> Void],
             snapshot: StorageTaskSnapshot) {
-    objc_sync_enter(StorageObservableTask.self)
-    let enumeration = handlers.enumerated()
-    objc_sync_exit(StorageObservableTask.self)
-    for (_, handler) in enumeration {
+    for (_, handler) in handlers {
       reference.storage.callbackQueue.async {
-        handler.value(snapshot)
+        handler(snapshot)
       }
     }
   }

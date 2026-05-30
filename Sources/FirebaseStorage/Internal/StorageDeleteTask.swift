@@ -17,12 +17,11 @@ import Foundation
 /// Task which provides the ability to delete an object in Firebase Storage.
 enum StorageDeleteTask {
   static func deleteTask(reference: StorageReference,
-                         queue: DispatchQueue,
-                         completion: ((_: Data?, _: Error?) -> Void)?) {
-    StorageInternalTask(reference: reference,
-                        queue: queue,
-                        httpMethod: "DELETE",
-                        fetcherComment: "DeleteTask",
-                        completion: completion)
+                         queue: DispatchQueue) async throws -> Data {
+    let task = StorageInternalTask(reference: reference,
+                        queue: queue)
+      return try await task.start(
+        httpMethod: "DELETE",
+        fetcherComment: "DeleteTask")
   }
 }

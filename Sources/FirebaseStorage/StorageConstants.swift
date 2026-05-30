@@ -14,7 +14,7 @@
 
 import Foundation
 
-public enum StorageTaskStatus: Int {
+public enum StorageTaskStatus: Int, Sendable {
   case unknown
   case resume
   case progress

@@ -18,483 +18,377 @@ import Foundation
 /// upload and download objects, as well as get/set object metadata, and delete an object at the
 /// path. See the [Cloud docs](https://cloud.google.com/storage/)  for more details.
 public struct StorageReference: Sendable {
-  // MARK: - Public APIs
-
-  /// The `Storage` service object which created this reference.
-   public let storage: Storage
-
-  /// The name of the Google Cloud Storage bucket associated with this reference.
-  /// For example, in `gs://bucket/path/to/object.txt`, the bucket would be 'bucket'.
-   public var bucket: String {
-    return path.bucket
-  }
-
-  /// The full path to this object, not including the Google Cloud Storage bucket.
-  /// In `gs://bucket/path/to/object.txt`, the full path would be: `path/to/object.txt`.
-   public var fullPath: String {
-    return path.object ?? ""
-  }
-
-  /// The short name of the object associated with this reference.
-  ///
-  /// In `gs://bucket/path/to/object.txt`, the name of the object would be `object.txt`.
-   public var name: String {
-    return (path.object as? NSString)?.lastPathComponent ?? ""
-  }
-
-  /// Creates a new `StorageReference` pointing to the root object.
-  /// - Returns: A new `StorageReference` pointing to the root object.
-   public func root() -> StorageReference {
-    return StorageReference(storage: storage, path: path.root())
-  }
-
-  /// Creates a new `StorageReference` pointing to the parent of the current reference
-  /// or `nil` if this instance references the root location.
-  /// ```
-  /// For example:
-  ///     path = foo/bar/baz   parent = foo/bar
-  ///     path = foo           parent = (root)
-  ///     path = (root)        parent = nil
-  /// ```
-  /// - Returns: A new `StorageReference` pointing to the parent of the current reference.
+    // MARK: - Public APIs
+    
+    /// The `Storage` service object which created this reference.
+    public let storage: Storage
+    
+    /// The name of the Google Cloud Storage bucket associated with this reference.
+    /// For example, in `gs://bucket/path/to/object.txt`, the bucket would be 'bucket'.
+    public var bucket: String {
+        path.bucket
+    }
+    
+    /// The full path to this object, not including the Google Cloud Storage bucket.
+    /// In `gs://bucket/path/to/object.txt`, the full path would be: `path/to/object.txt`.
+    public var fullPath: String {
+        path.object ?? ""
+    }
+    
+    /// The short name of the object associated with this reference.
+    ///
+    /// In `gs://bucket/path/to/object.txt`, the name of the object would be `object.txt`.
+    public var name: String {
+        (path.object as? NSString)?.lastPathComponent ?? ""
+    }
+    
+    /// Creates a new `StorageReference` pointing to the root object.
+    /// - Returns: A new `StorageReference` pointing to the root object.
+    public func root() -> StorageReference {
+        StorageReference(storage: storage, path: path.root())
+    }
+    
+    /// Creates a new `StorageReference` pointing to the parent of the current reference
+    /// or `nil` if this instance references the root location.
+    /// ```
+    /// For example:
+    ///     path = foo/bar/baz   parent = foo/bar
+    ///     path = foo           parent = (root)
+    ///     path = (root)        parent = nil
+    /// ```
+    /// - Returns: A new `StorageReference` pointing to the parent of the current reference.
     public func parent() -> StorageReference? {
-    guard let parentPath = path.parent() else {
-      return nil
+        guard let parentPath = path.parent() else {
+            return nil
+        }
+        return StorageReference(storage: storage, path: parentPath)
     }
-    return StorageReference(storage: storage, path: parentPath)
-  }
-
-  /// Creates a new `StorageReference` pointing to a child object of the current reference.
-  /// ```
-  ///     path = foo      child = bar    newPath = foo/bar
-  ///     path = foo/bar  child = baz    ntask.impl.snapshotwPath = foo/bar/baz
-  /// All leading and trailing slashes will be removed, and consecutive slashes will be
-  /// compressed to single slashes. For example:
-  ///     child = /foo/bar     newPath = foo/bar
-  ///     child = foo/bar/     newPath = foo/bar
-  ///     child = foo///bar    newPath = foo/bar
-  /// ```
-  ///
-  /// - Parameter path: The path to append to the current path.
-  /// - Returns: A new `StorageReference` pointing to a child location of the current reference.
+    
+    /// Creates a new `StorageReference` pointing to a child object of the current reference.
+    /// ```
+    ///     path = foo      child = bar    newPath = foo/bar
+    ///     path = foo/bar  child = baz    ntask.impl.snapshotwPath = foo/bar/baz
+    /// All leading and trailing slashes will be removed, and consecutive slashes will be
+    /// compressed to single slashes. For example:
+    ///     child = /foo/bar     newPath = foo/bar
+    ///     child = foo/bar/     newPath = foo/bar
+    ///     child = foo///bar    newPath = foo/bar
+    /// ```
+    ///
+    /// - Parameter path: The path to append to the current path.
+    /// - Returns: A new `StorageReference` pointing to a child location of the current reference.
     public func child(_ path: String) -> StorageReference {
-    return StorageReference(storage: storage, path: self.path.child(path))
-  }
-
-  // MARK: - Uploads
-
-  /// Asynchronously uploads data to the currently specified `StorageReference`,
-  /// without additional metadata.
-  /// This is not recommended for large files, and one should instead upload a file from disk.
-  /// - Parameters:
-  ///   - uploadData: The data to upload.
-  ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
-  ///       about the object being uploaded.
-  /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
-  /// upload.
-  @discardableResult
+        StorageReference(storage: storage, path: self.path.child(path))
+    }
+    
+    // MARK: - Uploads
+    
+    /// Asynchronously uploads data to the currently specified `StorageReference`,
+    /// without additional metadata.
+    /// This is not recommended for large files, and one should instead upload a file from disk.
+    /// - Parameters:
+    ///   - uploadData: The data to upload.
+    ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
+    ///       about the object being uploaded.
+    /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
+    /// upload.
+    @discardableResult
     public func putData(_ uploadData: Data, metadata: StorageMetadata? = nil) -> StorageUploadTask {
-    return putData(uploadData, metadata: metadata, completion: nil)
-  }
-
-  /// Asynchronously uploads data to the currently specified `StorageReference`.
-  /// This is not recommended for large files, and one should instead upload a file from disk.
-  /// - Parameter uploadData The data to upload.
-  /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
-  /// upload.
-  @discardableResult public func __putData(_ uploadData: Data) -> StorageUploadTask {
-    return putData(uploadData, metadata: nil, completion: nil)
-  }
-
-  /// Asynchronously uploads data to the currently specified `StorageReference`.
-  /// This is not recommended for large files, and one should instead upload a file from disk.
-  /// - Parameters:
-  ///   - uploadData: The data to upload.
-  ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
-  ///       about the object being uploaded.
-  ///   - completion: A closure that either returns the object metadata on success,
-  ///       or an error on failure.
-  /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
-  /// upload.
-  @discardableResult
+        return putData(uploadData, metadata: metadata, completion: nil)
+    }
+    
+    /// Asynchronously uploads data to the currently specified `StorageReference`.
+    /// This is not recommended for large files, and one should instead upload a file from disk.
+    /// - Parameter uploadData The data to upload.
+    /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
+    /// upload.
+    @discardableResult public func __putData(_ uploadData: Data) -> StorageUploadTask {
+        return putData(uploadData, metadata: nil, completion: nil)
+    }
+    
+    /// Asynchronously uploads data to the currently specified `StorageReference`.
+    /// This is not recommended for large files, and one should instead upload a file from disk.
+    /// - Parameters:
+    ///   - uploadData: The data to upload.
+    ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
+    ///       about the object being uploaded.
+    ///   - completion: A closure that either returns the object metadata on success,
+    ///       or an error on failure.
+    /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
+    /// upload.
+    @discardableResult
     public func putData(_ uploadData: Data,
-                    metadata: StorageMetadata? = nil,
-                    completion: ((_: StorageMetadata?, _: Error?) -> Void)?) -> StorageUploadTask {
-    let putMetadata = metadata ?? StorageMetadata()
-    if let path = path.object {
-      putMetadata.path = path
-      putMetadata.name = (path as NSString).lastPathComponent as String
+                        metadata: StorageMetadata? = nil,
+                        completion: ((_: StorageMetadata?, _: Error?) -> Void)?) -> StorageUploadTask {
+        let putMetadata = metadata ?? StorageMetadata()
+        if let path = path.object {
+            putMetadata.path = path
+            putMetadata.name = (path as NSString).lastPathComponent as String
+        }
+        let task = StorageUploadTask(reference: self,
+                                     queue: storage.dispatchQueue,
+                                     data: uploadData,
+                                     metadata: putMetadata)
+        startAndObserveUploadTask(task: task, completion: completion)
+        return task
     }
-    let task = StorageUploadTask(reference: self,
-                                 queue: storage.dispatchQueue,
-                                 data: uploadData,
-                                 metadata: putMetadata)
-    startAndObserveUploadTask(task: task, completion: completion)
-    return task
-  }
-
-  /// Asynchronously uploads a file to the currently specified `StorageReference`.
-  /// - Parameters:
-  ///   - fileURL: A URL representing the system file path of the object to be uploaded.
-  ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
-  ///       about the object being uploaded.
-  /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
-  /// upload.
-  @discardableResult
+    
+    /// Asynchronously uploads a file to the currently specified `StorageReference`.
+    /// - Parameters:
+    ///   - fileURL: A URL representing the system file path of the object to be uploaded.
+    ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
+    ///       about the object being uploaded.
+    /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
+    /// upload.
+    @discardableResult
     public func putFile(from fileURL: URL, metadata: StorageMetadata? = nil) -> StorageUploadTask {
-    return putFile(from: fileURL, metadata: metadata, completion: nil)
-  }
-
-  /// Asynchronously uploads a file to the currently specified `StorageReference`,
-  /// without additional metadata.
-  /// @param fileURL A URL representing the system file path of the object to be uploaded.
-  /// @return An instance of StorageUploadTask, which can be used to monitor or manage the upload.
-  @discardableResult public func __putFile(from fileURL: URL) -> StorageUploadTask {
-    return putFile(from: fileURL, metadata: nil, completion: nil)
-  }
-
-  /// Asynchronously uploads a file to the currently specified `StorageReference`.
-  /// - Parameters:
-  ///   - fileURL: A URL representing the system file path of the object to be uploaded.
-  ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
-  ///       about the object being uploaded.
-  ///   - completion: A completion block that either returns the object metadata on success,
-  ///       or an error on failure.
-  /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
-  /// upload.
-  @discardableResult
+        return putFile(from: fileURL, metadata: metadata, completion: nil)
+    }
+    
+    /// Asynchronously uploads a file to the currently specified `StorageReference`,
+    /// without additional metadata.
+    /// @param fileURL A URL representing the system file path of the object to be uploaded.
+    /// @return An instance of StorageUploadTask, which can be used to monitor or manage the upload.
+    @discardableResult public func __putFile(from fileURL: URL) -> StorageUploadTask {
+        return putFile(from: fileURL, metadata: nil, completion: nil)
+    }
+    
+    /// Asynchronously uploads a file to the currently specified `StorageReference`.
+    /// - Parameters:
+    ///   - fileURL: A URL representing the system file path of the object to be uploaded.
+    ///   - metadata: `StorageMetadata` containing additional information (MIME type, etc.)
+    ///       about the object being uploaded.
+    ///   - completion: A completion block that either returns the object metadata on success,
+    ///       or an error on failure.
+    /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
+    /// upload.
+    @discardableResult
     public func putFile(from fileURL: URL,
-                    metadata: StorageMetadata? = nil,
-                    completion: ((_: StorageMetadata?, _: Error?) -> Void)?) -> StorageUploadTask {
-    let putMetadata: StorageMetadata = metadata ?? StorageMetadata()
-    if let path = path.object {
-      putMetadata.path = path
-      putMetadata.name = (path as NSString).lastPathComponent as String
-    }
-    let task = StorageUploadTask(reference: self,
-                                 queue: storage.dispatchQueue,
-                                 file: fileURL,
-                                 metadata: putMetadata)
-    startAndObserveUploadTask(task: task, completion: completion)
-    return task
-  }
-
-  // MARK: - Downloads
-
-  /// Asynchronously downloads the object at the `StorageReference` to a `Data` instance in memory.
-  /// A `Data` buffer of the provided max size will be allocated, so ensure that the device has
-  /// enough free
-  /// memory to complete the download. For downloading large files, `write(toFile:)` may be a better
-  /// option.
-  /// - Parameters:
-  ///   - maxSize: The maximum size in bytes to download. If the download exceeds this size,
-  ///       the task will be cancelled and an error will be returned.
-  ///   - completion: A completion block that either returns the object data on success,
-  ///       or an error on failure.
-  /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
-  @discardableResult
-    public func getData(maxSize: Int64,
-                    completion: @escaping ((_: Data?, _: Error?) -> Void)) -> StorageDownloadTask {
-    let task = StorageDownloadTask(reference: self,
-                                   queue: storage.dispatchQueue,
-                                   file: nil)
-
-    task.completionData = completion
-    let callbackQueue = storage.callbackQueue
-
-    task.observe(.success) { snapshot in
-      let error = self.checkSizeOverflow(task: snapshot.task, maxSize: maxSize)
-      callbackQueue.async {
-        if let completion = task.completionData {
-          let data = error == nil ? task.downloadData : nil
-          completion(data, error)
-          task.completionData = nil
+                        metadata: StorageMetadata? = nil,
+                        completion: ((_: StorageMetadata?, _: Error?) -> Void)?) -> StorageUploadTask {
+        let putMetadata: StorageMetadata = metadata ?? StorageMetadata()
+        if let path = path.object {
+            putMetadata.path = path
+            putMetadata.name = (path as NSString).lastPathComponent as String
         }
-      }
+        let task = StorageUploadTask(reference: self,
+                                     queue: storage.dispatchQueue,
+                                     file: fileURL,
+                                     metadata: putMetadata)
+        startAndObserveUploadTask(task: task, completion: completion)
+        return task
     }
-    task.observe(.failure) { snapshot in
-      callbackQueue.async {
-        task.completionData?(nil, snapshot.error)
-        task.completionData = nil
-      }
-    }
-    task.observe(.progress) { snapshot in
-      if let error = self.checkSizeOverflow(task: snapshot.task, maxSize: maxSize) {
-        task.cancel(withError: error)
-      }
-    }
-    task.enqueue()
-    return task
-  }
+    
+    // MARK: - Downloads
+    
+    /// Asynchronously downloads the object at the `StorageReference` to a `Data` instance in memory.
+    /// A `Data` buffer of the provided max size will be allocated, so ensure that the device has
+    /// enough free
+    /// memory to complete the download. For downloading large files, `write(toFile:)` may be a better
+    /// option.
+    /// - Parameters:
+    ///   - maxSize: The maximum size in bytes to download. If the download exceeds this size,
+    ///       the task will be cancelled and an error will be returned.
+    ///   - completion: A completion block that either returns the object data on success,
+    ///       or an error on failure.
+    /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
+    @discardableResult
+    public func getData(maxSize: Int64) async throws -> Data {
+        let task = StorageDownloadTask(reference: self,
+                                       queue: storage.dispatchQueue,
+                                       file: nil)
+        
+        task.observe(.progress) { snapshot in
+            if let error = self.checkSizeOverflow(progress: snapshot.task.progress, maxSize: maxSize) {
+                task.cancel(withError: error)
+            }
+        }
+        let data = try await task.start()
+        if let error = self.checkSizeOverflow(
+            progress: task.progress,
+            maxSize: maxSize
+        ) {
+            throw error
+        }
 
-  /// Asynchronously retrieves a long lived download URL with a revokable token.
-  /// This can be used to share the file with others, but can be revoked by a developer
-  /// in the Firebase Console.
-  /// - Parameter completion: A completion block that either returns the URL on success,
-  ///     or an error on failure.
-    public func downloadURL(completion: @escaping ((_: URL?, _: Error?) -> Void)) {
-    StorageGetDownloadURLTask.getDownloadURLTask(reference: self,
-                                                 queue: storage.dispatchQueue,
-                                                 completion: completion)
-  }
-
-  /// Asynchronously retrieves a long lived download URL with a revokable token.
-  /// This can be used to share the file with others, but can be revoked by a developer
-  /// in the Firebase Console.
-  /// - Throws: An error if the download URL could not be retrieved.
-  /// - Returns: The URL on success.
+        return data
+    }
+    
+    /// Asynchronously retrieves a long lived download URL with a revokable token.
+    /// This can be used to share the file with others, but can be revoked by a developer
+    /// in the Firebase Console.
+    /// - Throws: An error if the download URL could not be retrieved.
+    /// - Returns: The URL on success.
     public func downloadURL() async throws -> URL {
-    return try await withCheckedThrowingContinuation { continuation in
-      self.downloadURL { result in
-        continuation.resume(with: result)
-      }
+        try await StorageGetDownloadURLTask.getDownloadURLTask(reference: self,
+                                                               queue: storage.dispatchQueue)
     }
-  }
-
-  /// Asynchronously downloads the object at the current path to a specified system filepath.
-  /// - Parameter fileURL: A file system URL representing the path the object should be downloaded
-  /// to.
-  /// - Returns A `StorageDownloadTask` that can be used to monitor or manage the download.
-  @discardableResult
+    
+    /// Asynchronously downloads the object at the current path to a specified system filepath.
+    /// - Parameter fileURL: A file system URL representing the path the object should be downloaded
+    /// to.
+    /// - Returns A `StorageDownloadTask` that can be used to monitor or manage the download.
+    @discardableResult
     public func write(toFile fileURL: URL) -> StorageDownloadTask {
-    return write(toFile: fileURL, completion: nil)
-  }
-
-  /// Asynchronously downloads the object at the current path to a specified system filepath.
-  /// - Parameters:
-  ///   - fileURL: A file system URL representing the path the object should be downloaded to.
-  ///   - completion: A closure that fires when the file download completes, passed either
-  ///       a URL pointing to the file path of the downloaded file on success,
-  ///       or an error on failure.
-  /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
-  @discardableResult
+        return write(toFile: fileURL, completion: nil)
+    }
+    
+    /// Asynchronously downloads the object at the current path to a specified system filepath.
+    /// - Parameters:
+    ///   - fileURL: A file system URL representing the path the object should be downloaded to.
+    ///   - completion: A closure that fires when the file download completes, passed either
+    ///       a URL pointing to the file path of the downloaded file on success,
+    ///       or an error on failure.
+    /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
+    @discardableResult
     public func write(toFile fileURL: URL,
-                  completion: ((_: URL?, _: Error?) -> Void)?) -> StorageDownloadTask {
-    let task = StorageDownloadTask(reference: self,
-                                   queue: storage.dispatchQueue,
-                                   file: fileURL)
-
-    if let completion {
-      task.completionURL = completion
-      let callbackQueue = storage.callbackQueue
-
-      task.observe(.success) { snapshot in
-        callbackQueue.async {
-          task.completionURL?(fileURL, nil)
-          task.completionURL = nil
+                      completion: ((_: URL?, _: Error?) -> Void)?) -> StorageDownloadTask {
+        let task = StorageDownloadTask(reference: self,
+                                       queue: storage.dispatchQueue,
+                                       file: fileURL)
+        
+        if let completion {
+            task.completionURL = completion
+            let callbackQueue = storage.callbackQueue
+            
+            task.observe(.success) { snapshot in
+                callbackQueue.async {
+                    task.completionURL?(fileURL, nil)
+                    task.completionURL = nil
+                }
+            }
+            task.observe(.failure) { snapshot in
+                callbackQueue.async {
+                    task.completionURL?(nil, snapshot.error)
+                    task.completionURL = nil
+                }
+            }
         }
-      }
-      task.observe(.failure) { snapshot in
-        callbackQueue.async {
-          task.completionURL?(nil, snapshot.error)
-          task.completionURL = nil
-        }
-      }
+        task.enqueue()
+        return task
     }
-    task.enqueue()
-    return task
-  }
-
-  // MARK: - List Support
-
-  /// Lists all items (files) and prefixes (folders) under this `StorageReference`.
-  ///
-  /// This is a helper method for calling `list()` repeatedly until there are no more results.
-  ///
-  /// Consistency of the result is not guaranteed if objects are inserted or removed while this
-  /// operation is executing. All results are buffered in memory.
-  ///
-  /// `listAll(completion:)` is only available for projects using Firebase Rules Version 2.
-  /// - Parameter completion: A completion handler that will be invoked with all items and prefixes
-  /// under
-  ///       the current `StorageReference`.
-    public func listAll(completion: @escaping ((_: StorageListResult?, _: Error?) -> Void)) {
-    var prefixes = [StorageReference]()
-    var items = [StorageReference]()
-
-
-    var paginatedCompletion: ((_: StorageListResult?, _: Error?) -> Void)?
-    paginatedCompletion = { (_ listResult: StorageListResult?, _ error: Error?) in
-      if let error {
-        completion(nil, error)
-        return
-      }
-      guard let listResult = listResult else {
-        fatalError("internal error: both listResult and error are nil")
-      }
-      prefixes.append(contentsOf: listResult.prefixes)
-      items.append(contentsOf: listResult.items)
-
-      if let pageToken = listResult.pageToken {
-        StorageListTask.listTask(reference: self,
-                                 queue: self.storage.dispatchQueue,
-                                 pageSize: nil,
-                                 previousPageToken: pageToken,
-                                 completion: paginatedCompletion)
-      } else {
-        let result = StorageListResult(withPrefixes: prefixes, items: items, pageToken: nil)
-
-        // Break the retain cycle we set up indirectly by passing the callback to `nextPage`.
-        paginatedCompletion = nil
-        completion(result, nil)
-      }
-    }
-
-    StorageListTask.listTask(reference: self,
-                             queue: storage.dispatchQueue,
-                             pageSize: nil,
-                             previousPageToken: nil,
-                             completion: paginatedCompletion)
-  }
-
-  /// Lists all items (files) and prefixes (folders) under this StorageReference.
-  /// This is a helper method for calling list() repeatedly until there are no more results.
-  /// Consistency of the result is not guaranteed if objects are inserted or removed while this
-  /// operation is executing. All results are buffered in memory.
-  /// `listAll()` is only available for projects using Firebase Rules Version 2.
-  /// - Throws: An error if the list operation failed.
-  /// - Returns: All items and prefixes under the current `StorageReference`.
+    
+    // MARK: - List Support
+    
+    /// Lists all items (files) and prefixes (folders) under this StorageReference.
+    /// This is a helper method for calling list() repeatedly until there are no more results.
+    /// Consistency of the result is not guaranteed if objects are inserted or removed while this
+    /// operation is executing. All results are buffered in memory.
+    /// `listAll()` is only available for projects using Firebase Rules Version 2.
+    /// - Throws: An error if the list operation failed.
+    /// - Returns: All items and prefixes under the current `StorageReference`.
     public func listAll() async throws -> StorageListResult {
-    return try await withCheckedThrowingContinuation { continuation in
-      self.listAll { result in
-        continuation.resume(with: result)
-      }
+        var prefixes = [StorageReference]()
+        var items = [StorageReference]()
+        
+        var pageToken: String? = nil
+        while true {
+            let result = try await StorageListTask.listTask(
+                reference: self,
+                queue: storage.dispatchQueue,
+                pageSize: nil,
+                previousPageToken: pageToken
+            )
+            prefixes.append(contentsOf: result.prefixes)
+            items.append(contentsOf: result.items)
+            pageToken = result.pageToken
+            if pageToken == nil {
+                let result = StorageListResult(withPrefixes: prefixes, items: items, pageToken: nil)
+                return result
+            }
+        }
+        
     }
-  }
+    
+    /// List up to `maxResults` items (files) and prefixes (folders) under this StorageReference.
+    ///
+    /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
+    /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
+    /// filtered.
+    ///
+    /// Only available for projects using Firebase Rules Version 2.
+    ///
+    /// - Parameters:
+    ///   - maxResults: The maximum number of results to return in a single page. Must be
+    ///                greater than 0 and at most 1000.
+    /// - Throws: An error if the operation failed, for example if Storage was unreachable
+    ///   or the storage reference referenced an invalid path.
+    /// - Returns: A `StorageListResult` containing the contents of the storage reference.
+    public func list(maxResults: Int64) async throws -> StorageListResult {
+        if maxResults <= 0 || maxResults > 1000 {
+            throw StorageError.invalidArgument(
+                message: "Argument 'maxResults' must be between 1 and 1000 inclusive."
+            )
+        } else {
+            return try await StorageListTask.listTask(reference: self,
+                                                      queue: storage.dispatchQueue,
+                                                      pageSize: maxResults,
+                                                      previousPageToken: nil)
+        }
+    }
 
-  /// List up to `maxResults` items (files) and prefixes (folders) under this StorageReference.
-  ///
-  /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
-  /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
-  /// filtered.
-  ///
-  /// Only available for projects using Firebase Rules Version 2.
-  /// - Parameters:
-  ///   - maxResults: The maximum number of results to return in a single page. Must be
-  ///                greater than 0 and at most 1000.
-  ///   - completion: A completion handler that will be invoked with up to `maxResults` items and
-  ///       prefixes under the current `StorageReference`.
+    /// List up to `maxResults` items (files) and prefixes (folders) under this StorageReference.
+    ///
+    /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
+    /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
+    /// filtered.
+    ///
+    /// Only available for projects using Firebase Rules Version 2.
+    ///
+    /// - Parameters:
+    ///   - maxResults: The maximum number of results to return in a single page. Must be
+    ///                greater than 0 and at most 1000.
+    ///   - pageToken: A page token from a previous call to list.
+    /// - Throws:
+    ///   - An error if the operation failed, for example if Storage was unreachable
+    ///   or the storage reference referenced an invalid path.
+    /// - Returns:
+    ///   - completion A `Result` enum with either the list or an `Error`.
     public func list(maxResults: Int64,
-                 completion: @escaping ((_: StorageListResult?, _: Error?) -> Void)) {
+                 pageToken: String) async throws -> StorageListResult  {
     if maxResults <= 0 || maxResults > 1000 {
-      completion(nil, StorageError.invalidArgument(
+      throw StorageError.invalidArgument(
         message: "Argument 'maxResults' must be between 1 and 1000 inclusive."
-      ))
+      )
     } else {
-      StorageListTask.listTask(reference: self,
+      return try await StorageListTask.listTask(reference: self,
                                queue: storage.dispatchQueue,
                                pageSize: maxResults,
-                               previousPageToken: nil,
-                               completion: completion)
-    }
-  }
-
-  /// Resumes a previous call to `list(maxResults:completion:)`, starting after a pagination token.
-  ///
-  /// Returns the next set of items (files) and prefixes (folders) under this `StorageReference`.
-  ///
-  /// "/" is treated as a path delimiter. Storage does not support unsupported object
-  /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
-  /// filtered.
-  ///
-  /// `list(maxResults:pageToken:completion:)`is only available for projects using Firebase Rules
-  /// Version 2.
-  /// - Parameters:
-  ///   - maxResults: The maximum number of results to return in a single page. Must be greater
-  ///     than 0 and at most 1000.
-  ///   - pageToken: A page token from a previous call to list.
-  ///   - completion: A completion handler that will be invoked with the next items and prefixes
-  ///     under the current StorageReference.
-    public func list(maxResults: Int64,
-                 pageToken: String,
-                 completion: @escaping ((_: StorageListResult?, _: Error?) -> Void)) {
-    if maxResults <= 0 || maxResults > 1000 {
-      completion(nil, StorageError.invalidArgument(
-        message: "Argument 'maxResults' must be between 1 and 1000 inclusive."
-      ))
-    } else {
-      StorageListTask.listTask(reference: self,
-                               queue: storage.dispatchQueue,
-                               pageSize: maxResults,
-                               previousPageToken: pageToken,
-                               completion: completion)
+                               previousPageToken: pageToken)
     }
   }
 
   // MARK: - Metadata Operations
 
-  /// Retrieves metadata associated with an object at the current path.
-  /// - Parameter completion: A completion block which returns the object metadata on success,
-  ///   or an error on failure.
-    public func getMetadata(completion: @escaping ((_: StorageMetadata?, _: Error?) -> Void)) {
-    StorageGetMetadataTask.getMetadataTask(reference: self,
-                                           queue: storage.dispatchQueue,
-                                           completion: completion)
-  }
-
-  /// Retrieves metadata associated with an object at the current path.
-  /// - Throws: An error if the object metadata could not be retrieved.
-  /// - Returns: The object metadata on success.
+    /// Retrieves metadata associated with an object at the current path.
+    /// - Throws: An error if the object metadata could not be retrieved.
+    /// - Returns: The object metadata on success.
     public func getMetadata() async throws -> StorageMetadata {
-    return try await withCheckedThrowingContinuation { continuation in
-      self.getMetadata { result in
-        continuation.resume(with: result)
-      }
+        try await StorageGetMetadataTask.getMetadataTask(reference: self,
+                                                         queue: storage.dispatchQueue)
     }
-  }
 
-  /// Updates the metadata associated with an object at the current path.
-  /// - Parameters:
-  ///   - metadata: A `StorageMetadata` object with the metadata to update.
-  ///   - completion: A completion block which returns the `StorageMetadata` on success,
-  ///     or an error on failure.
-    public func updateMetadata(_ metadata: StorageMetadata,
-                           completion: ((_: StorageMetadata?, _: Error?) -> Void)?) {
-    StorageUpdateMetadataTask.updateMetadataTask(reference: self,
-                                                 queue: storage.dispatchQueue,
-                                                 metadata: metadata,
-                                                 completion: completion)
-  }
 
-  /// Updates the metadata associated with an object at the current path.
-  /// - Parameter metadata: A `StorageMetadata` object with the metadata to update.
-  /// - Throws: An error if the metadata update operation failed.
-  /// - Returns: The object metadata on success.
+    /// Updates the metadata associated with an object at the current path.
+    /// - Parameter metadata: A `StorageMetadata` object with the metadata to update.
+    /// - Throws: An error if the metadata update operation failed.
+    /// - Returns: The object metadata on success.
     public func updateMetadata(_ metadata: StorageMetadata) async throws -> StorageMetadata {
-    return try await withCheckedThrowingContinuation { continuation in
-      self.updateMetadata(metadata) { result in
-        continuation.resume(with: result)
-      }
-    }
+        try await StorageUpdateMetadataTask.updateMetadataTask(reference: self,
+                                                 queue: storage.dispatchQueue,
+                                                 metadata: metadata)
   }
+
 
   // MARK: - Delete
 
-  /// Deletes the object at the current path.
-  /// - Parameter completion: A completion block which returns a nonnull error on failure.
-    public func delete(completion: ((_: Error?) -> Void)?) {
-    let completionWrap = { (_: Data?, error: Error?) in
-      if let completion {
-        completion(error)
-      }
-    }
-    StorageDeleteTask.deleteTask(reference: self,
-                                 queue: storage.dispatchQueue,
-                                 completion: completionWrap)
-  }
-
-  /// Deletes the object at the current path.
-  /// - Throws: An error if the delete operation failed.
+    /// Deletes the object at the current path.
+    /// - Throws: An error if the delete operation failed.
     public func delete() async throws {
-    return try await withCheckedThrowingContinuation { continuation in
-      self.delete { error in
-        if let error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-    }
+    _ = try await StorageDeleteTask.deleteTask(
+        reference: self,
+        queue: storage.dispatchQueue
+    )
   }
 
     public var description: String {
@@ -518,10 +412,10 @@ public struct StorageReference: Sendable {
   }
 
   /// For maxSize API, return an error if the size is exceeded.
-  private func checkSizeOverflow(task: StorageTask, maxSize: Int64) -> NSError? {
-    if task.progress.totalUnitCount > maxSize || task.progress.completedUnitCount > maxSize {
+  private func checkSizeOverflow(progress: Progress, maxSize: Int64) -> NSError? {
+    if progress.totalUnitCount > maxSize || progress.completedUnitCount > maxSize {
       return StorageError.downloadSizeExceeded(
-        total: task.progress.totalUnitCount,
+        total: progress.totalUnitCount,
         maxSize: maxSize
       ) as NSError
     }
