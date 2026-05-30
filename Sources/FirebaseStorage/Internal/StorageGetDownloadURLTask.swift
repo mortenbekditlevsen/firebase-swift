@@ -17,33 +17,25 @@ import Foundation
 /// Task which provides the ability to get a download URL for an object in Firebase Storage.
 enum StorageGetDownloadURLTask {
   static func getDownloadURLTask(reference: StorageReference,
-                                 queue: DispatchQueue,
-                                 completion: ((_: URL?, _: Error?) -> Void)?) {
-    StorageInternalTask(reference: reference,
-                        queue: queue,
-                        httpMethod: "GET",
-                        fetcherComment: "GetDownloadURLTask") { (data: Data?, error: Error?) in
-      if let error {
-        completion?(nil, error)
-      } else {
-        if let data,
-           let responseDictionary = try? JSONSerialization
-           .jsonObject(with: data) as? [String: Any] {
+                                 queue: DispatchQueue) async throws -> URL {
+      let task = StorageInternalTask(reference: reference,
+                                     queue: queue)
+      let data = try await task.start(
+        httpMethod: "GET",
+        fetcherComment: "GetDownloadURLTask")
+      if let responseDictionary = try? JSONSerialization
+        .jsonObject(with: data) as? [String: Any] {
           guard let downloadURL = downloadURLFromMetadataDictionary(responseDictionary,
                                                                     reference) else {
-            let error = StorageError.unknown(
-              message: "Failed to retrieve a download URL.",
-              serverError: [:]
-            ) as NSError
-            completion?(nil, error)
-            return
+              throw StorageError.unknown(
+                message: "Failed to retrieve a download URL.",
+                serverError: [:]
+              )
           }
-          completion?(downloadURL, nil)
-        } else {
-          completion?(nil, StorageErrorCode.error(withInvalidRequest: data))
-        }
+          return downloadURL
+      } else {
+          throw StorageErrorCode.error(withInvalidRequest: data)
       }
-    }
   }
 
   static func downloadURLFromMetadataDictionary(_ dictionary: [String: Any],

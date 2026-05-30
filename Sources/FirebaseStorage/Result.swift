@@ -39,17 +39,7 @@ private func getResultCallback<T>(completion: @escaping (Result<T, Error>) -> Vo
 }
 
 public extension StorageReference {
-  /// Asynchronously retrieves a long lived download URL with a revokable token.
-  ///
-  /// This can be used to share the file with others, but can be revoked by a developer
-  /// in the Firebase Console.
-  ///
-  /// - Parameters:
-  ///   - completion: A completion block returning a `Result` enum with either a URL or an `Error`.
-  func downloadURL(completion: @escaping (Result<URL, Error>) -> Void) {
-    downloadURL(completion: getResultCallback(completion: completion))
-  }
-
+  
   /// Asynchronously downloads the object at the `StorageReference` to a `Data` object.
   ///
   /// A `Data` of the provided max size will be allocated, so ensure that the device has enough
@@ -61,81 +51,11 @@ public extension StorageReference {
   ///                 an `Error`.
   ///
   /// - Returns: A StorageDownloadTask that can be used to monitor or manage the download.
-  @discardableResult
-  func getData(maxSize: Int64, completion: @escaping (Result<Data, Error>) -> Void)
-    -> StorageDownloadTask {
-    return getData(maxSize: maxSize, completion: getResultCallback(completion: completion))
-  }
-
-  /// Retrieves metadata associated with an object at the current path.
-  ///
-  /// - Parameters:
-  ///   - completion: A completion block which returns a `Result` enum with either the
-  ///                 object metadata or an `Error`.
-  func getMetadata(completion: @escaping (Result<StorageMetadata, Error>) -> Void) {
-    getMetadata(completion: getResultCallback(completion: completion))
-  }
-
-  /// Resumes a previous `list` call, starting after a pagination token.
-  ///
-  /// Returns the next set of items (files) and prefixes (folders) under this StorageReference.
-  ///
-  /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
-  /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
-  /// filtered.
-  ///
-  /// Only available for projects using Firebase Rules Version 2.
-  ///
-  /// - Parameters:
-  ///   - maxResults: The maximum number of results to return in a single page. Must be
-  ///                greater than 0 and at most 1000.
-  ///   - pageToken: A page token from a previous call to list.
-  ///   - completion: A completion handler that will be invoked with the next items and
-  ///                prefixes under the current StorageReference. It returns a `Result` enum
-  ///                with either the list or an `Error`.
-  func list(maxResults: Int64,
-            pageToken: String,
-            completion: @escaping (Result<StorageListResult, Error>) -> Void) {
-    list(maxResults: maxResults,
-         pageToken: pageToken,
-         completion: getResultCallback(completion: completion))
-  }
-
-  /// List up to `maxResults` items (files) and prefixes (folders) under this StorageReference.
-  ///
-  /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
-  /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
-  /// filtered.
-  ///
-  /// Only available for projects using Firebase Rules Version 2.
-  ///
-  /// - Parameters:
-  ///   - maxResults: The maximum number of results to return in a single page. Must be
-  ///                greater than 0 and at most 1000.
-  ///   - completion: A completion handler that will be invoked with the next items and
-  ///                prefixes under the current `StorageReference`. It returns a `Result` enum
-  ///                with either the list or an `Error`.
-  func list(maxResults: Int64,
-            completion: @escaping (Result<StorageListResult, Error>) -> Void) {
-    list(maxResults: maxResults,
-         completion: getResultCallback(completion: completion))
-  }
-
-  /// List all items (files) and prefixes (folders) under this StorageReference.
-  ///
-  /// This is a helper method for calling list() repeatedly until there are no more results.
-  /// Consistency of the result is not guaranteed if objects are inserted or removed while this
-  /// operation is executing. All results are buffered in memory.
-  ///
-  /// Only available for projects using Firebase Rules Version 2.
-  ///
-  /// - Parameters:
-  ///   - completion: A completion handler that will be invoked with all items and prefixes
-  ///                under the current StorageReference. It returns a `Result` enum with either the
-  ///                list or an `Error`.
-  func listAll(completion: @escaping (Result<StorageListResult, Error>) -> Void) {
-    listAll(completion: getResultCallback(completion: completion))
-  }
+//  @discardableResult
+//  func getData(maxSize: Int64, completion: @escaping (Result<Data, Error>) -> Void)
+//    -> StorageDownloadTask {
+//    return getData(maxSize: maxSize, completion: getResultCallback(completion: completion))
+//  }
 
   /// Asynchronously uploads data to the currently specified `StorageReference`.
   /// This is not recommended for large files, and one should instead upload a file from disk.
@@ -180,16 +100,6 @@ public extension StorageReference {
                    completion: getResultCallback(completion: completion))
   }
 
-  /// Updates the metadata associated with an object at the current path.
-  ///
-  /// - Parameters:
-  ///   - metadata: A `StorageMetadata` object with the metadata to update.
-  ///   - completion: A completion block which returns a `Result` enum with either the
-  ///                object metadata or an `Error`.
-  func updateMetadata(_ metadata: StorageMetadata,
-                      completion: @escaping (Result<StorageMetadata, Error>) -> Void) {
-    updateMetadata(metadata, completion: getResultCallback(completion: completion))
-  }
 
   /// Asynchronously downloads the object at the current path to a specified system filepath.
   ///

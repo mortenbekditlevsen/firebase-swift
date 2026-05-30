@@ -25,13 +25,13 @@ public extension StorageReference {
   ///           the task will be cancelled and an error will be thrown.
   /// - Throws: An error if the operation failed, for example if the data exceeded `maxSize`.
   /// - Returns: Data object.
-  func data(maxSize: Int64) async throws -> Data {
-    return try await withCheckedThrowingContinuation { continuation in
-      _ = self.getData(maxSize: maxSize) { result in
-        continuation.resume(with: result)
-      }
-    }
-  }
+//  func data(maxSize: Int64) async throws -> Data {
+//    return try await withCheckedThrowingContinuation { continuation in
+//      _ = self.getData(maxSize: maxSize) { result in
+//        continuation.resume(with: result)
+//      }
+//    }
+//  }
 
   /// Asynchronously uploads data to the currently specified StorageReference.
   /// This is not recommended for large files, and one should instead upload a file from disk
@@ -47,7 +47,7 @@ public extension StorageReference {
   /// - Returns: StorageMetadata with additional information about the object being uploaded.
   func putDataAsync(_ uploadData: Data,
                     metadata: StorageMetadata? = nil,
-                    onProgress: ((Progress?) -> Void)? = nil) async throws -> StorageMetadata {
+                    onProgress: (@Sendable (Progress?) -> Void)? = nil) async throws -> StorageMetadata {
     guard let onProgress = onProgress else {
       return try await withCheckedThrowingContinuation { continuation in
         self.putData(uploadData, metadata: metadata) { result in
@@ -85,7 +85,7 @@ public extension StorageReference {
   /// - Returns: `StorageMetadata` with additional information about the object being uploaded.
   func putFileAsync(from url: URL,
                     metadata: StorageMetadata? = nil,
-                    onProgress: ((Progress?) -> Void)? = nil) async throws -> StorageMetadata {
+                    onProgress: (@Sendable (Progress?) -> Void)? = nil) async throws -> StorageMetadata {
     guard let onProgress = onProgress else {
       return try await withCheckedThrowingContinuation { continuation in
         self.putFile(from: url, metadata: metadata) { result in
@@ -120,7 +120,7 @@ public extension StorageReference {
   ///   or `fileURL` did not reference a valid path on disk.
   /// - Returns: A `URL` pointing to the file path of the downloaded file.
   func writeAsync(toFile fileURL: URL,
-                  onProgress: ((Progress?) -> Void)? = nil) async throws -> URL {
+                  onProgress: (@Sendable (Progress?) -> Void)? = nil) async throws -> URL {
     guard let onProgress = onProgress else {
       return try await withCheckedThrowingContinuation { continuation in
         _ = self.write(toFile: fileURL) { result in
@@ -141,55 +141,6 @@ public extension StorageReference {
           snapshot.error ?? StorageError
             .internalError(message: "Internal Storage Error in writeAsync")
         ))
-      }
-    }
-  }
-
-  /// List up to `maxResults` items (files) and prefixes (folders) under this StorageReference.
-  ///
-  /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
-  /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
-  /// filtered.
-  ///
-  /// Only available for projects using Firebase Rules Version 2.
-  ///
-  /// - Parameters:
-  ///   - maxResults: The maximum number of results to return in a single page. Must be
-  ///                greater than 0 and at most 1000.
-  /// - Throws: An error if the operation failed, for example if Storage was unreachable
-  ///   or the storage reference referenced an invalid path.
-  /// - Returns: A `StorageListResult` containing the contents of the storage reference.
-  func list(maxResults: Int64) async throws -> StorageListResult {
-    typealias ListContinuation = CheckedContinuation<StorageListResult, Error>
-    return try await withCheckedThrowingContinuation { (continuation: ListContinuation) in
-      self.list(maxResults: maxResults) { result in
-        continuation.resume(with: result)
-      }
-    }
-  }
-
-  /// List up to `maxResults` items (files) and prefixes (folders) under this StorageReference.
-  ///
-  /// "/" is treated as a path delimiter. Firebase Storage does not support unsupported object
-  /// paths that end with "/" or contain two consecutive "/"s. All invalid objects in GCS will be
-  /// filtered.
-  ///
-  /// Only available for projects using Firebase Rules Version 2.
-  ///
-  /// - Parameters:
-  ///   - maxResults: The maximum number of results to return in a single page. Must be
-  ///                greater than 0 and at most 1000.
-  ///   - pageToken: A page token from a previous call to list.
-  /// - Throws:
-  ///   - An error if the operation failed, for example if Storage was unreachable
-  ///   or the storage reference referenced an invalid path.
-  /// - Returns:
-  ///   - completion A `Result` enum with either the list or an `Error`.
-  func list(maxResults: Int64, pageToken: String) async throws -> StorageListResult {
-    typealias ListContinuation = CheckedContinuation<StorageListResult, Error>
-    return try await withCheckedThrowingContinuation { (continuation: ListContinuation) in
-      self.list(maxResults: maxResults, pageToken: pageToken) { result in
-        continuation.resume(with: result)
       }
     }
   }
