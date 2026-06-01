@@ -36,7 +36,6 @@ actor StorageFetcherService {
       fetcherService.testBlock = testBlock
       let authorizer = StorageTokenAuthorizer(
         googleAppID: app.options.googleAppID,
-        callbackQueue: storage.callbackQueue,
         authProvider: storage.auth,
         appCheck: storage.appCheck
       )

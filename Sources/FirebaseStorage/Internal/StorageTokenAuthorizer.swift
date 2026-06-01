@@ -89,7 +89,6 @@ struct StorageTokenAuthorizer {
 
   var userEmail: String?
 
-  let callbackQueue: DispatchQueue
   private let googleAppID: String
   private let auth: AuthInterop?
   private let appCheck: AppCheckInterop?
@@ -97,11 +96,9 @@ struct StorageTokenAuthorizer {
   private let serialAuthArgsQueue = DispatchQueue(label: "com.google.firebasestorage.authorizer")
 
   init(googleAppID: String,
-       callbackQueue: DispatchQueue = DispatchQueue.main,
        authProvider: AuthInterop?,
        appCheck: AppCheckInterop?) {
     self.googleAppID = googleAppID
-    self.callbackQueue = callbackQueue
     auth = authProvider
     self.appCheck = appCheck
   }

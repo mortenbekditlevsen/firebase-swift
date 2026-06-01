@@ -14,11 +14,20 @@
 
 import Foundation
 
-public enum StorageTaskStatus: Int, Sendable {
-  case unknown
-  case resume
-  case progress
-  case pause
-  case success
-  case failure
+public enum StorageTaskStatus<T: Sendable>: Sendable {
+    case resume
+    case progress
+    case pause
+    case success(T)
+    case failure(Error)
+    
+    var taskState: StorageTaskState<T> {
+        switch self {
+        case .resume: return .resuming
+        case .progress: return .progress
+        case .pause: return .pausing
+        case .success(let result): return .success(result)
+        case .failure(let error): return .failed(error)
+        }
+    }
 }

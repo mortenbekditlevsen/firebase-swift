@@ -16,8 +16,8 @@ import Foundation
 
 /// A Task that lists the entries under a StorageReference
 enum StorageListTask {
+    @StorageActor
     static func listTask(reference: StorageReference,
-                         queue: DispatchQueue,
                          pageSize: Int64?,
                          previousPageToken: String?) async throws -> StorageListResult {
         var queryParams = [String: String]()
@@ -50,8 +50,7 @@ enum StorageListTask {
             queryParams: queryParams
         )
         
-        let task = StorageInternalTask(reference: reference,
-                                       queue: queue)
+        let task = StorageInternalTask(reference: reference)
         let data = try await task.start(
             request: request,
             httpMethod: "GET",

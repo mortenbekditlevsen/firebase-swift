@@ -22,7 +22,7 @@ import Foundation
  * and a Storage reference to the object in question. Full documentation can be found in the
  * [GCS documentation](https://cloud.google.com/storage/docs/json_api/v1/objects#resource)
  */
-open class StorageMetadata: @unchecked Sendable {
+public struct StorageMetadata: Sendable {
   // MARK: - Public APIs
 
   /**
@@ -105,7 +105,7 @@ open class StorageMetadata: @unchecked Sendable {
    * Creates a Dictionary from the contents of the metadata.
    * @return A Dictionary that represents the contents of the metadata.
    */
-   open func dictionaryRepresentation() -> [String: AnyHashable] {
+   public func dictionaryRepresentation() -> [String: AnyHashable] {
     let stringFromDate = StorageMetadata.RFC3339StringFromDate
     return [
       "bucket": bucket,
@@ -121,14 +121,15 @@ open class StorageMetadata: @unchecked Sendable {
       "timeCreated": timeCreated.map(stringFromDate),
       "updated": updated.map(stringFromDate),
       "name": path,
-    ].compactMapValues { $0 }.merging(["metadata": customMetadata]) { current, _ in current }
+      "metadata": customMetadata
+    ].compactMapValues { $0 }
   }
 
   /**
    * Determines if the current metadata represents a "file".
    */
    public var isFile: Bool {
-    return fileType == .file
+       fileType == .file
   }
 
   // TODO: Nothing in the implementation ever sets `.folder`.
@@ -136,7 +137,7 @@ open class StorageMetadata: @unchecked Sendable {
    * Determines if the current metadata represents a "folder".
    */
    public var isFolder: Bool {
-    return fileType == .folder
+       fileType == .folder
   }
 
   // MARK: - Public Initializers
@@ -145,37 +146,41 @@ open class StorageMetadata: @unchecked Sendable {
    * Creates an empty instance of StorageMetadata.
    * @return An empty instance of StorageMetadata.
    */
-    public convenience init() {
-    self.init(dictionary: [:])
-  }
+    public init() {
+        self.init(dictionary: [:])
+    }
 
   /**
    * Creates an instance of StorageMetadata from the contents of a dictionary.
    * @return An instance of StorageMetadata that represents the contents of a dictionary.
    */
-   public init(dictionary: [String: AnyHashable]) {
-    initialMetadata = dictionary
-    bucket = dictionary["bucket"] as? String ?? ""
-    cacheControl = dictionary["cacheControl"] as? String ?? nil
-    contentDisposition = dictionary["contentDisposition"] as? String ?? nil
-    contentEncoding = dictionary["contentEncoding"] as? String ?? nil
-    contentLanguage = dictionary["contentLanguage"] as? String ?? nil
-    contentType = dictionary["contentType"] as? String ?? nil
-    customMetadata = dictionary["metadata"] as? [String: String] ?? nil
-    size = StorageMetadata.intFromDictionaryValue(dictionary["size"])
-    generation = StorageMetadata.intFromDictionaryValue(dictionary["generation"])
-    metageneration = StorageMetadata.intFromDictionaryValue(dictionary["metageneration"])
-    timeCreated = StorageMetadata.dateFromRFC3339String(dictionary["timeCreated"])
-    updated = StorageMetadata.dateFromRFC3339String(dictionary["updated"])
-    md5Hash = dictionary["md5Hash"] as? String ?? nil
-
-    // GCS "name" is our path, our "name" is just the last path component of the path
-    if let name = dictionary["name"] as? String {
-      path = name
-      self.name = (name as NSString).lastPathComponent
+    public init(dictionary: [String: AnyHashable]) {
+        bucket = dictionary["bucket"] as? String ?? ""
+        cacheControl = dictionary["cacheControl"] as? String
+        contentDisposition = dictionary["contentDisposition"] as? String
+        contentEncoding = dictionary["contentEncoding"] as? String
+        contentLanguage = dictionary["contentLanguage"] as? String
+        contentType = dictionary["contentType"] as? String
+        customMetadata = dictionary["metadata"] as? [String: String]
+        size = StorageMetadata.intFromDictionaryValue(dictionary["size"])
+        generation = StorageMetadata.intFromDictionaryValue(dictionary["generation"])
+        metageneration = StorageMetadata.intFromDictionaryValue(dictionary["metageneration"])
+        timeCreated = StorageMetadata.dateFromRFC3339String(dictionary["timeCreated"])
+        updated = StorageMetadata.dateFromRFC3339String(dictionary["updated"])
+        md5Hash = dictionary["md5Hash"] as? String
+        
+        // GCS "name" is our path, our "name" is just the last path component of the path
+        if let name = dictionary["name"] as? String {
+            path = name
+            self.name = (name as NSString).lastPathComponent
+        }
+        fileType = .unknown
+        // First initialize with a default value
+        self.initialMetadata = []
+        
+        // Then make a copy of self and assign
+        self.initialMetadata = [self]
     }
-    fileType = .unknown
-  }
 
     public var description: String {
     return "\(type(of: self)) \(dictionaryRepresentation())"
@@ -184,7 +189,10 @@ open class StorageMetadata: @unchecked Sendable {
   // MARK: - Internal APIs
 
   func updatedMetadata() -> [String: AnyHashable] {
-    return remove(matchingMetadata: dictionaryRepresentation(), oldMetadata: initialMetadata)
+      remove(
+        matchingMetadata: dictionaryRepresentation(),
+        oldMetadata: initialMetadata.first?.dictionaryRepresentation() ?? [:]
+      )
   }
 
   enum StorageMetadataType {
@@ -197,7 +205,11 @@ open class StorageMetadata: @unchecked Sendable {
 
   // MARK: - Private APIs and data
 
-  private var initialMetadata: [String: AnyHashable]
+    // We store a copy of the initial metadata as StorageMetadata
+    // rather than [String: AnyHashable] due to sendability.
+    // We wrap in array since structs can't reference themselves (unless it is marked indirect
+    // but this spills out into public api...)
+  private var initialMetadata: [StorageMetadata]
 
   private static func intFromDictionaryValue(_ value: Any?) -> Int64 {
     if let value = value as? Int { return Int64(value) }

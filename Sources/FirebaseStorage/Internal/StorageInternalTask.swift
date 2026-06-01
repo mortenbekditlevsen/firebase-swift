@@ -15,20 +15,28 @@
 import Foundation
 
 /// Implement StorageTasks that are not directly exposed via the public API.
-class StorageInternalTask: StorageTask, @unchecked Sendable {
-  private var fetcher: GTMSessionFetcher?
+@StorageActor
+final class StorageInternalTask {
+    private var fetcher: GTMSessionFetcher?
+    private var base: StorageBase<Data>
     
+    init(reference: StorageReference) {
+        self.base = StorageBase(reference: reference)
+    }
+            
     func start(
         request: URLRequest? = nil,
         httpMethod: String,
         fetcherComment: String
     ) async throws -> Data {
     // Prepare a task and begins execution.
-      self.state = .queueing
+        let reference = base.reference
+        let baseRequest = base.baseRequest
+        base.state = .queueing
         let fetcherService = await StorageFetcherService.shared.service(reference.storage)
-        var request = request ?? self.baseRequest
+        var request = request ?? baseRequest
         request.httpMethod = httpMethod
-        request.timeoutInterval = self.reference.storage.maxOperationRetryTime
+        request.timeoutInterval = reference.storage.maxOperationRetryTime
 
         let fetcher = fetcherService.fetcher(with: request)
         fetcher.comment = fetcherComment
@@ -38,11 +46,11 @@ class StorageInternalTask: StorageTask, @unchecked Sendable {
             return data
         } catch {
             throw StorageErrorCode.error(withServerError: error as NSError,
-                                                    ref: self.reference)
+                                                    ref: reference)
         }
       }
 
   deinit {
-    self.fetcher?.stopFetching()
+      self.fetcher?.stopFetching()
   }
 }

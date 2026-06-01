@@ -94,18 +94,24 @@ public struct StorageReference: Sendable {
     /// upload.
     @discardableResult
     public func putData(_ uploadData: Data, metadata: StorageMetadata? = nil) -> StorageUploadTask {
-        return putData(uploadData, metadata: metadata, completion: nil)
+        return putDataTask(uploadData, metadata: metadata)
     }
-    
-    /// Asynchronously uploads data to the currently specified `StorageReference`.
-    /// This is not recommended for large files, and one should instead upload a file from disk.
-    /// - Parameter uploadData The data to upload.
-    /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
-    /// upload.
-    @discardableResult public func __putData(_ uploadData: Data) -> StorageUploadTask {
-        return putData(uploadData, metadata: nil, completion: nil)
+       
+    internal func putDataTask(_ uploadData: Data,
+                        metadata: StorageMetadata? = nil) -> StorageUploadTask {
+        var putMetadata = metadata ?? StorageMetadata()
+        if let path = path.object {
+            putMetadata.path = path
+            putMetadata.name = (path as NSString).lastPathComponent as String
+        }
+        let task = StorageUploadTask(reference: self,
+                                     data: uploadData,
+                                     metadata: putMetadata)
+
+        task.enqueue()
+        return task
     }
-    
+
     /// Asynchronously uploads data to the currently specified `StorageReference`.
     /// This is not recommended for large files, and one should instead upload a file from disk.
     /// - Parameters:
@@ -118,19 +124,16 @@ public struct StorageReference: Sendable {
     /// upload.
     @discardableResult
     public func putData(_ uploadData: Data,
-                        metadata: StorageMetadata? = nil,
-                        completion: ((_: StorageMetadata?, _: Error?) -> Void)?) -> StorageUploadTask {
-        let putMetadata = metadata ?? StorageMetadata()
+                        metadata: StorageMetadata? = nil) async throws -> StorageMetadata {
+        var putMetadata = metadata ?? StorageMetadata()
         if let path = path.object {
             putMetadata.path = path
             putMetadata.name = (path as NSString).lastPathComponent as String
         }
         let task = StorageUploadTask(reference: self,
-                                     queue: storage.dispatchQueue,
                                      data: uploadData,
                                      metadata: putMetadata)
-        startAndObserveUploadTask(task: task, completion: completion)
-        return task
+        return try await task.enqueueAsync()
     }
     
     /// Asynchronously uploads a file to the currently specified `StorageReference`.
@@ -142,15 +145,7 @@ public struct StorageReference: Sendable {
     /// upload.
     @discardableResult
     public func putFile(from fileURL: URL, metadata: StorageMetadata? = nil) -> StorageUploadTask {
-        return putFile(from: fileURL, metadata: metadata, completion: nil)
-    }
-    
-    /// Asynchronously uploads a file to the currently specified `StorageReference`,
-    /// without additional metadata.
-    /// @param fileURL A URL representing the system file path of the object to be uploaded.
-    /// @return An instance of StorageUploadTask, which can be used to monitor or manage the upload.
-    @discardableResult public func __putFile(from fileURL: URL) -> StorageUploadTask {
-        return putFile(from: fileURL, metadata: nil, completion: nil)
+        putFileTask(from: fileURL, metadata: metadata)
     }
     
     /// Asynchronously uploads a file to the currently specified `StorageReference`.
@@ -164,20 +159,32 @@ public struct StorageReference: Sendable {
     /// upload.
     @discardableResult
     public func putFile(from fileURL: URL,
-                        metadata: StorageMetadata? = nil,
-                        completion: ((_: StorageMetadata?, _: Error?) -> Void)?) -> StorageUploadTask {
-        let putMetadata: StorageMetadata = metadata ?? StorageMetadata()
+                        metadata: StorageMetadata? = nil) async throws -> StorageMetadata {
+        var putMetadata: StorageMetadata = metadata ?? StorageMetadata()
         if let path = path.object {
             putMetadata.path = path
             putMetadata.name = (path as NSString).lastPathComponent as String
         }
         let task = StorageUploadTask(reference: self,
-                                     queue: storage.dispatchQueue,
                                      file: fileURL,
                                      metadata: putMetadata)
-        startAndObserveUploadTask(task: task, completion: completion)
+        return try await task.enqueueAsync()
+    }
+    
+    internal func putFileTask(from fileURL: URL,
+                        metadata: StorageMetadata? = nil) -> StorageUploadTask {
+        var putMetadata: StorageMetadata = metadata ?? StorageMetadata()
+        if let path = path.object {
+            putMetadata.path = path
+            putMetadata.name = (path as NSString).lastPathComponent as String
+        }
+        let task = StorageUploadTask(reference: self,
+                                     file: fileURL,
+                                     metadata: putMetadata)
+        task.enqueue()
         return task
     }
+
     
     // MARK: - Downloads
     
@@ -195,17 +202,26 @@ public struct StorageReference: Sendable {
     @discardableResult
     public func getData(maxSize: Int64) async throws -> Data {
         let task = StorageDownloadTask(reference: self,
-                                       queue: storage.dispatchQueue,
                                        file: nil)
         
-        task.observe(.progress) { snapshot in
-            if let error = self.checkSizeOverflow(progress: snapshot.task.progress, maxSize: maxSize) {
-                task.cancel(withError: error)
+        Task { @StorageActor in
+            // It is ok to implicitly ignore errors here, since the
+            // same errors are surfaced in the task.start() below
+            let (_, stream) = await task.observe()
+            for try await snapshot in stream {
+                guard case .progress = snapshot.status else {
+                    continue
+                }
+                if let error = self.checkSizeOverflow(progress: snapshot.base.progress, maxSize: maxSize) {
+                    task.cancel(withError: error)
+                }
             }
         }
+
         let data = try await task.start()
+        let progress = await task.observer.base.progress
         if let error = self.checkSizeOverflow(
-            progress: task.progress,
+            progress: progress,
             maxSize: maxSize
         ) {
             throw error
@@ -220,8 +236,7 @@ public struct StorageReference: Sendable {
     /// - Throws: An error if the download URL could not be retrieved.
     /// - Returns: The URL on success.
     public func downloadURL() async throws -> URL {
-        try await StorageGetDownloadURLTask.getDownloadURLTask(reference: self,
-                                                               queue: storage.dispatchQueue)
+        try await StorageGetDownloadURLTask.getDownloadURLTask(reference: self)
     }
     
     /// Asynchronously downloads the object at the current path to a specified system filepath.
@@ -230,7 +245,10 @@ public struct StorageReference: Sendable {
     /// - Returns A `StorageDownloadTask` that can be used to monitor or manage the download.
     @discardableResult
     public func write(toFile fileURL: URL) -> StorageDownloadTask {
-        return write(toFile: fileURL, completion: nil)
+        let task = StorageDownloadTask(reference: self,
+                                       file: fileURL)
+        task.enqueue()
+        return task
     }
     
     /// Asynchronously downloads the object at the current path to a specified system filepath.
@@ -241,31 +259,11 @@ public struct StorageReference: Sendable {
     ///       or an error on failure.
     /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
     @discardableResult
-    public func write(toFile fileURL: URL,
-                      completion: ((_: URL?, _: Error?) -> Void)?) -> StorageDownloadTask {
+    public func write(toFile fileURL: URL) async throws -> URL {
         let task = StorageDownloadTask(reference: self,
-                                       queue: storage.dispatchQueue,
                                        file: fileURL)
-        
-        if let completion {
-            task.completionURL = completion
-            let callbackQueue = storage.callbackQueue
-            
-            task.observe(.success) { snapshot in
-                callbackQueue.async {
-                    task.completionURL?(fileURL, nil)
-                    task.completionURL = nil
-                }
-            }
-            task.observe(.failure) { snapshot in
-                callbackQueue.async {
-                    task.completionURL?(nil, snapshot.error)
-                    task.completionURL = nil
-                }
-            }
-        }
-        task.enqueue()
-        return task
+        _ = try await task.start()
+        return fileURL
     }
     
     // MARK: - List Support
@@ -285,7 +283,6 @@ public struct StorageReference: Sendable {
         while true {
             let result = try await StorageListTask.listTask(
                 reference: self,
-                queue: storage.dispatchQueue,
                 pageSize: nil,
                 previousPageToken: pageToken
             )
@@ -321,7 +318,6 @@ public struct StorageReference: Sendable {
             )
         } else {
             return try await StorageListTask.listTask(reference: self,
-                                                      queue: storage.dispatchQueue,
                                                       pageSize: maxResults,
                                                       previousPageToken: nil)
         }
@@ -352,7 +348,6 @@ public struct StorageReference: Sendable {
       )
     } else {
       return try await StorageListTask.listTask(reference: self,
-                               queue: storage.dispatchQueue,
                                pageSize: maxResults,
                                previousPageToken: pageToken)
     }
@@ -364,8 +359,7 @@ public struct StorageReference: Sendable {
     /// - Throws: An error if the object metadata could not be retrieved.
     /// - Returns: The object metadata on success.
     public func getMetadata() async throws -> StorageMetadata {
-        try await StorageGetMetadataTask.getMetadataTask(reference: self,
-                                                         queue: storage.dispatchQueue)
+        try await StorageGetMetadataTask.getMetadataTask(reference: self)
     }
 
 
@@ -375,7 +369,6 @@ public struct StorageReference: Sendable {
     /// - Returns: The object metadata on success.
     public func updateMetadata(_ metadata: StorageMetadata) async throws -> StorageMetadata {
         try await StorageUpdateMetadataTask.updateMetadataTask(reference: self,
-                                                 queue: storage.dispatchQueue,
                                                  metadata: metadata)
   }
 
@@ -386,8 +379,7 @@ public struct StorageReference: Sendable {
     /// - Throws: An error if the delete operation failed.
     public func delete() async throws {
     _ = try await StorageDeleteTask.deleteTask(
-        reference: self,
-        queue: storage.dispatchQueue
+        reference: self
     )
   }
 
@@ -420,27 +412,5 @@ public struct StorageReference: Sendable {
       ) as NSError
     }
     return nil
-  }
-
-  private func startAndObserveUploadTask(task: StorageUploadTask,
-                                         completion: ((_: StorageMetadata?, _: Error?) -> Void)?) {
-    if let completion {
-      task.completionMetadata = completion
-      let callbackQueue = storage.callbackQueue
-
-      task.observe(.success) { snapshot in
-        callbackQueue.async {
-          task.completionMetadata?(snapshot.metadata, nil)
-          task.completionMetadata = nil
-        }
-      }
-      task.observe(.failure) { snapshot in
-        callbackQueue.async {
-          task.completionMetadata?(nil, snapshot.error)
-          task.completionMetadata = nil
-        }
-      }
-    }
-    task.enqueue()
   }
 }

@@ -23,31 +23,30 @@ import Foundation
  * If no queue is specified, it defaults to the main queue.
  * This class is thread-safe.
  */
-open class StorageTask: @unchecked Sendable {
+public struct StorageBase<T: Sendable>: Sendable {
   /**
    * An immutable view of the task and associated metadata, progress, error, etc.
    */
-   public var snapshot: StorageTaskSnapshot {
-    objc_sync_enter(StorageTask.self)
-    defer { objc_sync_exit(StorageTask.self) }
-    let progress = Progress(totalUnitCount: self.progress.totalUnitCount)
-    progress.completedUnitCount = self.progress.completedUnitCount
-    return StorageTaskSnapshot(
-      task: self,
-      state: state,
-      reference: reference,
-      progress: progress,
-      metadata: metadata,
-      error: error
-    )
-  }
+   public var snapshot: StorageTaskSnapshot<T> {
+       let progress = Progress(
+        totalUnitCount: self.progress.totalUnitCount
+       )
+       progress.completedUnitCount = self.progress.completedUnitCount
+       return StorageTaskSnapshot<T>(
+        base: self,
+        state: state,
+        reference: reference,
+        progress: progress,
+        metadata: metadata
+       )
+   }
 
   // MARK: - Internal Implementations
 
   /**
    * State for the current task in progress.
    */
-  var state: StorageTaskState
+  var state: StorageTaskState<T>
 
   /**
    * StorageMetadata for the task in progress, or nil if none present.
@@ -57,7 +56,12 @@ open class StorageTask: @unchecked Sendable {
   /**
    * Error which occurred during task execution, or nil if no error occurred.
    */
-  var error: NSError?
+    var error: Error? {
+        if case .failed(let error) = state {
+            return error
+        }
+        return nil
+    }
 
   /**
    * NSProgress object which tracks the progress of an observable task.
@@ -69,19 +73,12 @@ open class StorageTask: @unchecked Sendable {
    */
   let reference: StorageReference
 
-  /**
-   * A serial queue for all storage operations.
-   */
-  let dispatchQueue: DispatchQueue
-
   let baseRequest: URLRequest
 
-  init(reference: StorageReference,
-       queue: DispatchQueue) {
+  init(reference: StorageReference) {
     self.reference = reference
-    dispatchQueue = queue
-    state = .unknown
-    progress = Progress(totalUnitCount: 0)
+      state = .queueing // XXX TODO: Part of initializer?
+      progress =  Progress(totalUnitCount: 0)
     baseRequest = StorageUtils.defaultRequestForReference(reference: reference)
   }
 }
@@ -102,15 +99,15 @@ public protocol StorageTaskManagement {
   /**
    * Pauses a task currently in progress.
    */
-   /*optional*/ func pause()
+   func pause()
 
   /**
    * Cancels a task.
    */
-   /*optional*/ func cancel()
+   func cancel()
 
   /**
    * Resumes a paused task.
    */
-   /*optional*/ func resume()
+   func resume()
 }

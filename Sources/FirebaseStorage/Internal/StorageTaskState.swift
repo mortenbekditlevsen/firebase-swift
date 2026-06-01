@@ -15,11 +15,11 @@
 /**
  * Enum representing the internal state of an upload or download task.
  */
-enum StorageTaskState {
+enum StorageTaskState<T: Sendable> {
   /**
    * Unknown task state
    */
-  case unknown
+//  case unknown
   /**
    * Task is being queued is ready to run
    */
@@ -41,27 +41,34 @@ enum StorageTaskState {
    */
   case pausing
   /**
-   * Task is completing successfully
-   */
-  case completing
-  /**
-   * Task is failing unrecoverably
-   */
-  case failing
-  /**
    * Task paused successfully
    */
   case paused
   /**
    * Task cancelled successfully
    */
-  case cancelled
+  case cancelled(Error)
   /**
    * Task completed successfully
    */
-  case success
+  case success(T)
   /**
    * Task failed unrecoverably
    */
-  case failed
+  case failed(Error)
+    
+    var status: StorageTaskStatus<T> {
+        switch self {
+        case .queueing, .running, .resuming:
+                .resume
+        case .progress:
+                .progress
+        case .paused, .pausing:
+                .pause
+        case .success(let result):
+                .success(result)
+        case .cancelled(let error), .failed(let error):
+                .failure(error)
+        }
+    }
 }

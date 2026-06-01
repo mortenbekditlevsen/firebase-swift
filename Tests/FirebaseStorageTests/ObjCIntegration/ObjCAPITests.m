@@ -175,9 +175,9 @@
   [metadata isFolder];
 }
 
-- (void)FIRStorageObservableTaskApis {
+- (void)FIRStorageobserverApis {
   FIRStorageReference *ref = [[FIRStorage storage] reference];
-  FIRStorageObservableTask *task = [ref writeToFile:[NSURL URLWithString:@"my-url"]];
+  FIRStorageobserver *task = [ref writeToFile:[NSURL URLWithString:@"my-url"]];
 
   NSString __unused *handle = [task observeStatus:FIRStorageTaskStatusPause
                                           handler:^(FIRStorageTaskSnapshot *_Nonnull snapshot){
