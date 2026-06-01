@@ -16,10 +16,9 @@ import Foundation
 
 /// Task which provides the ability to get a download URL for an object in Firebase Storage.
 enum StorageGetDownloadURLTask {
-  static func getDownloadURLTask(reference: StorageReference,
-                                 queue: DispatchQueue) async throws -> URL {
-      let task = StorageInternalTask(reference: reference,
-                                     queue: queue)
+    @StorageActor
+  static func getDownloadURLTask(reference: StorageReference) async throws -> URL {
+      let task = StorageInternalTask(reference: reference)
       let data = try await task.start(
         httpMethod: "GET",
         fetcherComment: "GetDownloadURLTask")

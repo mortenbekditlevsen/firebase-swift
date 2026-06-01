@@ -16,14 +16,13 @@ import Foundation
 
 /// Task which provides the ability to delete an object in Firebase Storage.
 enum StorageGetMetadataTask {
-  static func getMetadataTask(reference: StorageReference,
-                              queue: DispatchQueue) async throws -> StorageMetadata {
-      let task = StorageInternalTask(reference: reference,
-                                     queue: queue)
+    @StorageActor
+  static func getMetadataTask(reference: StorageReference) async throws -> StorageMetadata {
+      let task = StorageInternalTask(reference: reference)
       let data = try await task.start(httpMethod: "GET",
                                       fetcherComment: "GetMetadataTask")
       if let responseDictionary = try? JSONSerialization.jsonObject(with: data) as? [String: AnyHashable] {
-          let metadata = StorageMetadata(dictionary: responseDictionary)
+          var metadata = StorageMetadata(dictionary: responseDictionary)
           metadata.fileType = .file
           return metadata
       } else {

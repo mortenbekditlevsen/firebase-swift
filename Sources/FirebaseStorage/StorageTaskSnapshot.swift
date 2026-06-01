@@ -19,11 +19,11 @@ import Foundation
  * A snapshot contains a task, storage reference, metadata (if it exists),
  * progress, and an error (if one occurred).
  */
-public struct StorageTaskSnapshot {
+public struct StorageTaskSnapshot<T: Sendable>: Sendable {
   /**
    * The task this snapshot represents.
    */
-   public let task: StorageTask
+   public let base: StorageBase<T>
 
   /**
    * Metadata returned by the task, or `nil` if no metadata returned.
@@ -43,12 +43,15 @@ public struct StorageTaskSnapshot {
   /**
    * An error raised during task execution, or `nil` if no error occurred.
    */
-   public let error: Error?
+    public var error: Error? {
+        if case .failure(let error) = status { return error }
+        return nil
+    }
 
   /**
    * The status of the task.
    */
-   public let status: StorageTaskStatus
+   public let status: StorageTaskStatus<T>
 
   // MARK: NSObject overrides
 
@@ -59,29 +62,18 @@ public struct StorageTaskSnapshot {
     case .pause: return "<State: Paused>"
     case .success: return "<State: Success>"
     case .failure: return "<State: Failed, Error: \(String(describing: error))"
-    case .unknown: return "<State: Unknown>"
     }
   }
 
-  init(task: StorageTask,
-       state: StorageTaskState,
+  init(base: StorageBase<T>,
+       state: StorageTaskState<T>,
        reference: StorageReference,
        progress: Progress,
-       metadata: StorageMetadata? = nil,
-       error: Error? = nil) {
-    self.task = task
-    self.reference = reference
-    self.progress = progress
-    self.error = error
-    self.metadata = metadata
-
-    switch state {
-    case .queueing, .running, .resuming: status = StorageTaskStatus.resume
-    case .progress: status = StorageTaskStatus.progress
-    case .paused, .pausing: status = StorageTaskStatus.pause
-    case .success, .completing: status = StorageTaskStatus.success
-    case .cancelled, .failed, .failing: status = .failure
-    case .unknown: status = .unknown
-    }
+       metadata: StorageMetadata? = nil) {
+      self.base = base
+      self.reference = reference
+      self.progress = progress
+      self.metadata = metadata
+      self.status = state.status
   }
 }

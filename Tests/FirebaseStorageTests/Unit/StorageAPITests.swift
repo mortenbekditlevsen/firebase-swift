@@ -188,7 +188,7 @@ final class StorageAPITests: XCTestCase {
     _ = metadata.isFolder
   }
 
-  func StorageObservableTaskApis(ref: StorageReference) throws {
+  func StorageobserverApis(ref: StorageReference) throws {
     let task = ref.write(toFile: URL(string: "url")!)
     _ = task.observe(.pause) { snapshot in
     }

@@ -38,7 +38,6 @@ public final class Storage: Sendable {
     var maxOperationRetryTime: TimeInterval = 120.0
     var maxOperationRetryInterval: TimeInterval = computeRetryInterval(fromRetryTime: 120.0)
     var uploadChunkSizeBytes: Int64 = .max
-    var callbackQueue: DispatchQueue = .main
     var host: String = "firebasestorage.googleapis.com"
     var scheme: String = "https"
     var port: Int = 443
@@ -136,12 +135,6 @@ public final class Storage: Sendable {
   public var uploadChunkSizeBytes: Int64 {
     get { state.withLock { $0.uploadChunkSizeBytes } }
     set { state.withLock { $0.uploadChunkSizeBytes = newValue } }
-  }
-
-  /// A `DispatchQueue` that all developer callbacks are fired on. Defaults to the main queue.
-  public var callbackQueue: DispatchQueue {
-    get { state.withLock { $0.callbackQueue } }
-    set { state.withLock { $0.callbackQueue = newValue } }
   }
 
   /// Creates a `StorageReference` initialized at the root Firebase Storage location.

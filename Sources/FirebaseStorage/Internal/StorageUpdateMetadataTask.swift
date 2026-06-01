@@ -16,8 +16,8 @@ import Foundation
 
 /// A Task that lists the entries under a StorageReference
 enum StorageUpdateMetadataTask {
+    @StorageActor
     static func updateMetadataTask(reference: StorageReference,
-                                   queue: DispatchQueue,
                                    metadata: StorageMetadata) async throws -> StorageMetadata {
         var request = StorageUtils.defaultRequestForReference(reference: reference)
         let updateData = try? JSONSerialization.data(withJSONObject: metadata.updatedMetadata())
@@ -27,14 +27,13 @@ enum StorageUpdateMetadataTask {
             request.setValue("\(count)", forHTTPHeaderField: "Content-Length")
         }
         
-        let task = StorageInternalTask(reference: reference,
-                                       queue: queue)
+        let task = StorageInternalTask(reference: reference)
         let data = try await task.start(request: request,
                                         httpMethod: "PATCH",
                                         fetcherComment: "GetMetadataTask")
         if let responseDictionary = try? JSONSerialization
             .jsonObject(with: data) as? [String: AnyHashable] {
-            let metadata = StorageMetadata(dictionary: responseDictionary)
+            var metadata = StorageMetadata(dictionary: responseDictionary)
             metadata.fileType = .file
             return metadata
         } else {
