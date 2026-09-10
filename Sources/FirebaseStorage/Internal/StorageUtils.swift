@@ -12,8 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+import FoundationEssentials
+#else
 import Foundation
+#endif
+
+
+#if os(iOS) || os(tvOS) || os(visionOS) || os(macOS) || os(watchOS)
 private import UniformTypeIdentifiers
+#endif
 
 #if os(iOS) || os(tvOS) || os(visionOS)
   import MobileCoreServices

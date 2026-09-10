@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 
 /**
@@ -148,7 +153,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
             }
         } catch {
             self.observer.fire(state: .progress)
-            let error = StorageErrorCode.error(withServerError: error as NSError,
+            let error = StorageErrorCode.error(withServerError: error,
                                                ref: self.reference)
             self.observer.base.metadata = self.uploadMetadata
             self.state = .failed(error)
@@ -177,7 +182,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
     public func cancel() {
         Task { @StorageActor in
             let error = StorageErrorCode.error(
-                withServerError: StorageErrorCode.cancelled as NSError,
+                withServerError: StorageErrorCode.cancelled,
                 ref: self.observer.base.reference
             )
             self.observer.base.state = .cancelled(error)
@@ -237,7 +242,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
   }
 
     @StorageActor
-  private func contentUploadError() -> NSError? {
+  private func contentUploadError() -> StorageError? {
     if uploadData != nil {
       return nil
     }
@@ -249,7 +254,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
       return StorageError.unknown(message: "File at URL: \(observer.fileURL?.absoluteString ?? "") is " +
       "not reachable. Ensure file URL is not " +
       "a directory, symbolic link, or invalid url.",
-      serverError: [:]) as NSError
+      serverError: [:])
   }
 
   private func GCSEscapedString(_ input: String?) -> String? {
