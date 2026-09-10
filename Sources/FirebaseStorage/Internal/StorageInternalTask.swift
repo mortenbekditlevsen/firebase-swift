@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /// Implement StorageTasks that are not directly exposed via the public API.
 @StorageActor

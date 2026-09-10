@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 /**
  * A superclass to all Storage tasks, including `StorageUploadTask`
@@ -76,10 +81,10 @@ public struct StorageBase<T: Sendable>: Sendable {
   let baseRequest: URLRequest
 
   init(reference: StorageReference) {
-    self.reference = reference
+      self.reference = reference
       state = .queueing // XXX TODO: Part of initializer?
       progress =  Progress(totalUnitCount: 0)
-    baseRequest = StorageUtils.defaultRequestForReference(reference: reference)
+      baseRequest = StorageUtils.defaultRequestForReference(reference: reference)
   }
 }
 

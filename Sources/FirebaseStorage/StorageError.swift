@@ -46,7 +46,8 @@ public enum StorageErrorCode: Int, Swift.Error {
    * @param ref StorageReference which provides context about the request being made.
    * @return Returns a Firebase Storage error.
    */
-  static func error(withServerError serverError: NSError, ref: StorageReference) -> NSError {
+  static func error(withServerError serverError: Error, ref: StorageReference) -> Error {
+      let serverError = serverError as NSError
     var errorDictionary = serverError.userInfo
     errorDictionary["ResponseErrorDomain"] = serverError.domain
     errorDictionary["ResponseErrorCode"] = serverError.code

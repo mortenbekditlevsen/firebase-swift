@@ -1,13 +1,49 @@
 {
-  "originHash" : "88f0cc176490a8cc448c9f413b225ce045e47149a43aa308ead745f683020036",
+  "originHash" : "373f512ca4d84593ba5387136221865d1cadc9c71e34c693f6819a5d21d57fce",
   "pins" : [
+    {
+      "identity" : "abseil-cpp-swiftpm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/firebase/abseil-cpp-SwiftPM.git",
+      "state" : {
+        "revision" : "24832c3bb8d03f0bd8c35e52069ecb8d2166dfe9",
+        "version" : "0.20240722.2"
+      }
+    },
+    {
+      "identity" : "boringssl-swiftpm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/firebase/boringssl-SwiftPM.git",
+      "state" : {
+        "revision" : "38b03401110f03bde32bc7e86ff4f815238ed2d3",
+        "version" : "0.32.1"
+      }
+    },
+    {
+      "identity" : "grpc-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/grpc/grpc-ios.git",
+      "state" : {
+        "revision" : "93a0694c01ff51d7a897492aec9dc58f486e7cfd",
+        "version" : "1.69.0"
+      }
+    },
     {
       "identity" : "leveldb",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mortenbekditlevsen/leveldb.git",
       "state" : {
-        "branch" : "1.22.2-mine",
-        "revision" : "3ea2c291eb1ea8676b8878f4f4c6fe93294811cd"
+        "branch" : "1.22.2-headerfix",
+        "revision" : "7d2458cb9cca40f2158f6a62b4a4de03c8b10ebf"
+      }
+    },
+    {
+      "identity" : "nanopb",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/firebase/nanopb.git",
+      "state" : {
+        "revision" : "b7e1104502eca3a213b46303391ca4d3bc8ddec1",
+        "version" : "2.30910.0"
       }
     },
     {
