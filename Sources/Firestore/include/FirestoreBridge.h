@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../core/src/api/source.h"
@@ -52,10 +53,119 @@ class QueryBridge;
 class DocumentSnapshotBridge;
 class QuerySnapshotBridge;
 class ListenerRegistrationBridge;
+class BridgeFieldValue;
 
 // Type aliases for template specializations (required by Swift C++ interop).
 using StringVector = std::vector<std::string>;
+using DoubleVector = std::vector<double>;
 using DocumentSnapshotBridgeVector = std::vector<DocumentSnapshotBridge>;
+using BridgeFieldValueVector = std::vector<BridgeFieldValue>;
+using BridgeFieldValueMapEntry = std::pair<std::string, BridgeFieldValue>;
+using BridgeFieldValueMap = std::vector<BridgeFieldValueMapEntry>;
+
+// ---------------------------------------------------------------------------
+// BridgeFieldValue — a Swift-constructable value type for document data
+// ---------------------------------------------------------------------------
+/// Represents a single Firestore value that Swift can construct and pass
+/// through the C++ bridge. Uses a tagged-union approach with simple types.
+class BridgeFieldValue {
+ public:
+  enum class Tag : int32_t {
+    Null = 0,
+    Boolean,
+    Integer,     // int64_t
+    Double,
+    String,
+    Blob,        // raw bytes as std::string
+    Timestamp,   // seconds + nanoseconds
+    GeoPoint,    // latitude + longitude
+    Array,
+    Map,
+    Reference,   // document path string
+    Vector,      // array of doubles for vector search
+
+    // Sentinel field values (transforms)
+    SentinelDelete,
+    SentinelServerTimestamp,
+    SentinelArrayUnion,    // elements stored in array_value_
+    SentinelArrayRemove,   // elements stored in array_value_
+    SentinelIncrement,     // operand in int64_value_ or double_value_
+  };
+
+  // Default constructor creates a Null value.
+  BridgeFieldValue() noexcept;
+  ~BridgeFieldValue() noexcept;
+  BridgeFieldValue(const BridgeFieldValue&);
+  BridgeFieldValue& operator=(const BridgeFieldValue&);
+  BridgeFieldValue(BridgeFieldValue&&) noexcept;
+  BridgeFieldValue& operator=(BridgeFieldValue&&) noexcept;
+
+  // --- Factory methods for Swift to call ---
+  static BridgeFieldValue Null() noexcept;
+  static BridgeFieldValue FromBool(bool value) noexcept;
+  static BridgeFieldValue FromInt64(int64_t value) noexcept;
+  static BridgeFieldValue FromDouble(double value) noexcept;
+  static BridgeFieldValue FromString(const std::string& value) noexcept;
+  static BridgeFieldValue FromBlob(const std::string& bytes) noexcept;
+  static BridgeFieldValue FromTimestamp(int64_t seconds,
+                                        int32_t nanoseconds) noexcept;
+  static BridgeFieldValue FromGeoPoint(double latitude,
+                                        double longitude) noexcept;
+  static BridgeFieldValue FromArray(
+      const BridgeFieldValueVector& elements) noexcept;
+  static BridgeFieldValue FromMap(
+      const BridgeFieldValueMap& entries) noexcept;
+  static BridgeFieldValue FromReference(
+      const std::string& document_path) noexcept;
+  static BridgeFieldValue FromVector(
+      const DoubleVector& doubles) noexcept;
+
+  // Sentinel factories
+  static BridgeFieldValue Delete() noexcept;
+  static BridgeFieldValue ServerTimestamp() noexcept;
+  static BridgeFieldValue ArrayUnion(
+      const BridgeFieldValueVector& elements) noexcept;
+  static BridgeFieldValue ArrayRemove(
+      const BridgeFieldValueVector& elements) noexcept;
+  static BridgeFieldValue IncrementInt(int64_t operand) noexcept;
+  static BridgeFieldValue IncrementDouble(double operand) noexcept;
+
+  // Accessors
+  Tag tag() const noexcept { return tag_; }
+  bool bool_value() const noexcept { return bool_value_; }
+  int64_t int64_value() const noexcept { return int64_value_; }
+  double double_value() const noexcept { return double_value_; }
+  std::string string_value() const noexcept { return string_value_; }
+  /// Returns blob data as a vector of bytes (for Swift interop).
+  std::vector<uint8_t> blob_bytes() const noexcept {
+    return std::vector<uint8_t>(string_value_.begin(), string_value_.end());
+  }
+  int64_t timestamp_seconds() const noexcept { return int64_value_; }
+  int32_t timestamp_nanos() const noexcept { return int32_value_; }
+  double geo_latitude() const noexcept { return double_value_; }
+  double geo_longitude() const noexcept { return double2_value_; }
+  BridgeFieldValueVector array_value() const noexcept {
+    return array_value_;
+  }
+  BridgeFieldValueMap map_value() const noexcept {
+    return map_value_;
+  }
+  DoubleVector vector_value() const noexcept {
+    return vector_value_;
+  }
+
+ private:
+  Tag tag_ = Tag::Null;
+  bool bool_value_ = false;
+  int64_t int64_value_ = 0;
+  int32_t int32_value_ = 0;
+  double double_value_ = 0.0;
+  double double2_value_ = 0.0;
+  std::string string_value_;
+  BridgeFieldValueVector array_value_;
+  BridgeFieldValueMap map_value_;
+  DoubleVector vector_value_;
+};
 
 // ---------------------------------------------------------------------------
 // DocumentSnapshotBridge
@@ -83,6 +193,10 @@ class DocumentSnapshotBridge {
 
   /// Creates a DocumentReferenceBridge for this snapshot's document.
   DocumentReferenceBridge create_reference() const noexcept;
+
+  /// Returns the document data as a BridgeFieldValueMap.
+  /// Returns empty map if document doesn't exist.
+  BridgeFieldValueMap data() const noexcept;
 
  private:
   friend class DocumentReferenceBridge;
@@ -152,7 +266,7 @@ class QuerySnapshotBridge {
 // ---------------------------------------------------------------------------
 // DocumentReferenceBridge
 // ---------------------------------------------------------------------------
-/// Wraps api::DocumentReference. Exposes read-only operations to Swift.
+/// Wraps api::DocumentReference. Exposes read and write operations to Swift.
 class DocumentReferenceBridge {
  public:
   DocumentReferenceBridge() noexcept;
@@ -186,10 +300,58 @@ class DocumentReferenceBridge {
       std::function<void(std::string)> callback
   ) const noexcept;
 
+  // --- Write operations ---
+  // These accept BridgeFieldValueMap and do the conversion internally.
+  // They return an error string (empty on success, synchronous parsing
+  // errors reported immediately; async write errors via callback).
+
+  /// Set document data (overwrite).
+  /// Returns error string for parse errors; empty string means parse OK
+  /// and the write has been submitted (completion comes via callback).
+  std::string SetData(
+      const BridgeFieldValueMap& data,
+      std::function<void(std::string)> callback) noexcept;
+
+  /// Set document data with merge.
+  std::string SetDataMerge(
+      const BridgeFieldValueMap& data,
+      std::function<void(std::string)> callback) noexcept;
+
+  /// Set document data with explicit merge field list.
+  std::string SetDataMergeFields(
+      const BridgeFieldValueMap& data,
+      const StringVector& merge_fields,
+      std::function<void(std::string)> callback) noexcept;
+
+  /// Update document fields.
+  std::string UpdateData(
+      const BridgeFieldValueMap& data,
+      std::function<void(std::string)> callback) noexcept;
+
+  // --- Fire-and-forget write overloads (callable from Swift) ---
+
+  /// Set document data (overwrite), fire-and-forget.
+  std::string SetData(const BridgeFieldValueMap& data) noexcept;
+
+  /// Set document data with merge, fire-and-forget.
+  std::string SetDataMerge(const BridgeFieldValueMap& data) noexcept;
+
+  /// Set document data with explicit merge fields, fire-and-forget.
+  std::string SetDataMergeFields(
+      const BridgeFieldValueMap& data,
+      const StringVector& merge_fields) noexcept;
+
+  /// Update document fields, fire-and-forget.
+  std::string UpdateData(const BridgeFieldValueMap& data) noexcept;
+
+  /// Delete this document, fire-and-forget.
+  void DeleteDocumentNoCallback() const noexcept;
+
  private:
   friend class FirestoreBridge;
   friend class CollectionReferenceBridge;
   friend class DocumentSnapshotBridge;
+  friend class UserDataReaderBridge;
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };
