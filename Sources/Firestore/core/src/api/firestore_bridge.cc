@@ -15,6 +15,7 @@
 #include "Firestore/include/FirestoreBridge.h"
 
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,10 +30,22 @@
 #include "Firestore/core/src/api/source.h"
 #include "Firestore/core/src/core/event_listener.h"
 #include "Firestore/core/src/core/listen_options.h"
+#include "Firestore/core/src/core/user_data.h"
+#include "Firestore/core/src/model/database_id.h"
+#include "Firestore/core/src/model/document.h"
+#include "Firestore/core/src/model/document_key.h"
+#include "Firestore/core/src/model/field_mask.h"
 #include "Firestore/core/src/model/field_path.h"
+#include "Firestore/core/src/model/field_transform.h"
+#include "Firestore/core/src/model/object_value.h"
 #include "Firestore/core/src/model/resource_path.h"
+#include "Firestore/core/src/model/transform_operation.h"
+#include "Firestore/core/src/model/value_util.h"
+#include "Firestore/core/src/nanopb/nanopb_util.h"
 #include "Firestore/core/src/util/status.h"
 #include "Firestore/core/src/util/statusor.h"
+
+#include "absl/types/optional.h"
 
 namespace firebase {
 namespace firestore {
@@ -46,6 +59,23 @@ using api::Query;
 using api::QuerySnapshot;
 using api::Source;
 using core::EventListener;
+using core::ParseAccumulator;
+using core::ParseContext;
+using core::ParsedSetData;
+using core::ParsedUpdateData;
+using core::UserDataSource;
+using model::ArrayTransform;
+using model::DatabaseId;
+using model::DocumentKey;
+using model::FieldMask;
+using model::FieldPath;
+using model::FieldTransform;
+using model::NumericIncrementTransform;
+using model::ObjectValue;
+using model::ResourcePath;
+using model::ServerTimestampTransform;
+using model::TransformOperation;
+using nanopb::Message;
 using util::Status;
 using util::StatusOr;
 
@@ -401,6 +431,754 @@ std::string FirestoreBridge::database_id() const noexcept {
   return impl_->firestore_->database_id().database_id();
 }
 
+// ===========================================================================
+// BridgeFieldValue
+// ===========================================================================
+
+BridgeFieldValue::BridgeFieldValue() noexcept = default;
+BridgeFieldValue::~BridgeFieldValue() noexcept = default;
+BridgeFieldValue::BridgeFieldValue(const BridgeFieldValue&) = default;
+BridgeFieldValue& BridgeFieldValue::operator=(const BridgeFieldValue&) = default;
+BridgeFieldValue::BridgeFieldValue(BridgeFieldValue&&) noexcept = default;
+BridgeFieldValue& BridgeFieldValue::operator=(BridgeFieldValue&&) noexcept = default;
+
+BridgeFieldValue BridgeFieldValue::Null() noexcept {
+  return BridgeFieldValue{};
+}
+
+BridgeFieldValue BridgeFieldValue::FromBool(bool value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Boolean;
+  v.bool_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromInt64(int64_t value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Integer;
+  v.int64_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromDouble(double value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Double;
+  v.double_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromString(
+    const std::string& value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::String;
+  v.string_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromBlob(
+    const std::string& bytes) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Blob;
+  v.string_value_ = bytes;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromTimestamp(
+    int64_t seconds, int32_t nanoseconds) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Timestamp;
+  v.int64_value_ = seconds;
+  v.int32_value_ = nanoseconds;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromGeoPoint(
+    double latitude, double longitude) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::GeoPoint;
+  v.double_value_ = latitude;
+  v.double2_value_ = longitude;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromArray(
+    const BridgeFieldValueVector& elements) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Array;
+  v.array_value_ = elements;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromMap(
+    const BridgeFieldValueMap& entries) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Map;
+  v.map_value_ = entries;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromReference(
+    const std::string& document_path) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Reference;
+  v.string_value_ = document_path;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromVector(
+    const DoubleVector& doubles) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Vector;
+  v.vector_value_ = doubles;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::Delete() noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelDelete;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::ServerTimestamp() noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelServerTimestamp;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::ArrayUnion(
+    const BridgeFieldValueVector& elements) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelArrayUnion;
+  v.array_value_ = elements;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::ArrayRemove(
+    const BridgeFieldValueVector& elements) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelArrayRemove;
+  v.array_value_ = elements;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::IncrementInt(int64_t operand) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelIncrement;
+  v.bool_value_ = false;  // false = integer increment
+  v.int64_value_ = operand;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::IncrementDouble(double operand) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelIncrement;
+  v.bool_value_ = true;  // true = double increment
+  v.double_value_ = operand;
+  return v;
+}
+
+// ===========================================================================
+// Internal: UserDataConverter
+// ===========================================================================
+// Converts BridgeFieldValue trees into nanopb protobuf values, handling
+// sentinel field values (transforms) via ParseAccumulator/ParseContext.
+
+namespace {
+
+// Forward declaration
+absl::optional<Message<google_firestore_v1_Value>> ConvertValue(
+    const BridgeFieldValue& value,
+    ParseContext&& context,
+    const DatabaseId& database_id);
+
+Message<google_firestore_v1_Value> ConvertMap(
+    const BridgeFieldValueMap& entries,
+    ParseContext&& context,
+    const DatabaseId& database_id) {
+  Message<google_firestore_v1_Value> result;
+  result->which_value_type = google_firestore_v1_Value_map_value_tag;
+  result->map_value = {};
+
+  if (entries.empty()) {
+    const FieldPath* path = context.path();
+    if (path && !path->empty()) {
+      context.AddToFieldMask(*path);
+    }
+    return result;
+  }
+
+  // Count non-sentinel entries for sizing the fields array.
+  pb_size_t non_sentinel_count = 0;
+  for (const auto& entry : entries) {
+    auto tag = entry.second.tag();
+    if (tag != BridgeFieldValue::Tag::SentinelDelete &&
+        tag != BridgeFieldValue::Tag::SentinelServerTimestamp &&
+        tag != BridgeFieldValue::Tag::SentinelArrayUnion &&
+        tag != BridgeFieldValue::Tag::SentinelArrayRemove &&
+        tag != BridgeFieldValue::Tag::SentinelIncrement) {
+      ++non_sentinel_count;
+    }
+  }
+
+  result->map_value.fields_count = non_sentinel_count;
+  result->map_value.fields =
+      nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(
+          non_sentinel_count);
+
+  pb_size_t index = 0;
+  for (const auto& entry : entries) {
+    auto parsed = ConvertValue(entry.second,
+                                context.ChildContext(entry.first),
+                                database_id);
+    if (parsed) {
+      result->map_value.fields[index].key =
+          nanopb::MakeBytesArray(entry.first);
+      result->map_value.fields[index].value = *parsed->release();
+      ++index;
+    }
+  }
+
+  return result;
+}
+
+Message<google_firestore_v1_Value> ConvertArray(
+    const BridgeFieldValueVector& elements,
+    ParseContext&& context,
+    const DatabaseId& database_id) {
+  Message<google_firestore_v1_Value> result;
+  result->which_value_type = google_firestore_v1_Value_array_value_tag;
+  result->array_value.values_count =
+      static_cast<pb_size_t>(elements.size());
+  result->array_value.values =
+      nanopb::MakeArray<google_firestore_v1_Value>(
+          result->array_value.values_count);
+
+  for (size_t i = 0; i < elements.size(); ++i) {
+    auto parsed = ConvertValue(elements[i],
+                                context.ChildContext(i),
+                                database_id);
+    if (!parsed) {
+      // Replace sentinels in arrays with null
+      parsed.emplace(model::DeepClone(model::NullValue()));
+    }
+    result->array_value.values[i] = *parsed->release();
+  }
+
+  return result;
+}
+
+Message<google_firestore_v1_Value> ConvertVector(
+    const DoubleVector& doubles) {
+  Message<google_firestore_v1_Value> result;
+  result->which_value_type = google_firestore_v1_Value_map_value_tag;
+  result->map_value = {};
+
+  result->map_value.fields_count = 2;
+  result->map_value.fields =
+      nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(2);
+
+  // __type__ = "__vector__"
+  result->map_value.fields[0].key =
+      nanopb::CopyBytesArray(model::kTypeValueFieldKey);
+  auto type_val = model::StringValue(std::string("__vector__"));
+  result->map_value.fields[0].value = *type_val.release();
+
+  // value = [doubles...]
+  Message<google_firestore_v1_Value> array_msg;
+  array_msg->which_value_type = google_firestore_v1_Value_array_value_tag;
+  array_msg->array_value.values_count =
+      static_cast<pb_size_t>(doubles.size());
+  array_msg->array_value.values =
+      nanopb::MakeArray<google_firestore_v1_Value>(
+          array_msg->array_value.values_count);
+
+  for (size_t i = 0; i < doubles.size(); ++i) {
+    Message<google_firestore_v1_Value> dval;
+    dval->which_value_type = google_firestore_v1_Value_double_value_tag;
+    dval->double_value = doubles[i];
+    array_msg->array_value.values[i] = *dval.release();
+  }
+
+  result->map_value.fields[1].key =
+      nanopb::CopyBytesArray(model::kVectorValueFieldKey);
+  result->map_value.fields[1].value = *array_msg.release();
+
+  return result;
+}
+
+void HandleSentinel(
+    const BridgeFieldValue& value,
+    ParseContext&& context,
+    const DatabaseId& database_id) {
+  auto tag = value.tag();
+
+  if (tag == BridgeFieldValue::Tag::SentinelDelete) {
+    if (context.data_source() == UserDataSource::MergeSet) {
+      context.AddToFieldMask(*context.path());
+    }
+    // For Update, delete at top level is handled by the caller
+    // by not including the field in the ObjectValue.
+
+  } else if (tag == BridgeFieldValue::Tag::SentinelServerTimestamp) {
+    context.AddToFieldTransforms(
+        *context.path(), ServerTimestampTransform());
+
+  } else if (tag == BridgeFieldValue::Tag::SentinelArrayUnion) {
+    // Convert elements to ArrayValue for the transform
+    ParseAccumulator elem_accumulator{UserDataSource::Argument};
+    Message<google_firestore_v1_ArrayValue> array_value;
+    auto elements = value.array_value();
+    array_value->values_count = static_cast<pb_size_t>(elements.size());
+    array_value->values = nanopb::MakeArray<google_firestore_v1_Value>(
+        array_value->values_count);
+    for (size_t i = 0; i < elements.size(); ++i) {
+      ParseContext elem_ctx = elem_accumulator.RootContext();
+      auto parsed = ConvertValue(
+          elements[i],
+          elem_ctx.ChildContext(i),
+          database_id);
+      if (parsed) {
+        array_value->values[i] = *parsed->release();
+      } else {
+        array_value->values[i] = model::NullValue();
+      }
+    }
+    ArrayTransform transform(TransformOperation::Type::ArrayUnion,
+                             std::move(array_value));
+    context.AddToFieldTransforms(*context.path(), std::move(transform));
+
+  } else if (tag == BridgeFieldValue::Tag::SentinelArrayRemove) {
+    ParseAccumulator elem_accumulator{UserDataSource::Argument};
+    Message<google_firestore_v1_ArrayValue> array_value;
+    auto elements = value.array_value();
+    array_value->values_count = static_cast<pb_size_t>(elements.size());
+    array_value->values = nanopb::MakeArray<google_firestore_v1_Value>(
+        array_value->values_count);
+    for (size_t i = 0; i < elements.size(); ++i) {
+      ParseContext elem_ctx = elem_accumulator.RootContext();
+      auto parsed = ConvertValue(
+          elements[i],
+          elem_ctx.ChildContext(i),
+          database_id);
+      if (parsed) {
+        array_value->values[i] = *parsed->release();
+      } else {
+        array_value->values[i] = model::NullValue();
+      }
+    }
+    ArrayTransform transform(TransformOperation::Type::ArrayRemove,
+                             std::move(array_value));
+    context.AddToFieldTransforms(*context.path(), std::move(transform));
+
+  } else if (tag == BridgeFieldValue::Tag::SentinelIncrement) {
+    Message<google_firestore_v1_Value> operand;
+    if (value.bool_value()) {
+      // Double increment
+      operand->which_value_type = google_firestore_v1_Value_double_value_tag;
+      operand->double_value = value.double_value();
+    } else {
+      // Integer increment
+      operand->which_value_type = google_firestore_v1_Value_integer_value_tag;
+      operand->integer_value = value.int64_value();
+    }
+    NumericIncrementTransform transform(std::move(operand));
+    context.AddToFieldTransforms(*context.path(), std::move(transform));
+  }
+}
+
+absl::optional<Message<google_firestore_v1_Value>> ConvertValue(
+    const BridgeFieldValue& value,
+    ParseContext&& context,
+    const DatabaseId& database_id) {
+  using Tag = BridgeFieldValue::Tag;
+
+  switch (value.tag()) {
+    case Tag::SentinelDelete:
+    case Tag::SentinelServerTimestamp:
+    case Tag::SentinelArrayUnion:
+    case Tag::SentinelArrayRemove:
+    case Tag::SentinelIncrement:
+      HandleSentinel(value, std::move(context), database_id);
+      return absl::nullopt;
+
+    case Tag::Map:
+      return ConvertMap(value.map_value(), std::move(context), database_id);
+
+    case Tag::Array:
+      if (context.path()) {
+        context.AddToFieldMask(*context.path());
+      }
+      return ConvertArray(value.array_value(), std::move(context),
+                          database_id);
+
+    default:
+      break;
+  }
+
+  // Scalar values — add to field mask
+  if (context.path()) {
+    context.AddToFieldMask(*context.path());
+  }
+
+  switch (value.tag()) {
+    case Tag::Null:
+      return model::DeepClone(model::NullValue());
+
+    case Tag::Boolean: {
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type = google_firestore_v1_Value_boolean_value_tag;
+      result->boolean_value = value.bool_value();
+      return result;
+    }
+
+    case Tag::Integer: {
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type = google_firestore_v1_Value_integer_value_tag;
+      result->integer_value = value.int64_value();
+      return result;
+    }
+
+    case Tag::Double: {
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type = google_firestore_v1_Value_double_value_tag;
+      result->double_value = value.double_value();
+      return result;
+    }
+
+    case Tag::String:
+      return model::StringValue(value.string_value());
+
+    case Tag::Blob: {
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type = google_firestore_v1_Value_bytes_value_tag;
+      result->bytes_value = nanopb::MakeBytesArray(
+          value.string_value().data(), value.string_value().size());
+      return result;
+    }
+
+    case Tag::Timestamp: {
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type =
+          google_firestore_v1_Value_timestamp_value_tag;
+      result->timestamp_value.seconds = value.timestamp_seconds();
+      result->timestamp_value.nanos = value.timestamp_nanos();
+      return result;
+    }
+
+    case Tag::GeoPoint: {
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type =
+          google_firestore_v1_Value_geo_point_value_tag;
+      result->geo_point_value.latitude = value.geo_latitude();
+      result->geo_point_value.longitude = value.geo_longitude();
+      return result;
+    }
+
+    case Tag::Reference: {
+      // Build the full reference name from the document path.
+      // Format: projects/{project}/databases/{db}/documents/{path}
+      std::string ref_name =
+          ResourcePath({"projects", database_id.project_id(),
+                        "databases", database_id.database_id(),
+                        "documents", value.string_value()})
+              .CanonicalString();
+      Message<google_firestore_v1_Value> result;
+      result->which_value_type =
+          google_firestore_v1_Value_reference_value_tag;
+      result->reference_value = nanopb::MakeBytesArray(ref_name);
+      return result;
+    }
+
+    case Tag::Vector:
+      return ConvertVector(value.vector_value());
+
+    default:
+      // Already handled above (Map, Array, sentinels)
+      return absl::nullopt;
+  }
+}
+
+}  // anonymous namespace
+
+// ===========================================================================
+// DocumentReferenceBridge — Write Operations
+// ===========================================================================
+
+std::string DocumentReferenceBridge::SetData(
+    const BridgeFieldValueMap& data,
+    std::function<void(std::string)> callback) noexcept {
+  if (!impl_) {
+    return "DocumentReference is not initialized";
+  }
+
+  const auto& db_id = impl_->ref_.firestore()->database_id();
+  ParseAccumulator accumulator{UserDataSource::Set};
+  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
+  ObjectValue obj{std::move(result_value)};
+  auto parsed = std::move(accumulator).SetData(std::move(obj));
+
+  impl_->ref_.SetData(std::move(parsed),
+      [callback = std::move(callback)](Status status) {
+        callback(status.ok() ? "" : status.error_message());
+      });
+  return "";
+}
+
+std::string DocumentReferenceBridge::SetDataMerge(
+    const BridgeFieldValueMap& data,
+    std::function<void(std::string)> callback) noexcept {
+  if (!impl_) {
+    return "DocumentReference is not initialized";
+  }
+
+  const auto& db_id = impl_->ref_.firestore()->database_id();
+  ParseAccumulator accumulator{UserDataSource::MergeSet};
+  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
+  ObjectValue obj{std::move(result_value)};
+  auto parsed = std::move(accumulator).MergeData(std::move(obj));
+
+  impl_->ref_.SetData(std::move(parsed),
+      [callback = std::move(callback)](Status status) {
+        callback(status.ok() ? "" : status.error_message());
+      });
+  return "";
+}
+
+std::string DocumentReferenceBridge::SetDataMergeFields(
+    const BridgeFieldValueMap& data,
+    const StringVector& merge_fields,
+    std::function<void(std::string)> callback) noexcept {
+  if (!impl_) {
+    return "DocumentReference is not initialized";
+  }
+
+  const auto& db_id = impl_->ref_.firestore()->database_id();
+  ParseAccumulator accumulator{UserDataSource::MergeSet};
+  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
+  ObjectValue obj{std::move(result_value)};
+
+  std::set<FieldPath> validated_paths;
+  for (const auto& field : merge_fields) {
+    auto path = FieldPath::FromDotSeparatedString(field);
+    if (!accumulator.Contains(path)) {
+      return "Field '" + path.CanonicalString() +
+             "' is specified in your field mask but missing from your input "
+             "data.";
+    }
+    validated_paths.insert(std::move(path));
+  }
+
+  auto parsed = std::move(accumulator)
+      .MergeData(std::move(obj), FieldMask{std::move(validated_paths)});
+
+  impl_->ref_.SetData(std::move(parsed),
+      [callback = std::move(callback)](Status status) {
+        callback(status.ok() ? "" : status.error_message());
+      });
+  return "";
+}
+
+std::string DocumentReferenceBridge::UpdateData(
+    const BridgeFieldValueMap& data,
+    std::function<void(std::string)> callback) noexcept {
+  if (!impl_) {
+    return "DocumentReference is not initialized";
+  }
+
+  const auto& db_id = impl_->ref_.firestore()->database_id();
+  ParseAccumulator accumulator{UserDataSource::Update};
+  ParseContext context = accumulator.RootContext();
+  ObjectValue update_data;
+
+  for (const auto& entry : data) {
+    auto path = FieldPath::FromDotSeparatedString(entry.first);
+
+    if (entry.second.tag() == BridgeFieldValue::Tag::SentinelDelete) {
+      // Add to field mask but don't add to updateData.
+      context.AddToFieldMask(std::move(path));
+    } else {
+      auto parsed = ConvertValue(entry.second,
+                                  context.ChildContext(path),
+                                  db_id);
+      if (parsed) {
+        context.AddToFieldMask(path);
+        update_data.Set(path, std::move(*parsed));
+      }
+    }
+  }
+
+  auto parsed = std::move(accumulator).UpdateData(std::move(update_data));
+
+  impl_->ref_.UpdateData(std::move(parsed),
+      [callback = std::move(callback)](Status status) {
+        callback(status.ok() ? "" : status.error_message());
+      });
+  return "";
+}
+
+// --- Fire-and-forget write overloads (no callback) ---
+
+std::string DocumentReferenceBridge::SetData(
+    const BridgeFieldValueMap& data) noexcept {
+  return SetData(data, [](std::string) {});
+}
+
+std::string DocumentReferenceBridge::SetDataMerge(
+    const BridgeFieldValueMap& data) noexcept {
+  return SetDataMerge(data, [](std::string) {});
+}
+
+std::string DocumentReferenceBridge::SetDataMergeFields(
+    const BridgeFieldValueMap& data,
+    const StringVector& merge_fields) noexcept {
+  return SetDataMergeFields(data, merge_fields, [](std::string) {});
+}
+
+std::string DocumentReferenceBridge::UpdateData(
+    const BridgeFieldValueMap& data) noexcept {
+  return UpdateData(data, [](std::string) {});
+}
+
+void DocumentReferenceBridge::DeleteDocumentNoCallback() const noexcept {
+  DeleteDocument([](std::string) {});
+}
+
+// ===========================================================================
+// DocumentSnapshotBridge — data() (UserDataWriter equivalent)
+// ===========================================================================
+// Converts the internal protobuf document data to BridgeFieldValueMap.
+
+namespace {
+
+BridgeFieldValue ConvertProtoValue(
+    const google_firestore_v1_Value& value,
+    const std::shared_ptr<Firestore>& firestore);
+
+BridgeFieldValueMap ConvertProtoMap(
+    const google_firestore_v1_MapValue& map_value,
+    const std::shared_ptr<Firestore>& firestore) {
+  BridgeFieldValueMap result;
+  for (pb_size_t i = 0; i < map_value.fields_count; ++i) {
+    std::string key = nanopb::MakeString(map_value.fields[i].key);
+    result.push_back({std::move(key),
+                      ConvertProtoValue(map_value.fields[i].value, firestore)});
+  }
+  return result;
+}
+
+BridgeFieldValueVector ConvertProtoArray(
+    const google_firestore_v1_ArrayValue& array_value,
+    const std::shared_ptr<Firestore>& firestore) {
+  BridgeFieldValueVector result;
+  for (pb_size_t i = 0; i < array_value.values_count; ++i) {
+    result.push_back(ConvertProtoValue(array_value.values[i], firestore));
+  }
+  return result;
+}
+
+BridgeFieldValue ConvertProtoValue(
+    const google_firestore_v1_Value& value,
+    const std::shared_ptr<Firestore>& firestore) {
+  switch (model::GetTypeOrder(value)) {
+    case model::TypeOrder::kNull:
+      return BridgeFieldValue::Null();
+
+    case model::TypeOrder::kBoolean:
+      return BridgeFieldValue::FromBool(value.boolean_value);
+
+    case model::TypeOrder::kNumber:
+      if (value.which_value_type ==
+          google_firestore_v1_Value_integer_value_tag) {
+        return BridgeFieldValue::FromInt64(value.integer_value);
+      } else {
+        return BridgeFieldValue::FromDouble(value.double_value);
+      }
+
+    case model::TypeOrder::kString: {
+      std::string str = nanopb::MakeString(value.string_value);
+      return BridgeFieldValue::FromString(str);
+    }
+
+    case model::TypeOrder::kBlob: {
+      std::string bytes(
+          reinterpret_cast<const char*>(value.bytes_value->bytes),
+          value.bytes_value->size);
+      return BridgeFieldValue::FromBlob(bytes);
+    }
+
+    case model::TypeOrder::kTimestamp:
+      return BridgeFieldValue::FromTimestamp(
+          value.timestamp_value.seconds,
+          value.timestamp_value.nanos);
+
+    case model::TypeOrder::kGeoPoint:
+      return BridgeFieldValue::FromGeoPoint(
+          value.geo_point_value.latitude,
+          value.geo_point_value.longitude);
+
+    case model::TypeOrder::kReference: {
+      std::string ref = nanopb::MakeString(value.reference_value);
+      DocumentKey key = DocumentKey::FromName(ref);
+      return BridgeFieldValue::FromReference(key.ToString());
+    }
+
+    case model::TypeOrder::kArray:
+      return BridgeFieldValue::FromArray(
+          ConvertProtoArray(value.array_value, firestore));
+
+    case model::TypeOrder::kMap:
+      return BridgeFieldValue::FromMap(
+          ConvertProtoMap(value.map_value, firestore));
+
+    case model::TypeOrder::kVector: {
+      // Extract doubles from the vector value
+      DoubleVector doubles;
+      for (pb_size_t i = 0; i < value.map_value.fields_count; ++i) {
+        std::string key = nanopb::MakeString(value.map_value.fields[i].key);
+        if (key == "value" &&
+            value.map_value.fields[i].value.which_value_type ==
+                google_firestore_v1_Value_array_value_tag) {
+          const auto& arr = value.map_value.fields[i].value.array_value;
+          for (pb_size_t j = 0; j < arr.values_count; ++j) {
+            doubles.push_back(arr.values[j].double_value);
+          }
+        }
+      }
+      return BridgeFieldValue::FromVector(doubles);
+    }
+
+    case model::TypeOrder::kServerTimestamp:
+      // Server timestamps should be resolved before reaching here.
+      // Return null as fallback.
+      return BridgeFieldValue::Null();
+
+    case model::TypeOrder::kMaxValue:
+      return BridgeFieldValue::Null();
+  }
+
+  return BridgeFieldValue::Null();
+}
+
+}  // anonymous namespace
+
+BridgeFieldValueMap DocumentSnapshotBridge::data() const noexcept {
+  if (!impl_) return BridgeFieldValueMap{};
+  if (!impl_->snapshot_.exists()) return BridgeFieldValueMap{};
+
+  const auto& doc = impl_->snapshot_.internal_document();
+  if (!doc.has_value()) return BridgeFieldValueMap{};
+
+  // Get the document's data as a protobuf value.
+  const auto& value = doc->get().value();
+  if (value.which_value_type != google_firestore_v1_Value_map_value_tag) {
+    return BridgeFieldValueMap{};
+  }
+
+  auto firestore = impl_->snapshot_.firestore();
+  return ConvertProtoMap(value.map_value, firestore);
+}
+
 }  // namespace swift_bridge
 }  // namespace firestore
 }  // namespace firebase
+

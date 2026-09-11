@@ -35,6 +35,16 @@ typealias CppListenerRegistrationBridge = firebase.firestore.swift_bridge
 typealias CppSource = firebase.firestore.api.Source
 typealias CppSnapshotMetadata = firebase.firestore.api.SnapshotMetadata
 
+// Bridge field value types
+typealias CppBridgeFieldValue = firebase.firestore.swift_bridge.BridgeFieldValue
+typealias CppBridgeFieldValueMap = firebase.firestore.swift_bridge.BridgeFieldValueMap
+typealias CppBridgeFieldValueMapEntry = firebase.firestore.swift_bridge
+  .BridgeFieldValueMapEntry
+typealias CppBridgeFieldValueVector = firebase.firestore.swift_bridge
+  .BridgeFieldValueVector
+typealias CppDoubleVector = firebase.firestore.swift_bridge.DoubleVector
+typealias CppStringVector = firebase.firestore.swift_bridge.StringVector
+
 // MARK: - Source Conversion
 
 extension FirestoreSource {
@@ -46,6 +56,182 @@ extension FirestoreSource {
     case .cache: return .Cache
     }
   }
+}
+
+// MARK: - Swift ↔ BridgeFieldValue Conversion
+
+/// Internal tag for FieldValue sentinels.
+enum FieldValueSentinel {
+  case delete_
+  case serverTimestamp
+  case arrayUnion([Any])
+  case arrayRemove([Any])
+  case incrementInt(Int64)
+  case incrementDouble(Double)
+}
+
+/// Convert a Swift `Any` value to a C++ `BridgeFieldValue`.
+func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
+  // Handle FieldValue sentinels
+  if let fv = value as? FieldValue {
+    return fv.toBridgeFieldValue()
+  }
+
+  // Handle nil / NSNull
+  if value is NSNull {
+    return CppBridgeFieldValue.Null()
+  }
+
+  // Handle Bool (must check before NSNumber since Bool bridges to NSNumber)
+  if let b = value as? Bool {
+    return CppBridgeFieldValue.FromBool(b)
+  }
+
+  // Handle numeric types via NSNumber
+  if let n = value as? NSNumber {
+    let objCType = String(cString: n.objCType)
+    // 'f' = float, 'd' = double
+    if objCType == "f" || objCType == "d" {
+      return CppBridgeFieldValue.FromDouble(n.doubleValue)
+    }
+    return CppBridgeFieldValue.FromInt64(n.int64Value)
+  }
+
+  // Handle String
+  if let s = value as? String {
+    return CppBridgeFieldValue.FromString(std.string(s))
+  }
+
+  // Handle Data (blob)
+  if let data = value as? Data {
+    var blob = std.string()
+    data.withUnsafeBytes { buffer in
+      if let ptr = buffer.baseAddress {
+        blob = std.string(ptr.assumingMemoryBound(to: CChar.self), buffer.count)
+      }
+    }
+    return CppBridgeFieldValue.FromBlob(blob)
+  }
+
+  // Handle Timestamp
+  if let ts = value as? Timestamp {
+    return CppBridgeFieldValue.FromTimestamp(ts.seconds, ts.nanoseconds)
+  }
+
+  // Handle GeoPoint
+  if let geo = value as? GeoPoint {
+    return CppBridgeFieldValue.FromGeoPoint(geo.latitude, geo.longitude)
+  }
+
+  // Handle VectorValue
+  if let vec = value as? VectorValue {
+    var doubles = CppDoubleVector()
+    for d in vec.array {
+      doubles.push_back(d)
+    }
+    return CppBridgeFieldValue.FromVector(doubles)
+  }
+
+  // Handle DocumentReference
+  if let ref = value as? DocumentReference {
+    return CppBridgeFieldValue.FromReference(std.string(ref.path))
+  }
+
+  // Handle Array
+  if let arr = value as? [Any] {
+    var cppArr = CppBridgeFieldValueVector()
+    for element in arr {
+      cppArr.push_back(toBridgeFieldValue(element))
+    }
+    return CppBridgeFieldValue.FromArray(cppArr)
+  }
+
+  // Handle Dictionary
+  if let dict = value as? [String: Any] {
+    return CppBridgeFieldValue.FromMap(toBridgeFieldValueMap(dict))
+  }
+
+  // Fallback: treat as null
+  return CppBridgeFieldValue.Null()
+}
+
+/// Convert a Swift dictionary to a C++ `BridgeFieldValueMap`.
+func toBridgeFieldValueMap(_ dict: [String: Any]) -> CppBridgeFieldValueMap {
+  var map = CppBridgeFieldValueMap()
+  for (key, value) in dict {
+    map.push_back(CppBridgeFieldValueMapEntry(first: std.string(key), second: toBridgeFieldValue(value)))
+  }
+  return map
+}
+
+/// Convert a C++ `BridgeFieldValue` back to a Swift `Any`.
+func fromBridgeFieldValue(_ value: CppBridgeFieldValue) -> Any {
+  switch value.tag() {
+  case .Null:
+    return NSNull()
+  case .Boolean:
+    return value.bool_value()
+  case .Integer:
+    return value.int64_value()
+  case .Double:
+    return value.double_value()
+  case .String:
+    return Swift.String(value.string_value())
+  case .Blob:
+    let bytes = value.blob_bytes()
+    var data = Data(count: bytes.size())
+    for i in 0 ..< bytes.size() {
+      data[i] = bytes[i]
+    }
+    return data
+  case .Timestamp:
+    return Timestamp(
+      seconds: value.timestamp_seconds(),
+      nanoseconds: value.timestamp_nanos()
+    )
+  case .GeoPoint:
+    return GeoPoint(
+      latitude: value.geo_latitude(),
+      longitude: value.geo_longitude()
+    )
+  case .Array:
+    return fromBridgeFieldValueVector(value.array_value())
+  case .Map:
+    return fromBridgeFieldValueMap(value.map_value())
+  case .Reference:
+    // Return the path string — callers who need a DocumentReference
+    // will need to resolve it against a Firestore instance.
+    return Swift.String(value.string_value())
+  case .Vector:
+    let doubles = value.vector_value()
+    var arr: [Double] = []
+    for i in 0 ..< doubles.size() {
+      arr.append(doubles[i])
+    }
+    return VectorValue(arr)
+  default:
+    return NSNull()
+  }
+}
+
+/// Convert a C++ `BridgeFieldValueMap` to a Swift dictionary.
+func fromBridgeFieldValueMap(_ map: CppBridgeFieldValueMap) -> [String: Any] {
+  var result: [String: Any] = [:]
+  for i in 0 ..< map.size() {
+    let entry = map[i]
+    let key = Swift.String(entry.first)
+    result[key] = fromBridgeFieldValue(entry.second)
+  }
+  return result
+}
+
+/// Convert a C++ `BridgeFieldValueVector` to a Swift array.
+func fromBridgeFieldValueVector(_ vec: CppBridgeFieldValueVector) -> [Any] {
+  var result: [Any] = []
+  for i in 0 ..< vec.size() {
+    result.append(fromBridgeFieldValue(vec[i]))
+  }
+  return result
 }
 
 // MARK: - Core Firestore Types
@@ -122,32 +308,70 @@ public final class DocumentReference: @unchecked Sendable {
 
   public func setData(_ documentData: [String: Any],
                       completion: ((Error?) -> Void)? = nil) {
-    // TODO: Implement via C++ interop (requires user data reader)
-    completion?(nil)
+    let map = toBridgeFieldValueMap(documentData)
+    let error = String(cppBridge.SetData(map))
+    if error.isEmpty {
+      completion?(nil)
+    } else {
+      completion?(NSError(domain: "FirebaseFirestore", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: error]))
+    }
   }
 
   public func setData(_ documentData: [String: Any],
                       merge: Bool,
                       completion: ((Error?) -> Void)? = nil) {
-    // TODO: Implement via C++ interop (requires user data reader)
-    completion?(nil)
+    let map = toBridgeFieldValueMap(documentData)
+    let error: String
+    if merge {
+      error = String(cppBridge.SetDataMerge(map))
+    } else {
+      error = String(cppBridge.SetData(map))
+    }
+    if error.isEmpty {
+      completion?(nil)
+    } else {
+      completion?(NSError(domain: "FirebaseFirestore", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: error]))
+    }
   }
 
   public func setData(_ documentData: [String: Any],
                       mergeFields: [Any],
                       completion: ((Error?) -> Void)? = nil) {
-    // TODO: Implement via C++ interop (requires user data reader)
-    completion?(nil)
+    let map = toBridgeFieldValueMap(documentData)
+    var fields = CppStringVector()
+    for field in mergeFields {
+      if let s = field as? String {
+        fields.push_back(std.string(s))
+      } else if let fp = field as? FieldPath {
+        // FieldPath doesn't expose its string yet — use empty for now
+        fields.push_back(std.string(""))
+      }
+    }
+    let error = String(cppBridge.SetDataMergeFields(map, fields))
+    if error.isEmpty {
+      completion?(nil)
+    } else {
+      completion?(NSError(domain: "FirebaseFirestore", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: error]))
+    }
   }
 
   public func updateData(_ fields: [String: Any],
                          completion: ((Error?) -> Void)? = nil) {
-    // TODO: Implement via C++ interop (requires user data reader)
-    completion?(nil)
+    let map = toBridgeFieldValueMap(fields)
+    let error = String(cppBridge.UpdateData(map))
+    if error.isEmpty {
+      completion?(nil)
+    } else {
+      completion?(NSError(domain: "FirebaseFirestore", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: error]))
+    }
   }
 
   public func delete(completion: ((Error?) -> Void)? = nil) {
-    // TODO: Implement via C++ interop (requires async callback bridging)
+    cppBridge.DeleteDocumentNoCallback()
     completion?(nil)
   }
 
@@ -204,8 +428,9 @@ public final class CollectionReference: Query, @unchecked Sendable {
 
   public func addDocument(data: [String: Any],
                           completion: ((Error?) -> Void)? = nil) -> DocumentReference {
-    // TODO: Implement via C++ interop (requires user data reader)
-    return DocumentReference()
+    let docRef = document()
+    docRef.setData(data, completion: completion)
+    return docRef
   }
 }
 
@@ -282,8 +507,12 @@ public final class DocumentSnapshot: @unchecked Sendable {
   }
 
   public var data: [String: Any]? {
-    // TODO: Implement via C++ data conversion
-    nil
+    guard cppBridge.exists() else { return nil }
+    let cppMap = cppBridge.data()
+    if cppMap.size() == 0 && !cppBridge.exists() {
+      return nil
+    }
+    return fromBridgeFieldValueMap(cppMap)
   }
 
   public var reference: DocumentReference {
@@ -402,17 +631,66 @@ public final class FieldPath: @unchecked Sendable {
 
 /// Sentinel values for field operations.
 public final class FieldValue: @unchecked Sendable {
-  public static func serverTimestamp() -> FieldValue { FieldValue() }
-  public static func arrayUnion(_ elements: [Any]) -> FieldValue { FieldValue() }
-  public static func arrayRemove(_ elements: [Any]) -> FieldValue { FieldValue() }
-  public static func delete() -> FieldValue { FieldValue() }
-  public static func increment(_ n: Int64) -> FieldValue { FieldValue() }
-  public static func increment(_ n: Double) -> FieldValue { FieldValue() }
+  let sentinel: FieldValueSentinel
+
+  private init(_ sentinel: FieldValueSentinel) {
+    self.sentinel = sentinel
+  }
+
+  public static func serverTimestamp() -> FieldValue {
+    FieldValue(.serverTimestamp)
+  }
+
+  public static func arrayUnion(_ elements: [Any]) -> FieldValue {
+    FieldValue(.arrayUnion(elements))
+  }
+
+  public static func arrayRemove(_ elements: [Any]) -> FieldValue {
+    FieldValue(.arrayRemove(elements))
+  }
+
+  public static func delete() -> FieldValue {
+    FieldValue(.delete_)
+  }
+
+  public static func increment(_ n: Int64) -> FieldValue {
+    FieldValue(.incrementInt(n))
+  }
+
+  public static func increment(_ n: Double) -> FieldValue {
+    FieldValue(.incrementDouble(n))
+  }
 
   /// Creates a VectorValue from an array of NSNumbers.
   /// This is the ObjC-compatible factory method used by FieldValue+Swift.swift.
   public static func __vector(with array: [NSNumber]) -> VectorValue {
     return VectorValue(array.map { $0.doubleValue })
+  }
+
+  /// Convert this sentinel to a C++ BridgeFieldValue.
+  func toBridgeFieldValue() -> CppBridgeFieldValue {
+    switch sentinel {
+    case .delete_:
+      return CppBridgeFieldValue.Delete()
+    case .serverTimestamp:
+      return CppBridgeFieldValue.ServerTimestamp()
+    case .arrayUnion(let elements):
+      var cppArr = CppBridgeFieldValueVector()
+      for e in elements {
+        cppArr.push_back(FirebaseFirestore.toBridgeFieldValue(e))
+      }
+      return CppBridgeFieldValue.ArrayUnion(cppArr)
+    case .arrayRemove(let elements):
+      var cppArr = CppBridgeFieldValueVector()
+      for e in elements {
+        cppArr.push_back(FirebaseFirestore.toBridgeFieldValue(e))
+      }
+      return CppBridgeFieldValue.ArrayRemove(cppArr)
+    case .incrementInt(let n):
+      return CppBridgeFieldValue.IncrementInt(n)
+    case .incrementDouble(let n):
+      return CppBridgeFieldValue.IncrementDouble(n)
+    }
   }
 }
 
