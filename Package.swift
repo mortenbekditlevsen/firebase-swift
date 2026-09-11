@@ -242,8 +242,13 @@ let package = Package(
             "core/src/remote/connectivity_monitor_apple.mm",
             "core/src/remote/connectivity_monitor_noop.cc",
             "core/src/util/filesystem_win.cc",
-            "core/src/util/log_stdio.cc",
+            // Use log_stdio.cc instead of log_apple.mm to avoid ObjC FirebaseCore dependency
+            "core/src/util/log_apple.mm",
             "core/src/util/secure_random_openssl.cc",
+            // Exclude ObjC++ files that depend on ObjC FirebaseCore
+            "core/src/credentials/firebase_auth_credentials_provider_apple.mm",
+            "core/src/credentials/firebase_app_check_credentials_provider_apple.mm",
+            "core/src/remote/firebase_metadata_provider_apple.mm",
           ],
           sources: [
             "Source/",
@@ -251,7 +256,7 @@ let package = Package(
             "core/include/",
             "core/src",
           ],
-//          publicHeadersPath: "Source/Public",
+          publicHeadersPath: "include",
           cSettings: [
             .headerSearchPath("../"),
             .headerSearchPath("Source/Public/FirebaseFirestore"),
@@ -297,6 +302,7 @@ let package = Package(
             "Swift/Source/Resources/",
             "core/",
             "fuzzing/",
+            "include/",
             "test.sh",
             "Swift/CHANGELOG.md",
             "Swift/Tests/",
