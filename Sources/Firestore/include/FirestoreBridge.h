@@ -525,6 +525,11 @@ class CollectionReferenceBridge : public QueryBridge {
   /// Get a document reference by path within this collection.
   DocumentReferenceBridge Document(const std::string& document_path) const noexcept;
 
+  /// Returns the underlying QueryBridge for this collection.
+  /// Swift C++ interop doesn't always expose base class members,
+  /// so this provides explicit access to the query functionality.
+  QueryBridge as_query() const noexcept;
+
  private:
   friend class FirestoreBridge;
   friend class DocumentReferenceBridge;
@@ -545,6 +550,19 @@ class FirestoreBridge {
   FirestoreBridge& operator=(const FirestoreBridge&) noexcept;
   FirestoreBridge(FirestoreBridge&&) noexcept;
   FirestoreBridge& operator=(FirestoreBridge&&) noexcept;
+
+  /// Creates a FirestoreBridge with a real api::Firestore instance.
+  /// Uses empty credentials providers (unauthenticated) and no-op metadata.
+  /// @param project_id The Firebase project ID.
+  /// @param database_id The database name (usually "(default)").
+  /// @param persistence_key A key for local persistence (usually the app name).
+  static FirestoreBridge Create(
+      const std::string& project_id,
+      const std::string& database_id,
+      const std::string& persistence_key) noexcept;
+
+  /// Whether this bridge holds a valid Firestore instance.
+  bool is_valid() const noexcept;
 
   /// Get a collection reference by path.
   CollectionReferenceBridge GetCollection(

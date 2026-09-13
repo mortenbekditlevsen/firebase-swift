@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import FirebaseCore
 import Foundation
+import Synchronization
 
 #if SWIFT_PACKAGE
   @_exported import FirebaseFirestoreInternalWrapper
@@ -374,6 +376,9 @@ private func querySnapshotListenerTrampoline(
 public final class Firestore: @unchecked Sendable {
   var cppBridge: CppFirestoreBridge?
 
+  /// Cache of Firestore instances keyed by "appName/databaseId".
+  private nonisolated(unsafe) static let _instances = Mutex<[String: Firestore]>([:])
+
   init() {
     cppBridge = nil
   }
@@ -382,10 +387,33 @@ public final class Firestore: @unchecked Sendable {
     self.cppBridge = cppBridge
   }
 
+  /// Returns the default Firestore instance for the default FirebaseApp.
   public static func firestore() -> Firestore {
-    // TODO: Implement via C++ interop - construct a real Firestore instance
-    // This requires Firebase app initialization which is a separate concern.
-    return Firestore()
+    guard let app = FirebaseApp.app() else {
+      fatalError(
+        "FirebaseApp has not been configured. Call FirebaseApp.configure() before using Firestore."
+      )
+    }
+    return firestore(app: app)
+  }
+
+  /// Returns a Firestore instance for the given app and database.
+  public static func firestore(app: FirebaseApp, database: String = "(default)") -> Firestore {
+    let key = "\(app.name)/\(database)"
+    return _instances.withLock { instances in
+      if let existing = instances[key] {
+        return existing
+      }
+      let projectID = app.options.projectID ?? ""
+      let bridge = CppFirestoreBridge.Create(
+        std.string(projectID),
+        std.string(database),
+        std.string(app.name)
+      )
+      let instance = Firestore(cppBridge: bridge)
+      instances[key] = instance
+      return instance
+    }
   }
 
   public func collection(_ collectionPath: String) -> CollectionReference {
@@ -555,10 +583,9 @@ public final class CollectionReference: Query, @unchecked Sendable {
 
   init(cppBridge: CppCollectionReferenceBridge) {
     _collectionBridge = cppBridge
-    // We need to get the QueryBridge base from the CollectionReferenceBridge.
-    // Since C++ inheritance isn't directly visible in Swift, we pass it as-is
-    // and keep a separate reference.
-    super.init(cppBridge: CppQueryBridge())
+    // Use as_query() to get the QueryBridge base from the CollectionReferenceBridge.
+    // Swift C++ interop doesn't expose C++ base class members directly.
+    super.init(cppBridge: cppBridge.as_query())
   }
 
   public var collectionID: String {
