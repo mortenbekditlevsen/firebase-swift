@@ -32,6 +32,7 @@
 #include "Firestore/core/src/core/field_filter.h"
 #include "Firestore/core/src/core/listen_options.h"
 #include "Firestore/core/src/core/user_data.h"
+#include "Firestore/core/src/credentials/empty_credentials_provider.h"
 #include "Firestore/core/src/model/database_id.h"
 #include "Firestore/core/src/model/document.h"
 #include "Firestore/core/src/model/document_key.h"
@@ -44,6 +45,9 @@
 #include "Firestore/core/src/model/transform_operation.h"
 #include "Firestore/core/src/model/value_util.h"
 #include "Firestore/core/src/nanopb/nanopb_util.h"
+#include "Firestore/core/src/remote/firebase_metadata_provider_noop.h"
+#include "Firestore/core/src/util/async_queue.h"
+#include "Firestore/core/src/util/executor.h"
 #include "Firestore/core/src/util/status.h"
 #include "Firestore/core/src/util/statusor.h"
 
@@ -538,6 +542,13 @@ DocumentReferenceBridge CollectionReferenceBridge::Document(
   return result;
 }
 
+QueryBridge CollectionReferenceBridge::as_query() const noexcept {
+  // Return a QueryBridge that shares the same impl_.
+  QueryBridge result;
+  result.impl_ = impl_;
+  return result;
+}
+
 // ===========================================================================
 // FirestoreBridge::Impl
 // ===========================================================================
@@ -555,6 +566,40 @@ FirestoreBridge& FirestoreBridge::operator=(
 FirestoreBridge::FirestoreBridge(FirestoreBridge&&) noexcept = default;
 FirestoreBridge& FirestoreBridge::operator=(FirestoreBridge&&) noexcept =
     default;
+
+FirestoreBridge FirestoreBridge::Create(
+    const std::string& project_id,
+    const std::string& database_id,
+    const std::string& persistence_key) noexcept {
+  auto auth_credentials =
+      std::make_shared<credentials::EmptyAuthCredentialsProvider>();
+  auto app_check_credentials =
+      std::make_shared<credentials::EmptyAppCheckCredentialsProvider>();
+  auto worker_queue = util::AsyncQueue::Create(
+      util::Executor::CreateSerial("com.google.firebase.firestore.worker"));
+  auto metadata_provider = remote::CreateFirebaseMetadataProviderNoOp();
+
+  auto firestore = std::make_shared<Firestore>(
+      DatabaseId{project_id, database_id},
+      persistence_key,
+      std::move(auth_credentials),
+      std::move(app_check_credentials),
+      std::move(worker_queue),
+      std::move(metadata_provider),
+      /*extension=*/nullptr);
+
+  // Set a user executor for callbacks.
+  firestore->set_user_executor(
+      util::Executor::CreateSerial("com.google.firebase.firestore.callback"));
+
+  FirestoreBridge result;
+  result.impl_ = std::make_shared<Impl>(std::move(firestore));
+  return result;
+}
+
+bool FirestoreBridge::is_valid() const noexcept {
+  return impl_ != nullptr;
+}
 
 CollectionReferenceBridge FirestoreBridge::GetCollection(
     const std::string& collection_path) const noexcept {
