@@ -25,6 +25,30 @@
 #include "../core/src/api/source.h"
 #include "../core/src/api/snapshot_metadata.h"
 
+// C-style callback typedefs for Swift interop.
+// Swift C++ interop cannot pass C++ types through @convention(c) function
+// pointers. We use void* for the snapshot (caller must cast) and const char*
+// for the error string.
+
+/// Callback for document snapshot results.
+/// snapshot: opaque pointer to a heap-allocated DocumentSnapshotBridge (caller owns).
+/// error: null-terminated C string, empty string "" means no error.
+typedef void (*DocumentSnapshotCallback)(
+    void* context,
+    void* snapshot,
+    const char* error);
+
+/// Callback for query snapshot results.
+typedef void (*QuerySnapshotCallback)(
+    void* context,
+    void* snapshot,
+    const char* error);
+
+/// Callback for error-only results.
+typedef void (*ErrorCallback)(
+    void* context,
+    const char* error);
+
 // Forward declarations of internal API types (not exposed to Swift).
 namespace firebase {
 namespace firestore {
@@ -198,6 +222,18 @@ class DocumentSnapshotBridge {
   /// Returns empty map if document doesn't exist.
   BridgeFieldValueMap data() const noexcept;
 
+  /// Returns document data with server timestamp behavior.
+  /// behavior: 0 = none (null), 1 = estimate (local write time), 2 = previous
+  BridgeFieldValueMap data_with_server_timestamps(int32_t behavior) const noexcept;
+
+  /// Gets a single field value by dot-separated path.
+  /// Returns a Null BridgeFieldValue if the field doesn't exist.
+  BridgeFieldValue get_field(const std::string& field_path) const noexcept;
+
+  /// Gets a single field value with server timestamp behavior.
+  BridgeFieldValue get_field_with_server_timestamps(
+      const std::string& field_path, int32_t behavior) const noexcept;
+
  private:
   friend class DocumentReferenceBridge;
   friend class QuerySnapshotBridge;
@@ -210,14 +246,15 @@ class DocumentSnapshotBridge {
 // ListenerRegistrationBridge
 // ---------------------------------------------------------------------------
 /// Wraps api::ListenerRegistration. Allows removing a snapshot listener.
+/// Uses shared_ptr internally so it can be copied in Swift.
 class ListenerRegistrationBridge {
  public:
   ListenerRegistrationBridge() noexcept;
   ~ListenerRegistrationBridge() noexcept;
 
-  // Move only — listener registrations are unique.
-  ListenerRegistrationBridge(const ListenerRegistrationBridge&) = delete;
-  ListenerRegistrationBridge& operator=(const ListenerRegistrationBridge&) = delete;
+  // Copyable via shared_ptr.
+  ListenerRegistrationBridge(const ListenerRegistrationBridge&) noexcept;
+  ListenerRegistrationBridge& operator=(const ListenerRegistrationBridge&) noexcept;
   ListenerRegistrationBridge(ListenerRegistrationBridge&&) noexcept;
   ListenerRegistrationBridge& operator=(ListenerRegistrationBridge&&) noexcept;
 
@@ -228,7 +265,7 @@ class ListenerRegistrationBridge {
   friend class DocumentReferenceBridge;
   friend class QueryBridge;
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::shared_ptr<Impl> impl_;
 };
 
 // ---------------------------------------------------------------------------
@@ -347,6 +384,43 @@ class DocumentReferenceBridge {
   /// Delete this document, fire-and-forget.
   void DeleteDocumentNoCallback() const noexcept;
 
+  // --- C-callback-based async overloads (callable from Swift) ---
+
+  /// Reads the document. Calls callback with context, snapshot, error.
+  void GetDocumentC(
+      api::Source source,
+      void* context,
+      DocumentSnapshotCallback callback) const noexcept;
+
+  /// Adds a snapshot listener. Returns a ListenerRegistrationBridge.
+  ListenerRegistrationBridge AddSnapshotListener(
+      bool include_metadata_changes,
+      void* context,
+      DocumentSnapshotCallback callback) const noexcept;
+
+  /// Deletes this document with C callback.
+  void DeleteDocumentC(
+      void* context,
+      ErrorCallback callback) const noexcept;
+
+  /// Set document data with C callback.
+  std::string SetDataC(
+      const BridgeFieldValueMap& data,
+      void* context,
+      ErrorCallback callback) noexcept;
+
+  /// Set document data with merge, C callback.
+  std::string SetDataMergeC(
+      const BridgeFieldValueMap& data,
+      void* context,
+      ErrorCallback callback) noexcept;
+
+  /// Update document fields with C callback.
+  std::string UpdateDataC(
+      const BridgeFieldValueMap& data,
+      void* context,
+      ErrorCallback callback) noexcept;
+
  private:
   friend class FirestoreBridge;
   friend class CollectionReferenceBridge;
@@ -380,6 +454,42 @@ class QueryBridge {
   QueryBridge OrderBy(const std::string& field, bool descending) const noexcept;
   QueryBridge LimitToFirst(int32_t limit) const noexcept;
   QueryBridge LimitToLast(int32_t limit) const noexcept;
+
+  // --- C-callback-based async overloads (callable from Swift) ---
+
+  /// Execute the query with C callback.
+  void GetDocumentsC(
+      api::Source source,
+      void* context,
+      QuerySnapshotCallback callback) const noexcept;
+
+  /// Adds a snapshot listener. Returns a ListenerRegistrationBridge.
+  ListenerRegistrationBridge AddSnapshotListener(
+      bool include_metadata_changes,
+      void* context,
+      QuerySnapshotCallback callback) const noexcept;
+
+  // --- Query filter operations ---
+  QueryBridge WhereEqualTo(const std::string& field,
+                           const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereNotEqualTo(const std::string& field,
+                              const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereLessThan(const std::string& field,
+                            const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereGreaterThan(const std::string& field,
+                               const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereLessThanOrEqual(const std::string& field,
+                                   const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereGreaterThanOrEqual(const std::string& field,
+                                      const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereArrayContains(const std::string& field,
+                                 const BridgeFieldValue& value) const noexcept;
+  QueryBridge WhereIn(const std::string& field,
+                      const BridgeFieldValueVector& values) const noexcept;
+  QueryBridge WhereNotIn(const std::string& field,
+                         const BridgeFieldValueVector& values) const noexcept;
+  QueryBridge WhereArrayContainsAny(const std::string& field,
+                                    const BridgeFieldValueVector& values) const noexcept;
 
  protected:
   friend class FirestoreBridge;
