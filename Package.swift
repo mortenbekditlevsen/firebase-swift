@@ -77,6 +77,7 @@ let package = Package(
               name: "FirebaseStorage",
               dependencies: [
                 "FirebaseCore",
+                "FirebaseShared",
               ],
               path: "Sources/FirebaseStorage",
               swiftSettings: [
@@ -121,18 +122,6 @@ let package = Package(
                 // being able to consume leveldb public headers.
               .interoperabilityMode(.Cxx),
             ],
-        ),
-        .target(
-          name: "FirebaseFirestoreTarget",
-          dependencies: [.target(name: "FirebaseFirestore",
-                                 condition: .when(platforms: [
-                                   .iOS,
-                                   .tvOS,
-                                   .macOS,
-                                   .visionOS,
-                                   .macCatalyst,
-                                 ]))],
-          path: "Sources/FirebaseFirestoreWrap"
         ),
 
         .target(
@@ -264,6 +253,27 @@ let package = Package(
                 .interoperabilityMode(.Cxx),
             ]
         ),
+        .testTarget(
+            name: "FirebaseSharedTests",
+            dependencies: [
+                "FirebaseShared",
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+            ],
+            path: "Tests/FirebaseSharedTests"
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
+
+// Firestore doesn't build on Linux yet (abseil's headers fail as a Clang module
+// there). Leave it out so the other modules can build and test; set
+// FIREBASE_FIRESTORE_LINUX=1 to include it while working on the Linux port.
+#if os(Linux)
+import Foundation
+
+if ProcessInfo.processInfo.environment["FIREBASE_FIRESTORE_LINUX"] == nil {
+    package.products.removeAll { $0.name == "FirebaseFirestore" }
+    package.targets.removeAll { $0.name.hasPrefix("FirebaseFirestore") }
+}
+#endif

@@ -1,9 +1,16 @@
+// Copyright 2017 Google LLC
 //
-//  FWebSocketConnection.swift
-//  FWebSocketConnection
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//  Created by Morten Bek Ditlevsen on 04/09/2021.
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 import Foundation
 import NIOHTTP1
@@ -43,7 +50,8 @@ class FWebSocketConnection {
     var frame: String?
     var everConnected: Bool
     var isClosed: Bool
-    var keepAlive: Timer?
+    var keepAlive: Task<Void, Never>?
+    var keepAliveFireDate: Date?
     var client: WebSocketClient?
 
     public weak var delegate: FWebSocketDelegate?
@@ -80,16 +88,44 @@ class FWebSocketConnection {
     }
 
     private func resetKeepAlive() {
-        guard let keepAlive = keepAlive else {
+        guard keepAlive != nil, let fireDate = keepAliveFireDate else {
             return
         }
 
         let newTime = Date(timeIntervalSinceNow: kWebsocketKeepaliveInterval)
-        // Calling setFireDate is actually kinda' expensive, so wait at least 5
-        // seconds before updating it.
-        if newTime.timeIntervalSince(keepAlive.fireDate) > 5 {
-            FFLog("I-RDB083014", "(wsc:\(self.connectionId)) resetting keepalive, to \(newTime) ; old: \(keepAlive.fireDate)")
-            keepAlive.fireDate = newTime
+        // Only bother postponing once the fire date is at least 5 seconds stale.
+        if newTime.timeIntervalSince(fireDate) > 5 {
+            FFLog("I-RDB083014", "(wsc:\(self.connectionId)) resetting keepalive, to \(newTime) ; old: \(fireDate)")
+            keepAliveFireDate = newTime
+        }
+    }
+
+    /// Sends a "nop" frame whenever `keepAliveFireDate` passes. A `Timer` can't
+    /// be used here: tasks on `DatabaseActor` don't run on a thread with a run loop.
+    private func startKeepAlive() {
+        keepAliveFireDate = Date(timeIntervalSinceNow: kWebsocketKeepaliveInterval)
+        keepAlive = Task { @DatabaseActor [weak self] in
+            while !Task.isCancelled {
+                guard let fireDate = self?.keepAliveFireDate else { return }
+                let delay = fireDate.timeIntervalSinceNow
+                if delay > 0 {
+                    try? await Task.sleep(for: .seconds(delay))
+                    continue
+                }
+                guard let self else { return }
+                if !self.isClosed {
+                    FFLog("I-RDB083004", "(wsc:\(self.connectionId)) nop")
+                    // Note: the backend is expecting a string "0" here, not any special
+                    // ping/pong from build in websocket APIs.
+                    self.client?.send(string: "0")
+                    self.keepAliveFireDate = Date(timeIntervalSinceNow: kWebsocketKeepaliveInterval)
+                } else {
+                    FFLog("I-RDB083005",
+                          "(wsc:\(self.connectionId) No more websocket; invalidating nop timer.")
+                    self.keepAlive = nil
+                    return
+                }
+            }
         }
     }
 
@@ -140,19 +176,7 @@ class FWebSocketConnection {
                 FFLog("I-RDB083008", "(wsc:\(self.connectionId)) webSocketDidOpen")
                 self.everConnected = true
 
-                self.keepAlive = Timer.scheduledTimer(withTimeInterval: kWebsocketKeepaliveInterval, repeats: true, block: { [weak self] timer in
-                    guard let self = self else { return }
-                    if !self.isClosed {
-                        FFLog("I-RDB083004", "(wsc:\(self.connectionId)) nop")
-                        // Note: the backend is expecting a string "0" here, not any special
-                        // ping/pong from build in websocket APIs.
-                        self.client?.send(string: "0")
-                    } else {
-                        FFLog("I-RDB083005",
-                              "(wsc:\(self.connectionId) No more websocket; invalidating nop timer.")
-                        timer.invalidate()
-                    }
-                })
+                self.startKeepAlive()
                 FFLog("I-RDB083009", "(wsc:\(self.connectionId) nop timer kicked off")
             }
         }, onMessage: { [weak self] message in
@@ -181,9 +205,8 @@ class FWebSocketConnection {
             self.shutdown()
         }
         client = nil
-        if keepAlive?.isValid ?? false {
-            keepAlive?.invalidate()
-        }
+        keepAlive?.cancel()
+        keepAlive = nil
     }
 
     private func appendFrame(_ message: String) {

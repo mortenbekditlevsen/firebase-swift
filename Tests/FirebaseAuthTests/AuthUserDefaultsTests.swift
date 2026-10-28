@@ -75,7 +75,10 @@ class AuthUserDefaultsTests: XCTestCase {
    */
   func testStandardUserDefaults() throws {
     let userDefaults = UserDefaults.standard
-    let bundleID = try XCTUnwrap(Bundle.main.bundleIdentifier)
+    // The XCTest runner has no bundle identifier on Linux, so there's no domain to inspect.
+    guard let bundleID = Bundle.main.bundleIdentifier else {
+      throw XCTSkip("Bundle.main has no bundle identifier on this platform")
+    }
     let count = userDefaults.persistentDomain(forName: bundleID)?.count
     try storage.setData(dataFromString(kData), forKey: kKey)
     XCTAssertEqual(count, userDefaults.persistentDomain(forName: bundleID)?.count)

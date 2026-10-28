@@ -12,23 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
-import FoundationEssentials
-#else
-import Foundation
 #endif
 
 
-#if os(iOS) || os(tvOS) || os(visionOS) || os(macOS) || os(watchOS)
+#if canImport(UniformTypeIdentifiers)
 private import UniformTypeIdentifiers
 #endif
-
-#if os(iOS) || os(tvOS) || os(visionOS)
-  import MobileCoreServices
-#elseif os(macOS) || os(watchOS)
-  import CoreServices
-#endif // os(iOS) || os(tvOS)
 
 enum StorageUtils {
   static func defaultRequestForReference(reference: StorageReference,
@@ -85,24 +77,25 @@ enum StorageUtils {
     guard let fileExtension else {
       return "application/octet-stream"
     }
-    // TODO: Remove `else` when min. supported macOS is 11.0+.
-    if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
-      guard let mimeType = UTType(filenameExtension: fileExtension)?.preferredMIMEType else {
-        return "application/octet-stream"
-      }
-      return mimeType
-    } else {
-      if let type = UTTypeCreatePreferredIdentifierForTag(
-        kUTTagClassFilenameExtension,
-        fileExtension as NSString,
-        nil
-      )?.takeRetainedValue() {
-        if let mimeType = UTTypeCopyPreferredTagWithClass(type, kUTTagClassMIMEType)?
-          .takeRetainedValue() {
-          return mimeType as String
-        }
-      }
-      return "application/octet-stream"
-    }
+    #if canImport(UniformTypeIdentifiers)
+      return UTType(filenameExtension: fileExtension)?.preferredMIMEType
+        ?? "application/octet-stream"
+    #else
+      // No system type database on Linux, Windows or Android; cover the common cases.
+      return commonMIMETypes[fileExtension.lowercased()] ?? "application/octet-stream"
+    #endif
   }
+
+  #if !canImport(UniformTypeIdentifiers)
+    private static let commonMIMETypes: [String: String] = [
+      "txt": "text/plain", "html": "text/html", "htm": "text/html", "css": "text/css",
+      "csv": "text/csv", "js": "text/javascript", "json": "application/json",
+      "xml": "application/xml", "pdf": "application/pdf", "zip": "application/zip",
+      "gz": "application/gzip", "png": "image/png", "jpg": "image/jpeg",
+      "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+      "svg": "image/svg+xml", "heic": "image/heic", "mp3": "audio/mpeg",
+      "m4a": "audio/mp4", "wav": "audio/wav", "mp4": "video/mp4",
+      "mov": "video/quicktime", "webm": "video/webm",
+    ]
+  #endif
 }

@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
-import FoundationEssentials
-#else
-import Foundation
 #endif
+import FirebaseShared
 
 // MARK: - Type Aliases
 
@@ -188,7 +187,7 @@ class GTMSessionFetcher: @unchecked Sendable {
     // MARK: - Private Network Methods
 
     private func performDataRequest(session: URLSession, request: URLRequest) async throws -> Data {
-        let (asyncBytes, urlResponse) = try await session.bytes(for: request)
+        let (chunks, urlResponse) = try await session.chunkedBytes(for: request)
         guard let httpResponse = urlResponse as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
@@ -200,9 +199,9 @@ class GTMSessionFetcher: @unchecked Sendable {
             receivedData.reserveCapacity(Int(expectedLength))
         }
 
-        for try await byte in asyncBytes {
+        for try await chunk in chunks {
             guard !isStopped else { throw URLError(.cancelled) }
-            receivedData.append(byte)
+            receivedData.append(chunk)
 
             if let receivedProgressBlock {
                 let total = Int64(receivedData.count)
@@ -227,9 +226,10 @@ class GTMSessionFetcher: @unchecked Sendable {
         request: URLRequest,
         destinationURL: URL
     ) async throws -> Data {
-        let delegate = DownloadDelegate()
-        delegate.progressBlock = downloadProgressBlock
-        delegate.isStopped = { [weak self] in self?.isStopped ?? true }
+        let delegate = DownloadDelegate(
+            progressBlock: downloadProgressBlock,
+            isStopped: { [weak self] in self?.isStopped ?? true }
+        )
         let downloadSession = URLSession(
             configuration: .default,
             delegate: delegate,
@@ -286,9 +286,14 @@ class GTMSessionFetcher: @unchecked Sendable {
 // MARK: - DownloadDelegate
 
 /// URLSession delegate for tracking download progress.
-private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
-    var progressBlock: GTMSessionFetcherDownloadProgressBlock?
-    var isStopped: (() -> Bool)?
+private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    let progressBlock: GTMSessionFetcherDownloadProgressBlock?
+    let isStopped: (() -> Bool)?
+
+    init(progressBlock: GTMSessionFetcherDownloadProgressBlock?, isStopped: (() -> Bool)?) {
+        self.progressBlock = progressBlock
+        self.isStopped = isStopped
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -426,10 +431,10 @@ class GTMSessionUploadFetcher: @unchecked Sendable {
         let totalBytes = Int64(bodyData.count)
 
         // Perform the upload using URLSession
-        let delegate = UploadDelegate()
-        delegate.sendProgressBlock = sendProgressBlock
-        delegate.totalBytes = totalBytes
-        delegate.isStopped = { [weak self] in self?.isStopped ?? true }
+        let delegate = UploadDelegate(
+            sendProgressBlock: sendProgressBlock,
+            isStopped: { [weak self] in self?.isStopped ?? true }
+        )
         let session = URLSession(
             configuration: .default,
             delegate: delegate,
@@ -485,10 +490,14 @@ class GTMSessionUploadFetcher: @unchecked Sendable {
 // MARK: - UploadDelegate
 
 /// URLSession delegate for tracking upload progress.
-private final class UploadDelegate: NSObject, URLSessionTaskDelegate {
-    var sendProgressBlock: GTMSessionFetcherSendProgressBlock?
-    var totalBytes: Int64 = 0
-    var isStopped: (() -> Bool)?
+private final class UploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    let sendProgressBlock: GTMSessionFetcherSendProgressBlock?
+    let isStopped: (() -> Bool)?
+
+    init(sendProgressBlock: GTMSessionFetcherSendProgressBlock?, isStopped: (() -> Bool)?) {
+        self.sendProgressBlock = sendProgressBlock
+        self.isStopped = isStopped
+    }
 
     func urlSession(
         _ session: URLSession,
