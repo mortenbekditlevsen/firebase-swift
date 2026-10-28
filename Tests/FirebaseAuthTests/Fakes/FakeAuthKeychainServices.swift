@@ -16,6 +16,12 @@ import Foundation
 import Synchronization
 @testable import FirebaseAuth
 
+#if canImport(Security)
+import Security
+#else
+private let errSecItemNotFound: Int32 = -25300
+#endif
+
 /// A fake storage instance that imitates the system keychain while storing data in-memory.
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 final class FakeAuthKeychainServices: AuthStorage {

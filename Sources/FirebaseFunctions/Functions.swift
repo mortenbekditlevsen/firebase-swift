@@ -15,6 +15,9 @@
 import FirebaseCore
 import FirebaseShared
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Synchronization
 
 /// File specific constants.
@@ -417,10 +420,10 @@ public final class Functions: Sendable {
           return
         }
 
-        let stream: URLSession.AsyncBytes
+        let stream: AsyncThrowingStream<Data, Error>
         let rawResponse: URLResponse
         do {
-          (stream, rawResponse) = try await URLSession.shared.bytes(for: urlRequest)
+          (stream, rawResponse) = try await URLSession.shared.chunkedBytes(for: urlRequest)
         } catch {
           continuation.finish(throwing: FunctionsError(
             .unavailable,
@@ -455,7 +458,7 @@ public final class Functions: Sendable {
         }
 
         do {
-          for try await line in stream.lines {
+          for try await line in stream.asyncLines {
             guard line.hasPrefix("data:") else {
               continuation.finish(
                 throwing: FunctionsError(

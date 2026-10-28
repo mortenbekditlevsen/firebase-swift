@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import Synchronization
 
 /** @class UserProfileChangeRequest
     @brief Represents an object capable of updating a user's profile data.
@@ -20,84 +21,49 @@ import Foundation
         property value to nil is not the same as leaving the property unassigned.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public class UserProfileChangeRequest {
+public final class UserProfileChangeRequest: Sendable {
+  private struct State {
+    var displayName: String?
+    var displayNameWasSet = false
+    var photoURL: URL?
+    var photoURLWasSet = false
+    var consumed = false
+  }
+
+  private let user: User
+  private let _state = Mutex(State())
+
   /** @property displayName
    @brief The name of the user.
    */
   public var displayName: String? {
-    get { _displayName }
+    get { _state.withLock { $0.displayName } }
     set {
-      kAuthGlobalWorkQueue.async {
-        if self.consumed {
+      _state.withLock { state in
+        if state.consumed {
           fatalError("Internal Auth Error: Invalid call to setDisplayName after commitChanges.")
         }
-        self.displayNameWasSet = true
-        self._displayName = newValue
+        state.displayNameWasSet = true
+        state.displayName = newValue
       }
     }
   }
-
-  private var _displayName: String?
 
   /** @property photoURL
    @brief The URL of the user's profile photo.
    */
   public var photoURL: URL? {
-    get { return _photoURL }
-    set(newPhotoURL) {
-      kAuthGlobalWorkQueue.async {
-        if self.consumed {
+    get { _state.withLock { $0.photoURL } }
+    set {
+      _state.withLock { state in
+        if state.consumed {
           fatalError("Internal Auth Error: Invalid call to setPhotoURL after commitChanges.")
         }
-        self.photoURLWasSet = true
-        self._photoURL = newPhotoURL
+        state.photoURLWasSet = true
+        state.photoURL = newValue
       }
     }
   }
-
-  private var _photoURL: URL?
-
-  /** @fn commitChangesWithCompletion:
-   @brief Commits any pending changes.
-   @remarks This method should only be called once. Once called, property values should not be
-   changed.
-
-   @param completion Optionally; the block invoked when the user profile change has been applied.
-   Invoked asynchronously on the main thread in the future.
-   */
-     @MainActor
-     public func commitChanges() async throws  {
-         if self.consumed {
-             fatalError("Internal Auth Error: commitChanges should only be called once.")
-         }
-         self.consumed = true
-         // Return fast if there is nothing to update:
-         if !self.photoURLWasSet, !self.displayNameWasSet {
-             return
-         }
-         let displayName = self.displayName
-         let displayNameWasSet = self.displayNameWasSet
-         let photoURL = self.photoURL
-         let photoURLWasSet = self.photoURLWasSet
-         
-         try await self.user.executeUserUpdateWithChanges(changeBlock: { user, request in
-             if photoURLWasSet {
-                 request.photoURL = photoURL
-             }
-             if displayNameWasSet {
-                 request.displayName = displayName
-             }
-         })
-         
-         if displayNameWasSet {
-             self.user.displayName = displayName
-         }
-         if photoURLWasSet {
-             self.user.photoURL = photoURL
-         }
-         try self.user.updateKeychain()
-         
-     }
 
   /** @fn commitChanges
    @brief Commits any pending changes.
@@ -106,13 +72,39 @@ import Foundation
 
    @throws on error.
    */
+  @MainActor
+  public func commitChanges() async throws {
+    let changes = _state.withLock { state -> State in
+      if state.consumed {
+        fatalError("Internal Auth Error: commitChanges should only be called once.")
+      }
+      state.consumed = true
+      return state
+    }
+    // Return fast if there is nothing to update:
+    if !changes.photoURLWasSet, !changes.displayNameWasSet {
+      return
+    }
+
+    try await user.executeUserUpdateWithChanges(changeBlock: { user, request in
+      if changes.photoURLWasSet {
+        request.photoURL = changes.photoURL
+      }
+      if changes.displayNameWasSet {
+        request.displayName = changes.displayName
+      }
+    })
+
+    if changes.displayNameWasSet {
+      user.displayName = changes.displayName
+    }
+    if changes.photoURLWasSet {
+      user.photoURL = changes.photoURL
+    }
+    try user.updateKeychain()
+  }
 
   init(_ user: User) {
     self.user = user
   }
-
-  private let user: User
-  private var consumed = false
-  private var displayNameWasSet = false
-  private var photoURLWasSet = false
 }

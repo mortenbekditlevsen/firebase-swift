@@ -41,7 +41,7 @@ struct FunctionsSerializer: Sendable {
     } else if let dict = object as? NSDictionary {
       let encoded = NSMutableDictionary()
       try dict.forEach { key, value in
-        encoded[key] = try encode(value)
+        try encoded.set(encode(value), forKey: key)
       }
       return encoded
     } else if let array = object as? NSArray {
@@ -69,7 +69,7 @@ struct FunctionsSerializer: Sendable {
 
       let decoded = NSMutableDictionary()
       try dict.forEach { key, value in
-        decoded[key] = try decode(value)
+        try decoded.set(decode(value), forKey: key)
       }
       return decoded
     } else if let array = object as? NSArray {
@@ -162,5 +162,17 @@ extension FunctionsSerializer {
       case long = "type.googleapis.com/google.protobuf.Int64Value"
       case unsignedLong = "type.googleapis.com/google.protobuf.UInt64Value"
     }
+  }
+}
+
+private extension NSMutableDictionary {
+  /// The `Any`-keyed subscript is settable on Darwin but get-only in
+  /// swift-corelibs-foundation.
+  func set(_ value: Any, forKey key: Any) {
+    #if canImport(Darwin)
+      self[key] = value
+    #else
+      setObject(value, forKey: key as! AnyHashable)
+    #endif
   }
 }

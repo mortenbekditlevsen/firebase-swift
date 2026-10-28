@@ -379,12 +379,11 @@ private let kFIRAuthErrorMessageMalformedJWT =
     error(code: .missingOrInvalidNonce, message: message)
   }
 
-     #if !os(Linux) && !os(Android)
-  public static func keychainError(function: String, status: OSStatus) -> Error {
+  /// `status` is an `OSStatus` on Apple platforms.
+  public static func keychainError(function: String, status: Int32) -> Error {
     let reason = "\(function) (\(status))"
     return error(code: .keychainError, userInfo: [NSLocalizedFailureReasonErrorKey: reason])
   }
-     #endif
 
   public static func tenantIDMismatchError() -> Error {
     error(code: .tenantIDMismatch)

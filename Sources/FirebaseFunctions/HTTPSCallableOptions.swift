@@ -17,7 +17,7 @@ import Foundation
 /// Configuration options for a ``HTTPSCallable`` instance.
 public final class HTTPSCallableOptions: Sendable {
   /// Whether or not to protect the callable function with a limited-use App Check token.
-  @objc public let requireLimitedUseAppCheckTokens: Bool
+  public let requireLimitedUseAppCheckTokens: Bool
 
   /// Designated initializer.
   /// - Parameter requireLimitedUseAppCheckTokens: A boolean used to decide whether or not to
