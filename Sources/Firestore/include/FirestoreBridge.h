@@ -238,6 +238,8 @@ class DocumentSnapshotBridge {
   friend class DocumentReferenceBridge;
   friend class QuerySnapshotBridge;
   friend class QueryBridge;
+  friend class DocumentChangeBridge;
+  friend class TransactionBridge;
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };
@@ -272,6 +274,40 @@ class ListenerRegistrationBridge {
 // QuerySnapshotBridge
 // ---------------------------------------------------------------------------
 /// Wraps api::QuerySnapshot.
+// ---------------------------------------------------------------------------
+// DocumentChangeBridge
+// ---------------------------------------------------------------------------
+/// Wraps a single document change within a query snapshot.
+class DocumentChangeBridge {
+ public:
+  /// The type of document change.
+  enum class Type : int32_t {
+    Added = 0,
+    Modified = 1,
+    Removed = 2
+  };
+
+  DocumentChangeBridge() noexcept;
+  ~DocumentChangeBridge() noexcept;
+
+  DocumentChangeBridge(const DocumentChangeBridge&) noexcept;
+  DocumentChangeBridge& operator=(const DocumentChangeBridge&) noexcept;
+  DocumentChangeBridge(DocumentChangeBridge&&) noexcept;
+  DocumentChangeBridge& operator=(DocumentChangeBridge&&) noexcept;
+
+  Type type() const noexcept;
+  DocumentSnapshotBridge document() const noexcept;
+  int64_t old_index() const noexcept;
+  int64_t new_index() const noexcept;
+
+ private:
+  friend class QuerySnapshotBridge;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+using DocumentChangeBridgeVector = std::vector<DocumentChangeBridge>;
+
 class QuerySnapshotBridge {
  public:
   QuerySnapshotBridge() noexcept;
@@ -293,6 +329,10 @@ class QuerySnapshotBridge {
 
   /// Get all document snapshots.
   DocumentSnapshotBridgeVector documents() const noexcept;
+
+  /// Get document changes (optionally including metadata changes).
+  DocumentChangeBridgeVector document_changes(
+      bool include_metadata_changes) const noexcept;
 
  private:
   friend class QueryBridge;
@@ -425,6 +465,8 @@ class DocumentReferenceBridge {
   friend class FirestoreBridge;
   friend class CollectionReferenceBridge;
   friend class DocumentSnapshotBridge;
+  friend class WriteBatchBridge;
+  friend class TransactionBridge;
   friend class UserDataReaderBridge;
   struct Impl;
   std::shared_ptr<Impl> impl_;
@@ -454,6 +496,20 @@ class QueryBridge {
   QueryBridge OrderBy(const std::string& field, bool descending) const noexcept;
   QueryBridge LimitToFirst(int32_t limit) const noexcept;
   QueryBridge LimitToLast(int32_t limit) const noexcept;
+
+  // --- Query cursor operations ---
+  /// Start at a document snapshot (inclusive).
+  QueryBridge StartAtDocument(
+      const DocumentSnapshotBridge& snapshot) const noexcept;
+  /// Start after a document snapshot (exclusive).
+  QueryBridge StartAfterDocument(
+      const DocumentSnapshotBridge& snapshot) const noexcept;
+  /// End at a document snapshot (inclusive).
+  QueryBridge EndAtDocument(
+      const DocumentSnapshotBridge& snapshot) const noexcept;
+  /// End before a document snapshot (exclusive).
+  QueryBridge EndBeforeDocument(
+      const DocumentSnapshotBridge& snapshot) const noexcept;
 
   // --- C-callback-based async overloads (callable from Swift) ---
 
@@ -538,6 +594,100 @@ class CollectionReferenceBridge : public QueryBridge {
 };
 
 // ---------------------------------------------------------------------------
+// WriteBatchBridge
+// ---------------------------------------------------------------------------
+/// Wraps api::WriteBatch. Allows batching multiple write operations.
+class WriteBatchBridge {
+ public:
+  WriteBatchBridge() noexcept;
+  ~WriteBatchBridge() noexcept;
+
+  WriteBatchBridge(const WriteBatchBridge&) noexcept;
+  WriteBatchBridge& operator=(const WriteBatchBridge&) noexcept;
+  WriteBatchBridge(WriteBatchBridge&&) noexcept;
+  WriteBatchBridge& operator=(WriteBatchBridge&&) noexcept;
+
+  /// Set document data (overwrite).
+  std::string SetData(
+      const DocumentReferenceBridge& doc,
+      const BridgeFieldValueMap& data) noexcept;
+
+  /// Set document data with merge.
+  std::string SetDataMerge(
+      const DocumentReferenceBridge& doc,
+      const BridgeFieldValueMap& data) noexcept;
+
+  /// Update document fields.
+  std::string UpdateData(
+      const DocumentReferenceBridge& doc,
+      const BridgeFieldValueMap& data) noexcept;
+
+  /// Delete a document.
+  void DeleteData(const DocumentReferenceBridge& doc) noexcept;
+
+  /// Commit all batched writes. Calls callback with error string (empty = success).
+  void Commit(void* context, ErrorCallback callback) noexcept;
+
+ private:
+  friend class FirestoreBridge;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+// ---------------------------------------------------------------------------
+// TransactionBridge
+// ---------------------------------------------------------------------------
+/// Wraps core::Transaction for use within a RunTransaction callback.
+class TransactionBridge {
+ public:
+  TransactionBridge() noexcept;
+  ~TransactionBridge() noexcept;
+
+  /// Get a document within this transaction (synchronous, blocking).
+  DocumentSnapshotBridge GetDocument(
+      const DocumentReferenceBridge& doc,
+      std::string& out_error) const noexcept;
+
+  /// Set document data (overwrite).
+  std::string SetData(
+      const DocumentReferenceBridge& doc,
+      const BridgeFieldValueMap& data) noexcept;
+
+  /// Set document data with merge.
+  std::string SetDataMerge(
+      const DocumentReferenceBridge& doc,
+      const BridgeFieldValueMap& data) noexcept;
+
+  /// Update document fields.
+  std::string UpdateData(
+      const DocumentReferenceBridge& doc,
+      const BridgeFieldValueMap& data) noexcept;
+
+  /// Delete a document.
+  void DeleteData(const DocumentReferenceBridge& doc) noexcept;
+
+ private:
+  friend class FirestoreBridge;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+/// C-style callback for transaction update blocks.
+/// The transaction_ptr is an opaque pointer to a TransactionBridge on the heap.
+/// The update block should call methods on it, then call the completion(error)
+/// to signal success ("") or failure.
+typedef void (*TransactionUpdateCallback)(
+    void* context,
+    void* transaction_ptr,
+    ErrorCallback completion,
+    void* completion_context);
+
+/// C-style callback for transaction results.
+typedef void (*TransactionResultCallback)(
+    void* context,
+    const char* error);
+
+// ---------------------------------------------------------------------------
 // FirestoreBridge
 // ---------------------------------------------------------------------------
 /// Wraps shared_ptr<api::Firestore>. Main entry point.
@@ -571,6 +721,65 @@ class FirestoreBridge {
   /// Get a document reference by path.
   DocumentReferenceBridge GetDocument(
       const std::string& document_path) const noexcept;
+
+  /// Create a new write batch.
+  WriteBatchBridge GetBatch() const noexcept;
+
+  /// Run a transaction.
+  void RunTransaction(
+      void* context,
+      TransactionUpdateCallback update_callback,
+      void* result_context,
+      TransactionResultCallback result_callback,
+      int max_attempts) const noexcept;
+
+  /// Get a collection group query.
+  QueryBridge GetCollectionGroup(
+      const std::string& collection_id) const noexcept;
+
+  /// Terminates the Firestore instance.
+  void Terminate(void* context, ErrorCallback callback) const noexcept;
+
+  /// Clears all local persistent storage.
+  void ClearPersistence(void* context, ErrorCallback callback) const noexcept;
+
+  /// Waits for all pending writes to be acknowledged.
+  void WaitForPendingWrites(void* context, ErrorCallback callback) const noexcept;
+
+  /// Enables the network.
+  void EnableNetwork(void* context, ErrorCallback callback) const noexcept;
+
+  /// Disables the network.
+  void DisableNetwork(void* context, ErrorCallback callback) const noexcept;
+
+  // --- Settings ---
+
+  /// Gets the host setting.
+  std::string settings_host() const noexcept;
+
+  /// Gets the persistence enabled setting.
+  bool settings_persistence_enabled() const noexcept;
+
+  /// Gets the SSL enabled setting.
+  bool settings_ssl_enabled() const noexcept;
+
+  /// Gets the cache size in bytes.
+  int64_t settings_cache_size_bytes() const noexcept;
+
+  /// Sets the host.
+  void set_settings_host(const std::string& host) noexcept;
+
+  /// Sets persistence enabled.
+  void set_settings_persistence_enabled(bool enabled) noexcept;
+
+  /// Sets SSL enabled.
+  void set_settings_ssl_enabled(bool enabled) noexcept;
+
+  /// Sets the cache size in bytes.
+  void set_settings_cache_size_bytes(int64_t bytes) noexcept;
+
+  /// Applies the current settings to the Firestore instance.
+  void apply_settings() noexcept;
 
   /// The database ID string.
   std::string database_id() const noexcept;

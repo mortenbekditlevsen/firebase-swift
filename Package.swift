@@ -45,10 +45,7 @@ let package = Package(
     targets: [
         .target(
             name: "FirebaseCore",
-            path: "Sources/FirebaseCore",
-            swiftSettings: [
-                .interoperabilityMode(.Cxx),
-            ]
+            path: "Sources/FirebaseCore"
         ),
         .target(
             name: "FirebaseShared",
@@ -75,40 +72,6 @@ let package = Package(
           ],
           path: "Sources/FirebaseFunctions"
         ),
-//        .testTarget(
-//          name: "FirebaseFunctionsUnit",
-//          dependencies: ["FirebaseFunctions",
-//                         "FirebaseAppCheckInterop",
-//                         "FirebaseAuthInterop",
-//                         "FirebaseMessagingInterop",
-//                         "SharedTestUtilities"],
-//          path: "FirebaseFunctions/Tests/Unit",
-//          cSettings: [
-//            .headerSearchPath("../../../"),
-//          ],
-//          swiftSettings: [
-//            .swiftLanguageMode(SwiftLanguageMode.v5),
-//          ]
-//        ),
-//        .testTarget(
-//          name: "FirebaseFunctionsIntegration",
-//          dependencies: ["FirebaseFunctions",
-//                         "SharedTestUtilities"],
-//          path: "FirebaseFunctions/Tests/Integration"
-//        ),
-//        .testTarget(
-//          name: "FirebaseFunctionsObjCIntegration",
-//          dependencies: ["FirebaseFunctions",
-//                         "SharedTestUtilities"],
-//          path: "FirebaseFunctions/Tests/ObjCIntegration",
-//          // See https://forums.swift.org/t/importing-swift-libraries-from-objective-c/56730
-//          exclude: [
-//            "ObjCPPAPITests.mm",
-//          ],
-//          cSettings: [
-//            .headerSearchPath("../../.."),
-//          ]
-//        ),
 
             .target(
               name: "FirebaseStorage",
@@ -120,32 +83,6 @@ let package = Package(
                 .swiftLanguageMode(SwiftLanguageMode.v6),
               ]
             ),
-//            .testTarget(
-//              name: "FirebaseStorageUnit",
-//              dependencies: ["FirebaseStorage",
-//                             "SharedTestUtilities"],
-//              path: "FirebaseStorage/Tests/Unit",
-//              cSettings: [
-//                .headerSearchPath("../../../"),
-//              ],
-//              swiftSettings: [
-//                .swiftLanguageMode(SwiftLanguageMode.v5),
-//              ]
-//            ),
-//            .testTarget(
-//              name: "StorageObjCIntegration",
-//              dependencies: ["FirebaseStorage"],
-//              path: "FirebaseStorage/Tests/ObjCIntegration",
-//              exclude: [
-//                // See https://forums.swift.org/t/importing-swift-libraries-from-objective-c/56730
-//                "FIRStorageIntegrationTests.m",
-//                "ObjCPPAPITests.mm",
-//                "Credentials.h",
-//              ],
-//              cSettings: [
-//                .headerSearchPath("../../.."),
-//              ]
-//            ),
 
         .target(
             name: "FirebaseDatabase",
@@ -270,9 +207,6 @@ let package = Package(
           cxxSettings: [
             .headerSearchPath("../")
           ],
-//          swiftSettings: [
-//            .interoperabilityMode(.Cxx),
-//          ],
           linkerSettings: [
             .linkedFramework(
               "SystemConfiguration",
@@ -286,7 +220,6 @@ let package = Package(
           name: "FirebaseFirestore",
           dependencies: [
             "FirebaseCore",
-//            "FirebaseCoreExtension",
             "FirebaseFirestoreInternalWrapper",
             "FirebaseShared",
           ],
@@ -326,7 +259,10 @@ let package = Package(
         .testTarget(
             name: "FirebaseDatabaseTests",
             dependencies: ["FirebaseDatabase"],
-            path: "Tests/FirebaseDatabaseTests"
+            path: "Tests/FirebaseDatabaseTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

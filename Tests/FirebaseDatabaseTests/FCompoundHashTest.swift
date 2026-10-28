@@ -7,7 +7,7 @@
 
 import Foundation
 
-@testable import FirebaseDatabaseSwiftCore
+@testable import FirebaseDatabase
 import XCTest
 
 func NODE(_ dict: [String: Any]) -> FNode {
@@ -17,7 +17,7 @@ func PATH(_ pathString: String) -> FPath {
     FPath(with: pathString)
 }
 
-let NEVER_SPLIT_STRATEGY: FCompoundHashSplitStrategy = { _ in false }
+var NEVER_SPLIT_STRATEGY: FCompoundHashSplitStrategy { { _ in false } }
 
 func splitAtPaths(_ paths: [FPath]) -> FCompoundHashSplitStrategy {
     { builder in
