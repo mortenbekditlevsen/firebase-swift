@@ -21,7 +21,7 @@
 #endif // SWIFT_PACKAGE
 import Foundation
 
-@objc public extension Firestore {
+public extension Firestore {
   /// Creates a new `PipelineSource` to build and execute a data pipeline.
   ///
   /// A pipeline is composed of a sequence of stages. Each stage processes the

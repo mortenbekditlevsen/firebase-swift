@@ -282,6 +282,10 @@ public final class Database:  Sendable {
      * Configures the database to use an emulated backend instead of the default
      * remote backend.
      */
+    public func useEmulator(withHost host: String, port: Int) {
+        useEmulator(host: host, port: port)
+    }
+
     func useEmulator(host: String, port: Int) {
         guard !host.isEmpty else {
             fatalError("Cannot connect to empty host.")

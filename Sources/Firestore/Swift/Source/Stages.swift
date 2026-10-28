@@ -139,7 +139,7 @@ class Limit: Stage {
   let bridge: StageBridge
 
   init(_ limit: Int32) {
-    bridge = LimitStageBridge(limit: NSInteger(limit))
+    bridge = LimitStageBridge(limit: Int(limit))
   }
 
   init(bridge: LimitStageBridge) {
@@ -153,7 +153,7 @@ class Offset: Stage {
   let bridge: StageBridge
 
   init(_ offset: Int32) {
-    bridge = OffsetStageBridge(offset: NSInteger(offset))
+    bridge = OffsetStageBridge(offset: Int(offset))
   }
 
   init(bridge: OffsetStageBridge) {

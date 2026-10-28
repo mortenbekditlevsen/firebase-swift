@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import class FirebaseCore.Timestamp
+import struct FirebaseCore.Timestamp
 import FirebaseFirestore
 import Foundation
 import XCTest
@@ -79,7 +79,8 @@ class ConditionalConformanceTests: XCTestCase {
     }
 
     let ts1 = Timestamp(seconds: 123, nanoseconds: 456)
-    let ts2 = ts1.copy() as! Timestamp
+    // PORTING NOTE: Timestamp is a struct here, so an equal value replaces `ts1.copy()`.
+    let ts2 = Timestamp(seconds: 123, nanoseconds: 456)
     let ts3 = Timestamp(seconds: 789, nanoseconds: 0)
 
     XCTAssertTrue(Model(x: ts1) == Model(x: ts2))

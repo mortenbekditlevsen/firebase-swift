@@ -244,6 +244,42 @@ final class AuthTests: RPCBaseTests {
     XCTAssertNil(auth.currentUser)
   }
 
+  // MARK: - Internal auth state notification
+
+  /// Database and Firestore track the signed-in user through this notification.
+  /// (Not via XCTest's notification expectations: they filter by `object`,
+  /// which swift-corelibs-foundation never matches for pure Swift classes.)
+  func testInternalAuthStateNotificationCarriesUserAndToken() async throws {
+    let app = try XCTUnwrap(testApp)
+    let received = ReceivedNotifications()
+    let auth = try XCTUnwrap(self.auth)
+    let observer = NotificationCenter.default.addObserver(
+      forName: .FIRAuthStateDidChangeInternalNotification,
+      object: nil,
+      queue: nil
+    ) { [weak auth] notification in
+      guard (notification.object as AnyObject?) === auth else { return }
+      received.append(notification.userInfo ?? [:])
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    // Posted before sign-in returns, so Firestore never sees a write from the
+    // new user before it knows about the user.
+    try await signInWithEmailHelper()
+    let signedIn = try XCTUnwrap(received.userInfo(at: 0))
+    XCTAssertEqual(signedIn[FIRAuthStateDidChangeInternalNotificationUIDKey] as? String, kLocalID)
+    XCTAssertEqual(
+      signedIn[FIRAuthStateDidChangeInternalNotificationTokenKey] as? String,
+      AuthTests.kAccessToken
+    )
+    XCTAssertTrue(signedIn[FIRAuthStateDidChangeInternalNotificationAppKey] as? FirebaseApp === app)
+
+    try auth.signOut()
+    let signedOut = try XCTUnwrap(received.userInfo(at: 1))
+    XCTAssertNil(signedOut[FIRAuthStateDidChangeInternalNotificationUIDKey])
+    XCTAssertNil(signedOut[FIRAuthStateDidChangeInternalNotificationTokenKey])
+  }
+
   // MARK: - sendPasswordReset / sendSignInLink
 
   func testSendPasswordResetSuccess() async throws {
@@ -366,5 +402,20 @@ final class AuthTests: RPCBaseTests {
       "refreshToken": kRefreshToken,
     ])
     _ = try await task.value
+  }
+}
+
+/// Collects notification `userInfo` dictionaries from any thread. They hold
+/// only Sendable values in practice, but `[AnyHashable: Any]` can't say so.
+private final class ReceivedNotifications: @unchecked Sendable {
+  private let lock = NSLock()
+  private var infos: [[AnyHashable: Any]] = []
+
+  func append(_ info: [AnyHashable: Any]) {
+    lock.withLock { infos.append(info) }
+  }
+
+  func userInfo(at index: Int) -> [AnyHashable: Any]? {
+    lock.withLock { infos.indices.contains(index) ? infos[index] : nil }
   }
 }

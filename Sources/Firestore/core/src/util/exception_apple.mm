@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// firebase-swift: guarded so SwiftPM can compile this file on all platforms.
+#if __APPLE__
+
 #include "Firestore/core/src/util/exception_apple.h"
 
 #import <Foundation/Foundation.h>
@@ -73,3 +76,5 @@ NSException* MakeException(ExceptionType type, const std::string& message) {
 }  // namespace firebase
 
 NS_ASSUME_NONNULL_END
+
+#endif  // __APPLE__

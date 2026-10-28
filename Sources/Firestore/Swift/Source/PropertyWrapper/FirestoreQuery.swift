@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// SwiftUI integration; not available on Linux, Windows or Android.
+#if canImport(SwiftUI)
+
 import SwiftUI
 
 #if SWIFT_PACKAGE
@@ -204,3 +207,5 @@ public struct FirestoreQuery<T>: DynamicProperty {
       StateObject(wrappedValue: FirestoreQueryObservable<T>(configuration: configuration))
   }
 }
+
+#endif  // canImport(SwiftUI)

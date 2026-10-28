@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+// firebase-swift: guarded so SwiftPM can compile this file on all platforms.
+#include "Firestore/core/src/util/config.h"
+
+#if HAVE_LIBDISPATCH
+
 #include "Firestore/core/src/util/executor_libdispatch.h"
 
 #include <algorithm>
@@ -377,3 +382,5 @@ std::unique_ptr<Executor> Executor::CreateConcurrent(const char* label,
 }  // namespace util
 }  // namespace firestore
 }  // namespace firebase
+
+#endif  // HAVE_LIBDISPATCH

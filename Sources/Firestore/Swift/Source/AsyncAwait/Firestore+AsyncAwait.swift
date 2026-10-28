@@ -100,10 +100,27 @@ public extension Firestore {
   /// - Throws Throws an error if the transaction could not be committed, or if an error was
   /// explicitly specified in the `updateBlock` parameter.
   /// - Returns Returns the value returned in the `updateBlock` parameter if no errors occurred.
-  func runTransaction(_ updateBlock: @escaping (Transaction, NSErrorPointer)
+  #if canImport(Darwin)
+    func runTransaction(_ updateBlock: @escaping (Transaction, NSErrorPointer)
+      -> sending Any?) async throws -> sending Any? {
+      // This needs to be wrapped in order to express a nullable return value upon success.
+      // See https://github.com/firebase/firebase-ios-sdk/issues/9426 for more details.
+      return try await withCheckedThrowingContinuation { continuation in
+        self.runTransaction(updateBlock) { anyValue, error in
+          if let error {
+            continuation.resume(throwing: error)
+          } else {
+            continuation.resume(returning: anyValue)
+          }
+        }
+      }
+    }
+  #endif
+
+  /// Like the `NSErrorPointer` form, but `updateBlock` aborts the transaction by
+  /// throwing. Available on all platforms.
+  func runTransaction(_ updateBlock: @escaping (Transaction) throws
     -> sending Any?) async throws -> sending Any? {
-    // This needs to be wrapped in order to express a nullable return value upon success.
-    // See https://github.com/firebase/firebase-ios-sdk/issues/9426 for more details.
     return try await withCheckedThrowingContinuation { continuation in
       self.runTransaction(updateBlock) { anyValue, error in
         if let error {

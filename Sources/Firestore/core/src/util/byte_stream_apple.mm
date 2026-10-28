@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// firebase-swift: guarded so SwiftPM can compile this file on all platforms.
+#if __APPLE__
+
 #include "Firestore/core/src/util/byte_stream_apple.h"
 
 #include <algorithm>
@@ -120,3 +123,5 @@ bool ByteStreamApple::eof() const {
 }  // namespace util
 }  // namespace firestore
 }  // namespace firebase
+
+#endif  // __APPLE__

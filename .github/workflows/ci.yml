@@ -31,9 +31,24 @@ jobs:
         run: swift build --build-tests
       - name: Test
         run: swift test --skip-build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('firebase.json') }}
+          restore-keys: firebase-emulators-${{ runner.os }}-
+      - run: npm install -g firebase-tools
+      - name: Integration tests (Firebase emulators)
+        run: >-
+          firebase emulators:exec --project demo-firebase-swift --only auth,firestore
+          "swift test --skip-build --filter IntegrationTests"
 
-  # Firestore is left out of the Linux build by Package.swift until the
-  # abseil/gRPC port works there (see the Linux guard at the bottom of the manifest).
   linux:
     runs-on: ubuntu-latest
     container: swift:6.2
@@ -49,20 +64,20 @@ jobs:
         run: swift build --build-tests
       - name: Test
         run: swift test --skip-build
-
-  # Tracks progress on Firestore for Linux. Allowed to fail until it builds.
-  linux-firestore:
-    runs-on: ubuntu-latest
-    container: swift:6.2
-    continue-on-error: true
-    env:
-      FIREBASE_FIRESTORE_LINUX: "1"
-    steps:
-      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/cache@v4
         with:
-          path: .build
-          key: linux-firestore-spm-${{ hashFiles('Package.resolved') }}
-          restore-keys: linux-firestore-spm-
-      - name: Build Firestore
-        run: swift build --product FirebaseFirestore
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('firebase.json') }}
+          restore-keys: firebase-emulators-${{ runner.os }}-
+      - run: npm install -g firebase-tools
+      - name: Integration tests (Firebase emulators)
+        run: >-
+          firebase emulators:exec --project demo-firebase-swift --only auth,firestore
+          "swift test --skip-build --filter IntegrationTests"
