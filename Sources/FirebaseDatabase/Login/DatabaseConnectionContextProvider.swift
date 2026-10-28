@@ -43,12 +43,6 @@ protocol DatabaseConnectionContextProviderProtocol: Sendable {
     func listenForAppCheckTokenChanges(_ listener: @escaping @DatabaseActor (String) -> Void)
 }
 
-extension Notification.Name {
-    public static let FIRAuthStateDidChangeInternalNotification = Notification.Name("FIRAuthStateDidChangeInternalNotification")
-}
-
-let FIRAuthStateDidChangeInternalNotificationTokenKey = "FIRAuthStateDidChangeInternalNotificationTokenKey"
-
 private final class FAuthStateListenerWrapper: @unchecked Sendable {
     private let listener: @DatabaseActor (String) -> Void
     private weak var auth: AuthInterop?
@@ -155,11 +149,16 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
             return
         }
         let appCheckTokenKey = appCheck.notificationTokenKey
+        // swift-corelibs-foundation never matches an `object:` filter that is a
+        // pure Swift class, so filter by identity in the block instead.
+        let sender = ObjectIdentifier(appCheck as AnyObject)
         let observer = NotificationCenter.default
             .addObserver(forName: appCheck.tokenDidChangeNotificationName,
-                         object: appCheck,
+                         object: nil,
                          queue: nil) { notification in
-                guard let appCheckToken = notification.userInfo?[appCheckTokenKey] as? String else {
+                guard let object = notification.object,
+                      ObjectIdentifier(object as AnyObject) == sender,
+                      let appCheckToken = notification.userInfo?[appCheckTokenKey] as? String else {
                     return
                 }
                 Task { @DatabaseActor in

@@ -14,13 +14,13 @@
 
 #include "Firestore/include/FirestoreBridge.h"
 
+#include <future>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <dispatch/dispatch.h>
 
 #include "Firestore/core/src/api/collection_reference.h"
 #include "Firestore/core/src/api/document_change.h"
@@ -40,7 +40,9 @@
 #include "Firestore/core/src/core/transaction.h"
 #include "Firestore/core/src/core/user_data.h"
 #include "Firestore/core/src/api/settings.h"
-#include "Firestore/core/src/credentials/empty_credentials_provider.h"
+#include "Firestore/core/src/credentials/auth_token.h"
+#include "Firestore/core/src/credentials/credentials_provider.h"
+#include "Firestore/core/src/credentials/user.h"
 #include "Firestore/core/src/model/database_id.h"
 #include "Firestore/core/src/model/document.h"
 #include "Firestore/core/src/model/document_key.h"
@@ -56,6 +58,8 @@
 #include "Firestore/core/src/remote/firebase_metadata_provider_noop.h"
 #include "Firestore/core/src/util/async_queue.h"
 #include "Firestore/core/src/util/executor.h"
+#include "Firestore/core/src/util/hard_assert.h"
+#include "Firestore/core/src/util/log.h"
 #include "Firestore/core/src/util/status.h"
 #include "Firestore/core/src/util/statusor.h"
 
@@ -246,12 +250,32 @@ std::string DocumentReferenceBridge::path() const noexcept {
   return impl_->ref_.Path();
 }
 
+bool DocumentReferenceBridge::IsEqual(
+    const DocumentReferenceBridge& other) const noexcept {
+  if (!impl_ || !other.impl_) return impl_ == other.impl_;
+  return impl_->ref_ == other.impl_->ref_;
+}
+
+size_t DocumentReferenceBridge::Hash() const noexcept {
+  return impl_ ? impl_->ref_.Hash() : 0;
+}
+
 CollectionReferenceBridge DocumentReferenceBridge::parent() const noexcept {
   if (!impl_) return CollectionReferenceBridge{};
   CollectionReferenceBridge result;
   auto parent_ref = impl_->ref_.Parent();
   result.impl_ = std::make_shared<QueryBridge::Impl>(
       Query{parent_ref.query(), parent_ref.firestore()});
+  return result;
+}
+
+CollectionReferenceBridge DocumentReferenceBridge::Collection(
+    const std::string& collection_path) const noexcept {
+  if (!impl_) return CollectionReferenceBridge{};
+  auto collection = impl_->ref_.GetCollectionReference(collection_path);
+  CollectionReferenceBridge result;
+  result.impl_ = std::make_shared<QueryBridge::Impl>(
+      Query{collection.query(), collection.firestore()});
   return result;
 }
 
@@ -651,10 +675,220 @@ QueryBridge CollectionReferenceBridge::as_query() const noexcept {
 // ===========================================================================
 // FirestoreBridge::Impl
 // ===========================================================================
+// MARK: - Credentials
+
+namespace {
+
+using credentials::AuthToken;
+using credentials::CredentialChangeListener;
+using credentials::TokenListener;
+using credentials::User;
+
+/// A Swift object that supplies tokens. The Swift side retains it for us;
+/// it's released when the last provider using it goes away.
+class TokenSource {
+ public:
+  TokenSource(void* context,
+              TokenRequestCallback request_token,
+              ContextReleaseCallback release_context)
+      : context_(context),
+        request_token_(request_token),
+        release_context_(release_context) {}
+
+  ~TokenSource() {
+    if (context_ && release_context_) release_context_(context_);
+  }
+
+  TokenSource(const TokenSource&) = delete;
+  TokenSource& operator=(const TokenSource&) = delete;
+
+  bool available() const {
+    return request_token_ != nullptr;
+  }
+
+  /// `done` receives (token, error) exactly once, on any thread.
+  void RequestToken(bool force_refresh,
+                    std::function<void(std::string, std::string)> done) const;
+
+ private:
+  void* context_;
+  TokenRequestCallback request_token_;
+  ContextReleaseCallback release_context_;
+};
+
+/// The pending request handed to Swift as an opaque pointer.
+struct TokenRequest {
+  std::function<void(std::string, std::string)> done;
+};
+
+void TokenSource::RequestToken(
+    bool force_refresh,
+    std::function<void(std::string, std::string)> done) const {
+  auto* request = new TokenRequest{std::move(done)};
+  request_token_(context_, force_refresh, request);
+}
+
+User UserFromUid(const std::string& uid) {
+  return uid.empty() ? User::Unauthenticated() : User(uid);
+}
+
+/// Auth credentials backed by Swift's `AuthInterop`. Mirrors
+/// firebase_auth_credentials_provider_apple.mm: user changes are pushed in via
+/// `UserChanged`, and a token request that is outstanding while the user
+/// changes is retried, since its token may belong to the previous user.
+class SwiftAuthCredentialsProvider
+    : public credentials::AuthCredentialsProvider,
+      public std::enable_shared_from_this<SwiftAuthCredentialsProvider> {
+ public:
+  SwiftAuthCredentialsProvider(std::shared_ptr<TokenSource> source,
+                               const std::string& initial_uid)
+      : source_(std::move(source)), current_user_(UserFromUid(initial_uid)) {}
+
+  void GetToken(TokenListener<AuthToken> completion) override {
+    int initial_token_counter;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      initial_token_counter = token_counter_;
+    }
+    bool force_refresh = force_refresh_.exchange(false);
+
+    if (!source_ || !source_->available()) {
+      completion(AuthToken::Unauthenticated());
+      return;
+    }
+
+    // Keep the provider alive while the request is outstanding.
+    std::shared_ptr<SwiftAuthCredentialsProvider> self = shared_from_this();
+    source_->RequestToken(
+        force_refresh, [self, initial_token_counter, completion](
+                           std::string token, std::string error) {
+          std::unique_lock<std::mutex> lock(self->mutex_);
+          if (initial_token_counter != self->token_counter_) {
+            lock.unlock();
+            LOG_DEBUG("GetToken aborted due to token change.");
+            self->GetToken(completion);
+            return;
+          }
+          User user = self->current_user_;
+          lock.unlock();
+
+          if (!error.empty()) {
+            completion(util::Status(Error::kErrorUnknown, error));
+          } else if (token.empty()) {
+            completion(AuthToken::Unauthenticated());
+          } else {
+            completion(AuthToken{std::move(token), std::move(user)});
+          }
+        });
+  }
+
+  void SetCredentialChangeListener(
+      CredentialChangeListener<User> change_listener) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (change_listener) {
+      HARD_ASSERT(!change_listener_, "set change_listener twice!");
+      // Fire initial event.
+      change_listener(current_user_);
+    } else {
+      HARD_ASSERT(change_listener_,
+                  "change_listener removed without being set!");
+    }
+    change_listener_ = std::move(change_listener);
+  }
+
+  void UserChanged(const std::string& uid) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    current_user_ = UserFromUid(uid);
+    token_counter_++;
+    if (change_listener_) {
+      change_listener_(current_user_);
+    }
+  }
+
+ private:
+  std::shared_ptr<TokenSource> source_;
+  std::mutex mutex_;
+  User current_user_;
+  int token_counter_ = 0;
+};
+
+/// App Check credentials backed by Swift's `AppCheckInterop`. Mirrors
+/// firebase_app_check_credentials_provider_apple.mm, except that token-change
+/// notifications aren't wired up yet (AppCheckInterop has none).
+class SwiftAppCheckCredentialsProvider
+    : public credentials::AppCheckCredentialsProvider,
+      public std::enable_shared_from_this<SwiftAppCheckCredentialsProvider> {
+ public:
+  explicit SwiftAppCheckCredentialsProvider(std::shared_ptr<TokenSource> source)
+      : source_(std::move(source)) {}
+
+  void GetToken(TokenListener<std::string> completion) override {
+    bool force_refresh = force_refresh_.exchange(false);
+    if (!source_ || !source_->available()) {
+      // Without App Check, send no token.
+      completion(std::string{});
+      return;
+    }
+    std::shared_ptr<SwiftAppCheckCredentialsProvider> self = shared_from_this();
+    source_->RequestToken(force_refresh, [self, completion](std::string token,
+                                                            std::string error) {
+      if (!error.empty()) {
+        LOG_WARN("AppCheck failed: '%s'", error);
+      }
+      completion(std::move(token));  // Always return token
+    });
+  }
+
+  void SetCredentialChangeListener(
+      CredentialChangeListener<std::string> change_listener) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (change_listener) {
+      HARD_ASSERT(!change_listener_, "set change_listener twice!");
+      // Fire initial event.
+      change_listener(std::string{});
+    } else {
+      HARD_ASSERT(change_listener_,
+                  "change_listener removed without being set!");
+    }
+    change_listener_ = std::move(change_listener);
+  }
+
+ private:
+  std::shared_ptr<TokenSource> source_;
+  std::mutex mutex_;
+};
+
+void CompleteTokenRequest(void* request,
+                          const std::string& token,
+                          const std::string& error) {
+  HARD_ASSERT(request, "Completing a null token request");
+  std::unique_ptr<TokenRequest> owned(static_cast<TokenRequest*>(request));
+  owned->done(token, error);
+}
+
+}  // namespace
+
+void CompleteAuthTokenRequest(void* request,
+                              const std::string& token,
+                              const std::string& error) noexcept {
+  CompleteTokenRequest(request, token, error);
+}
+
+void CompleteAppCheckTokenRequest(void* request,
+                                  const std::string& token,
+                                  const std::string& error) noexcept {
+  CompleteTokenRequest(request, token, error);
+}
+
+// MARK: - FirestoreBridge
+
 struct FirestoreBridge::Impl {
-  explicit Impl(std::shared_ptr<Firestore> firestore)
-      : firestore_(std::move(firestore)) {}
+  Impl(std::shared_ptr<Firestore> firestore,
+       std::shared_ptr<SwiftAuthCredentialsProvider> auth_provider)
+      : firestore_(std::move(firestore)),
+        auth_provider_(std::move(auth_provider)) {}
   std::shared_ptr<Firestore> firestore_;
+  std::shared_ptr<SwiftAuthCredentialsProvider> auth_provider_;
 };
 
 FirestoreBridge::FirestoreBridge() noexcept = default;
@@ -669,11 +903,22 @@ FirestoreBridge& FirestoreBridge::operator=(FirestoreBridge&&) noexcept =
 FirestoreBridge FirestoreBridge::Create(
     const std::string& project_id,
     const std::string& database_id,
-    const std::string& persistence_key) noexcept {
-  auto auth_credentials =
-      std::make_shared<credentials::EmptyAuthCredentialsProvider>();
+    const std::string& persistence_key,
+    void* auth_context,
+    TokenRequestCallback request_auth_token,
+    const std::string& initial_uid,
+    void* app_check_context,
+    TokenRequestCallback request_app_check_token,
+    ContextReleaseCallback release_context) noexcept {
+  auto auth_credentials = std::make_shared<SwiftAuthCredentialsProvider>(
+      std::make_shared<TokenSource>(auth_context, request_auth_token,
+                                    release_context),
+      initial_uid);
   auto app_check_credentials =
-      std::make_shared<credentials::EmptyAppCheckCredentialsProvider>();
+      std::make_shared<SwiftAppCheckCredentialsProvider>(
+          std::make_shared<TokenSource>(app_check_context,
+                                        request_app_check_token,
+                                        release_context));
   auto worker_queue = util::AsyncQueue::Create(
       util::Executor::CreateSerial("com.google.firebase.firestore.worker"));
   auto metadata_provider = remote::CreateFirebaseMetadataProviderNoOp();
@@ -681,7 +926,7 @@ FirestoreBridge FirestoreBridge::Create(
   auto firestore = std::make_shared<Firestore>(
       DatabaseId{project_id, database_id},
       persistence_key,
-      std::move(auth_credentials),
+      auth_credentials,
       std::move(app_check_credentials),
       std::move(worker_queue),
       std::move(metadata_provider),
@@ -692,8 +937,15 @@ FirestoreBridge FirestoreBridge::Create(
       util::Executor::CreateSerial("com.google.firebase.firestore.callback"));
 
   FirestoreBridge result;
-  result.impl_ = std::make_shared<Impl>(std::move(firestore));
+  result.impl_ =
+      std::make_shared<Impl>(std::move(firestore), std::move(auth_credentials));
   return result;
+}
+
+void FirestoreBridge::SetAuthUser(const std::string& uid) const noexcept {
+  if (impl_ && impl_->auth_provider_) {
+    impl_->auth_provider_->UserChanged(uid);
+  }
 }
 
 bool FirestoreBridge::is_valid() const noexcept {
@@ -921,6 +1173,13 @@ BridgeFieldValue BridgeFieldValue::FromBlob(
   v.tag_ = Tag::Blob;
   v.string_value_ = bytes;
   return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromBlob(const uint8_t* bytes,
+                                            size_t size) noexcept {
+  // Empty Data has no base address, and std::string(nullptr, 0) is undefined.
+  if (!bytes || size == 0) return FromBlob(std::string());
+  return FromBlob(std::string(reinterpret_cast<const char*>(bytes), size));
 }
 
 BridgeFieldValue BridgeFieldValue::FromTimestamp(
@@ -2167,8 +2426,8 @@ DocumentSnapshotBridge TransactionBridge::GetDocument(
     return DocumentSnapshotBridge{};
   }
 
-  // Use a dispatch semaphore to synchronize the async Lookup.
-  dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+  // Block until the async Lookup completes, as FIRTransaction does upstream.
+  std::promise<void> lookup_done;
 
   DocumentSnapshotBridge result;
   std::string error_msg;
@@ -2177,7 +2436,7 @@ DocumentSnapshotBridge TransactionBridge::GetDocument(
   api::SnapshotMetadata meta(/*has_pending_writes=*/false, /*from_cache=*/false);
   impl_->txn_->Lookup(
       {key},
-      [&result, &error_msg, &semaphore, this, key, meta](
+      [&result, &error_msg, &lookup_done, this, key, meta](
           const StatusOr<std::vector<model::Document>>& maybe_docs) {
         if (!maybe_docs.ok()) {
           error_msg = maybe_docs.status().error_message();
@@ -2197,10 +2456,10 @@ DocumentSnapshotBridge TransactionBridge::GetDocument(
                 std::move(snapshot));
           }
         }
-        dispatch_semaphore_signal(semaphore);
+        lookup_done.set_value();
       });
 
-  dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+  lookup_done.get_future().wait();
   out_error = error_msg;
   return result;
 }
@@ -2273,6 +2532,20 @@ void TransactionBridge::DeleteData(
 // ===========================================================================
 // FirestoreBridge — GetBatch / RunTransaction
 // ===========================================================================
+namespace {
+
+/// Runs transaction update blocks off the Firestore worker queue. Never
+/// destroyed, so blocks still running at exit don't outlive their executor.
+util::Executor& TransactionUserExecutor() {
+  static util::Executor* executor =
+      util::Executor::CreateConcurrent(
+          "com.google.firebase.firestore.transaction", 4)
+          .release();
+  return *executor;
+}
+
+}  // namespace
+
 WriteBatchBridge FirestoreBridge::GetBatch() const noexcept {
   if (!impl_) return WriteBatchBridge{};
   WriteBatchBridge result;
@@ -2292,21 +2565,25 @@ void FirestoreBridge::RunTransaction(
     return;
   }
 
-  auto update_fn = [context, update_callback, this](
+  // Capture the Firestore instance, not `this`: Swift calls this method on a
+  // temporary copy of the bridge, which is gone before the transaction runs.
+  auto update_fn = [context, update_callback, firestore = impl_->firestore_](
       std::shared_ptr<core::Transaction> txn,
       core::TransactionResultCallback done) {
     // Create a TransactionBridge on the heap for Swift to use.
     auto* bridge = new TransactionBridge();
-    bridge->impl_ = std::make_shared<TransactionBridge::Impl>(
-        std::move(txn), impl_->firestore_);
+    bridge->impl_ = std::make_shared<TransactionBridge::Impl>(txn, firestore);
 
     // The completion callback that Swift will call when done.
-    auto completion_fn = [done = std::move(done)](
+    auto completion_fn = [txn, done = std::move(done)](
         void* /*completion_context*/, const char* error) mutable {
       std::string err(error);
       if (err.empty()) {
         done(Status::OK());
       } else {
+        // The update block threw. That is final, so don't retry (kAborted
+        // alone counts as retryable).
+        txn->MarkPermanentlyFailed();
         done(Status(Error::kErrorAborted, err));
       }
     };
@@ -2321,8 +2598,15 @@ void FirestoreBridge::RunTransaction(
       (*fn)(nullptr, error);
     };
 
-    update_callback(context, static_cast<void*>(bridge),
-                    c_completion, static_cast<void*>(shared_completion.get()));
+    // This runs on the Firestore worker queue, but the update block calls
+    // TransactionBridge::GetDocument, which blocks until a lookup completes
+    // on that same queue. Run the block elsewhere, as FIRFirestore does with
+    // a global dispatch queue upstream.
+    TransactionUserExecutor().Execute(
+        [context, update_callback, bridge, c_completion, shared_completion] {
+          update_callback(context, static_cast<void*>(bridge), c_completion,
+                          static_cast<void*>(shared_completion.get()));
+        });
   };
 
   auto result_fn = [result_context, result_callback](Status status) {

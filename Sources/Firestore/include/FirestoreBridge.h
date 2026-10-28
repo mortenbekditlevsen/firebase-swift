@@ -49,6 +49,16 @@ typedef void (*ErrorCallback)(
     void* context,
     const char* error);
 
+/// Asks Swift for an Auth or App Check token. Swift must pass `request` to
+/// the matching `Complete…TokenRequest` function exactly once, from any thread.
+typedef void (*TokenRequestCallback)(
+    void* context,
+    bool force_refresh,
+    void* request);
+
+/// Releases a `context` that was passed to `FirestoreBridge::Create`.
+typedef void (*ContextReleaseCallback)(void* context);
+
 // Forward declarations of internal API types (not exposed to Swift).
 namespace firebase {
 namespace firestore {
@@ -131,6 +141,10 @@ class BridgeFieldValue {
   static BridgeFieldValue FromDouble(double value) noexcept;
   static BridgeFieldValue FromString(const std::string& value) noexcept;
   static BridgeFieldValue FromBlob(const std::string& bytes) noexcept;
+  /// Builds the blob on the C++ side, so Swift needn't construct a
+  /// std::string from raw bytes (whose constructors differ between
+  /// libc++ and libstdc++).
+  static BridgeFieldValue FromBlob(const uint8_t* bytes, size_t size) noexcept;
   static BridgeFieldValue FromTimestamp(int64_t seconds,
                                         int32_t nanoseconds) noexcept;
   static BridgeFieldValue FromGeoPoint(double latitude,
@@ -360,8 +374,18 @@ class DocumentReferenceBridge {
   /// The full path of this document.
   std::string path() const noexcept;
 
+  /// True if both refer to the same document in the same Firestore instance.
+  bool IsEqual(const DocumentReferenceBridge& other) const noexcept;
+
+  /// Hash consistent with IsEqual.
+  size_t Hash() const noexcept;
+
   /// The parent collection.
   CollectionReferenceBridge parent() const noexcept;
+
+  /// A subcollection of this document, at a path relative to it.
+  CollectionReferenceBridge Collection(
+      const std::string& collection_path) const noexcept;
 
   /// Reads the document from the given source.
   /// Calls `callback(snapshot, error_message)`.
@@ -701,15 +725,32 @@ class FirestoreBridge {
   FirestoreBridge(FirestoreBridge&&) noexcept;
   FirestoreBridge& operator=(FirestoreBridge&&) noexcept;
 
-  /// Creates a FirestoreBridge with a real api::Firestore instance.
-  /// Uses empty credentials providers (unauthenticated) and no-op metadata.
+  /// Creates a FirestoreBridge with a real api::Firestore instance and no-op
+  /// metadata.
   /// @param project_id The Firebase project ID.
   /// @param database_id The database name (usually "(default)").
   /// @param persistence_key A key for local persistence (usually the app name).
+  /// @param auth_context, request_auth_token Where Auth tokens come from. With
+  ///     a null callback, Firestore is unauthenticated.
+  /// @param initial_uid The signed-in user's UID; empty when signed out.
+  /// @param app_check_context, request_app_check_token Where App Check tokens
+  ///     come from. With a null callback, no App Check token is sent.
+  /// @param release_context Called once for each non-null context when the
+  ///     Firestore instance no longer needs it.
   static FirestoreBridge Create(
       const std::string& project_id,
       const std::string& database_id,
-      const std::string& persistence_key) noexcept;
+      const std::string& persistence_key,
+      void* auth_context,
+      TokenRequestCallback request_auth_token,
+      const std::string& initial_uid,
+      void* app_check_context,
+      TokenRequestCallback request_app_check_token,
+      ContextReleaseCallback release_context) noexcept;
+
+  /// Tells Firestore that the signed-in user or their token changed. `uid` is
+  /// empty when signed out.
+  void SetAuthUser(const std::string& uid) const noexcept;
 
   /// Whether this bridge holds a valid Firestore instance.
   bool is_valid() const noexcept;
@@ -788,6 +829,20 @@ class FirestoreBridge {
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };
+
+/// Completes a request from `TokenRequestCallback` for an Auth token. An empty
+/// `token` with an empty `error` means no user is signed in; a non-empty
+/// `error` fails the request.
+void CompleteAuthTokenRequest(void* request,
+                              const std::string& token,
+                              const std::string& error) noexcept;
+
+/// Completes a request from `TokenRequestCallback` for an App Check token.
+/// Like upstream, App Check failures don't fail Firestore requests: a non-empty
+/// `error` is logged and `token` (possibly empty) is still used.
+void CompleteAppCheckTokenRequest(void* request,
+                                  const std::string& token,
+                                  const std::string& error) noexcept;
 
 }  // namespace swift_bridge
 }  // namespace firestore

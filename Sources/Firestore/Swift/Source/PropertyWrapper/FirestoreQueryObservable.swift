@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// SwiftUI integration; not available on Linux, Windows or Android.
+#if canImport(SwiftUI)
+
 import SwiftUI
 
 #if SWIFT_PACKAGE
@@ -219,3 +222,5 @@ class FirestoreQueryObservable<T>: ObservableObject {
     }
   }
 }
+
+#endif  // canImport(SwiftUI)

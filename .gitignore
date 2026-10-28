@@ -3,3 +3,5 @@
 .build/
 .vscode/
 .build-linux/
+.build-linux-clean/
+*-debug.log

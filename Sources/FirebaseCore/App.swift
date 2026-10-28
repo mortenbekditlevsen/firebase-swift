@@ -106,3 +106,23 @@ public protocol AuthInterop: AnyObject, Sendable {
     func getToken(forcingRefresh forceRefresh: Bool) async throws -> String?
     func getUserID() -> String?
 }
+
+extension Notification.Name {
+    /// Posted by Auth whenever the signed-in user or their ID token changes,
+    /// for other Firebase SDKs (Database, Firestore) to refresh credentials.
+    /// `object` is the `AuthInterop` instance and `userInfo` holds the
+    /// `FIRAuthStateDidChangeInternalNotification…Key` entries. Unlike the
+    /// public Auth notification, it is not posted on the main queue.
+    public static let FIRAuthStateDidChangeInternalNotification =
+        Notification.Name("FIRAuthStateDidChangeInternalNotification")
+}
+
+/// The `FirebaseApp` the notifying Auth instance belongs to.
+public let FIRAuthStateDidChangeInternalNotificationAppKey =
+    "FIRAuthStateDidChangeInternalNotificationAppKey"
+/// The new ID token; absent when signed out.
+public let FIRAuthStateDidChangeInternalNotificationTokenKey =
+    "FIRAuthStateDidChangeInternalNotificationTokenKey"
+/// The new user's UID; absent when signed out.
+public let FIRAuthStateDidChangeInternalNotificationUIDKey =
+    "FIRAuthStateDidChangeInternalNotificationUIDKey"

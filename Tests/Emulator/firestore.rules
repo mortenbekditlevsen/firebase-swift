@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// Rules for the integration tests, which run against the Firestore emulator.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Open, for tests that don't involve auth.
+    match /public/{document=**} {
+      allow read, write: if true;
+    }
+    // Only the signed-in owner, so tests can tell whether Firestore actually
+    // sends the Auth user's token.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

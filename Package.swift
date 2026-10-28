@@ -35,7 +35,12 @@ let package = Package(
             url: "https://github.com/mortenbekditlevsen/leveldb.git",
             branch: "1.22.2-headerfix"
         ),
-        .package(url: "https://github.com/firebase/abseil-cpp-SwiftPM.git", "0.20240722.0" ..< "0.20240723.0"),
+        // firebase/abseil-cpp-SwiftPM 0.20240722.2 (the version firebase-ios-sdk
+        // 12.19 pins) plus Linux build fixes. See Docs/UpstreamPatches.md.
+        .package(
+            url: "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
+            branch: "linux-fixes-0.20240722.2"
+        ),
         .package(url: "https://github.com/grpc/grpc-ios.git", "1.69.0" ..< "1.70.0"),
         .package(
           url: "https://github.com/firebase/nanopb.git",
@@ -165,12 +170,11 @@ let package = Package(
             "third_party/",
 
             // Exclude alternate implementations for other platforms
+            // connectivity_monitor_noop.cc is used on every platform for now.
             "core/src/remote/connectivity_monitor_apple.mm",
-            "core/src/remote/connectivity_monitor_noop.cc",
             "core/src/util/filesystem_win.cc",
             // Use log_stdio.cc instead of log_apple.mm to avoid ObjC FirebaseCore dependency
             "core/src/util/log_apple.mm",
-            "core/src/util/secure_random_openssl.cc",
             // Exclude ObjC++ files that depend on ObjC FirebaseCore
             "core/src/credentials/firebase_auth_credentials_provider_apple.mm",
             "core/src/credentials/firebase_app_check_credentials_provider_apple.mm",
@@ -202,7 +206,7 @@ let package = Package(
               .when(platforms: [.iOS, .macOS, .tvOS, .visionOS])
             ),
             .linkedFramework("UIKit", .when(platforms: [.iOS, .tvOS, .visionOS])),
-            .linkedLibrary("c++"),
+            .linkedLibrary("c++", .when(platforms: [.iOS, .macOS, .tvOS, .visionOS, .macCatalyst, .watchOS])),
           ]
         ),
         .target(
@@ -254,6 +258,27 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "FirebaseFirestoreTests",
+            dependencies: ["FirebaseFirestore"],
+            path: "Sources/Firestore/Swift/Tests",
+            sources: ["Codable", "Credentials", "Helpers"],
+            swiftSettings: [
+                .swiftLanguageMode(SwiftLanguageMode.v5),
+                .interoperabilityMode(.Cxx),
+            ]
+        ),
+        // Runs against the Firebase emulators; skipped unless started via
+        // `firebase emulators:exec` (see Tests/Emulator/README.md).
+        .testTarget(
+            name: "FirebaseFirestoreIntegrationTests",
+            dependencies: ["FirebaseFirestore", "FirebaseAuth"],
+            path: "Tests/FirebaseFirestoreIntegrationTests",
+            swiftSettings: [
+                .swiftLanguageMode(SwiftLanguageMode.v5),
+                .interoperabilityMode(.Cxx),
+            ]
+        ),
+        .testTarget(
             name: "FirebaseSharedTests",
             dependencies: [
                 "FirebaseShared",
@@ -263,17 +288,9 @@ let package = Package(
             path: "Tests/FirebaseSharedTests"
         ),
     ],
-    swiftLanguageModes: [.v6]
+    swiftLanguageModes: [.v6],
+    // Matches upstream firebase-ios-sdk 12.19 and its abseil/gRPC pins. Abseil
+    // builds its own absl::string_view below C++17, so every C++ target must
+    // agree on the standard or the link fails.
+    cxxLanguageStandard: .gnucxx14
 )
-
-// Firestore doesn't build on Linux yet (abseil's headers fail as a Clang module
-// there). Leave it out so the other modules can build and test; set
-// FIREBASE_FIRESTORE_LINUX=1 to include it while working on the Linux port.
-#if os(Linux)
-import Foundation
-
-if ProcessInfo.processInfo.environment["FIREBASE_FIRESTORE_LINUX"] == nil {
-    package.products.removeAll { $0.name == "FirebaseFirestore" }
-    package.targets.removeAll { $0.name.hasPrefix("FirebaseFirestore") }
-}
-#endif

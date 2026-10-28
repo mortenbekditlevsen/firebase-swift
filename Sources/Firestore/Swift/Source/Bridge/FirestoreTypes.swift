@@ -111,13 +111,9 @@ func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
 
   // Handle Data (blob)
   if let data = value as? Data {
-    var blob = std.string()
-    data.withUnsafeBytes { buffer in
-      if let ptr = buffer.baseAddress {
-        blob = std.string(ptr.assumingMemoryBound(to: CChar.self), buffer.count)
-      }
+    return data.withUnsafeBytes { buffer in
+      CppBridgeFieldValue.FromBlob(buffer.bindMemory(to: UInt8.self).baseAddress, buffer.count)
     }
-    return CppBridgeFieldValue.FromBlob(blob)
   }
 
   // Handle Timestamp
@@ -385,8 +381,87 @@ private func querySnapshotListenerTrampoline(
 // MARK: - Core Firestore Types
 
 /// The main Firestore database instance.
+// MARK: - Credentials
+
+/// Supplies Auth and App Check tokens to the C++ credentials providers. Each
+/// context handed to C++ holds one retain, released by `releaseCredentialsSource`.
+private final class CredentialsSource: Sendable {
+  let auth: AuthInterop?
+  let appCheck: AppCheckInterop?
+
+  init(auth: AuthInterop?, appCheck: AppCheckInterop?) {
+    self.auth = auth
+    self.appCheck = appCheck
+  }
+}
+
+/// Lets a pending C++ token request cross into a Task. C++ owns it until the
+/// matching `Complete…TokenRequest` call, which must happen exactly once.
+private struct PendingTokenRequest: @unchecked Sendable {
+  let pointer: UnsafeMutableRawPointer
+}
+
+private func requestAuthToken(
+  context: UnsafeMutableRawPointer?,
+  forceRefresh: Bool,
+  request: UnsafeMutableRawPointer?
+) {
+  guard let context, let request else { return }
+  let source = Unmanaged<CredentialsSource>.fromOpaque(context).takeUnretainedValue()
+  let pending = PendingTokenRequest(pointer: request)
+  Task {
+    do {
+      let token = try await source.auth?.getToken(forcingRefresh: forceRefresh)
+      firebase.firestore.swift_bridge.CompleteAuthTokenRequest(
+        pending.pointer, std.string(token ?? ""), std.string()
+      )
+    } catch {
+      firebase.firestore.swift_bridge.CompleteAuthTokenRequest(
+        pending.pointer, std.string(), std.string(error.localizedDescription)
+      )
+    }
+  }
+}
+
+private func requestAppCheckToken(
+  context: UnsafeMutableRawPointer?,
+  forceRefresh: Bool,
+  request: UnsafeMutableRawPointer?
+) {
+  guard let context, let request else { return }
+  let source = Unmanaged<CredentialsSource>.fromOpaque(context).takeUnretainedValue()
+  let pending = PendingTokenRequest(pointer: request)
+  Task {
+    do {
+      let token = try await source.appCheck?.getToken(forcingRefresh: forceRefresh)
+      firebase.firestore.swift_bridge.CompleteAppCheckTokenRequest(
+        pending.pointer, std.string(token ?? ""), std.string()
+      )
+    } catch {
+      firebase.firestore.swift_bridge.CompleteAppCheckTokenRequest(
+        pending.pointer, std.string(), std.string(error.localizedDescription)
+      )
+    }
+  }
+}
+
+private func releaseCredentialsSource(context: UnsafeMutableRawPointer?) {
+  guard let context else { return }
+  Unmanaged<CredentialsSource>.fromOpaque(context).release()
+}
+
 public final class Firestore: @unchecked Sendable {
   var cppBridge: CppFirestoreBridge?
+
+  /// Observes Auth's internal state notification to keep the C++ credentials
+  /// provider's current user up to date.
+  private var authObserver: (any NSObjectProtocol)?
+
+  deinit {
+    if let authObserver {
+      NotificationCenter.default.removeObserver(authObserver)
+    }
+  }
 
   /// Cache of Firestore instances keyed by "appName/databaseId".
   private nonisolated(unsafe) static let _instances = Mutex<[String: Firestore]>([:])
@@ -417,12 +492,42 @@ public final class Firestore: @unchecked Sendable {
         return existing
       }
       let projectID = app.options.projectID ?? ""
+      let auth = app.auth
+      let appCheck = app.appCheck
+      let source = CredentialsSource(auth: auth, appCheck: appCheck)
+      let authContext = auth.map { _ in Unmanaged.passRetained(source).toOpaque() }
+      let appCheckContext = appCheck.map { _ in Unmanaged.passRetained(source).toOpaque() }
+      let authCallback: TokenRequestCallback? = auth == nil ? nil : requestAuthToken
+      let appCheckCallback: TokenRequestCallback? = appCheck == nil ? nil : requestAppCheckToken
       let bridge = CppFirestoreBridge.Create(
         std.string(projectID),
         std.string(database),
-        std.string(app.name)
+        std.string(app.name),
+        authContext,
+        authCallback,
+        std.string(auth?.getUserID() ?? ""),
+        appCheckContext,
+        appCheckCallback,
+        releaseCredentialsSource
       )
       let instance = Firestore(cppBridge: bridge)
+      if let auth {
+        // swift-corelibs-foundation never matches an `object:` filter that is a
+        // pure Swift class, so filter by identity in the block instead.
+        instance.authObserver = NotificationCenter.default.addObserver(
+          forName: .FIRAuthStateDidChangeInternalNotification,
+          object: nil,
+          queue: nil
+        ) { [weak instance, weak auth] notification in
+          guard let auth, (notification.object as AnyObject?) === auth else { return }
+          let uid = notification.userInfo?[FIRAuthStateDidChangeInternalNotificationUIDKey]
+            as? String
+          instance?.cppBridge?.SetAuthUser(std.string(uid ?? ""))
+        }
+        // The user may have changed between reading the initial UID and
+        // registering the observer.
+        bridge.SetAuthUser(std.string(auth.getUserID() ?? ""))
+      }
       instances[key] = instance
       return instance
     }
@@ -454,6 +559,17 @@ public final class Firestore: @unchecked Sendable {
     guard let bridge = cppBridge else { return Query(cppBridge: CppQueryBridge(), firestore: self) }
     let cppQuery = bridge.GetCollectionGroup(std.string(collectionID))
     return Query(cppBridge: cppQuery, firestore: self)
+  }
+
+  /// Connects to the emulated Firestore at `host:port` instead of the real
+  /// backend. Call it before using this instance. As upstream, this only sets
+  /// the host; the emulator doesn't use TLS, so also set
+  /// `settings.isSSLEnabled = false`.
+  public func useEmulator(withHost host: String, port: Int) {
+    precondition(!host.isEmpty, "Host cannot be nil or empty.")
+    let newSettings = settings
+    newSettings.host = "\(host):\(port)"
+    settings = newSettings
   }
 
   public var settings: FirestoreSettings {
@@ -573,7 +689,24 @@ public final class Firestore: @unchecked Sendable {
     return WriteBatch(cppBridge: bridge.GetBatch())
   }
 
-  public func runTransaction(_ updateBlock: @escaping (Transaction, NSErrorPointer) -> Any?,
+  #if canImport(Darwin)
+    /// Upstream's form, kept for source compatibility on Apple platforms. Setting
+    /// the error pointer aborts the transaction with that error.
+    public func runTransaction(_ updateBlock: @escaping (Transaction, NSErrorPointer) -> Any?,
+                               completion: @escaping (Any?, Error?) -> Void) {
+      runTransaction({ transaction in
+        var error: NSError?
+        let result = updateBlock(transaction, &error)
+        if let error { throw error }
+        return result
+      }, completion: completion)
+    }
+  #endif
+
+  /// Runs `updateBlock` in a transaction, retrying it if the documents it read
+  /// change before it commits. Throwing from `updateBlock` aborts the
+  /// transaction, and the thrown error is passed to `completion`.
+  public func runTransaction(_ updateBlock: @escaping (Transaction) throws -> Any?,
                              completion: @escaping (Any?, Error?) -> Void) {
     guard let bridge = cppBridge else {
       completion(nil, NSError(domain: "FirebaseFirestore", code: -1,
@@ -583,11 +716,13 @@ public final class Firestore: @unchecked Sendable {
 
     // Box to hold the update block and its result for the C callback.
     final class TransactionContext {
-      let updateBlock: (Transaction, NSErrorPointer) -> Any?
+      let updateBlock: (Transaction) throws -> Any?
       let completion: (Any?, Error?) -> Void
       var result: Any?
+      /// The error thrown by the last attempt of `updateBlock`, if any.
+      var updateError: Error?
 
-      init(updateBlock: @escaping (Transaction, NSErrorPointer) -> Any?,
+      init(updateBlock: @escaping (Transaction) throws -> Any?,
            completion: @escaping (Any?, Error?) -> Void) {
         self.updateBlock = updateBlock
         self.completion = completion
@@ -611,9 +746,14 @@ public final class Firestore: @unchecked Sendable {
       let cppTxn = transactionPtr.assumingMemoryBound(to: CppTransactionBridge.self)
       let transaction = Transaction(cppBridge: cppTxn.pointee)
 
-      var error: NSError?
-      let result = txCtx.updateBlock(transaction, &error)
-      txCtx.result = result
+      var error: Error?
+      do {
+        txCtx.result = try txCtx.updateBlock(transaction)
+        txCtx.updateError = nil
+      } catch let thrown {
+        error = thrown
+        txCtx.updateError = thrown
+      }
 
       // Clean up the heap-allocated TransactionBridge.
       cppTxn.deinitialize(count: 1)
@@ -640,6 +780,9 @@ public final class Firestore: @unchecked Sendable {
       let errorStr = error.map { String(cString: $0) } ?? ""
       if errorStr.isEmpty {
         txCtx.completion(txCtx.result, nil)
+      } else if let updateError = txCtx.updateError {
+        // Report the caller's own error rather than its string form.
+        txCtx.completion(nil, updateError)
       } else {
         txCtx.completion(nil, NSError(domain: "FirebaseFirestore", code: -1,
                                       userInfo: [NSLocalizedDescriptionKey: errorStr]))
@@ -651,8 +794,16 @@ public final class Firestore: @unchecked Sendable {
 }
 
 /// A reference to a Firestore document.
-public final class DocumentReference: @unchecked Sendable {
+public final class DocumentReference: Hashable, @unchecked Sendable {
   var cppBridge: CppDocumentReferenceBridge
+
+  public static func == (lhs: DocumentReference, rhs: DocumentReference) -> Bool {
+    lhs.cppBridge.IsEqual(rhs.cppBridge)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(cppBridge.Hash())
+  }
 
   init() {
     cppBridge = CppDocumentReferenceBridge()
@@ -672,6 +823,12 @@ public final class DocumentReference: @unchecked Sendable {
 
   public var parent: CollectionReference {
     CollectionReference(cppBridge: cppBridge.parent())
+  }
+
+  /// A subcollection of this document. `collectionPath` is relative to the
+  /// document, e.g. `"messages"`.
+  public func collection(_ collectionPath: String) -> CollectionReference {
+    CollectionReference(cppBridge: cppBridge.Collection(std.string(collectionPath)))
   }
 
   public func setData(_ documentData: [String: Any],
@@ -1309,11 +1466,53 @@ public final class FieldPath: @unchecked Sendable {
 }
 
 /// Sentinel values for field operations.
-public final class FieldValue: @unchecked Sendable {
+public final class FieldValue: Hashable, @unchecked Sendable {
   let sentinel: FieldValueSentinel
 
   private init(_ sentinel: FieldValueSentinel) {
     self.sentinel = sentinel
+  }
+
+  /// Matches upstream `isEqual:`: sentinels of the same kind are equal, and
+  /// array transforms also compare their elements.
+  public static func == (lhs: FieldValue, rhs: FieldValue) -> Bool {
+    switch (lhs.sentinel, rhs.sentinel) {
+    case (.delete_, .delete_), (.serverTimestamp, .serverTimestamp):
+      return true
+    case let (.arrayUnion(a), .arrayUnion(b)), let (.arrayRemove(a), .arrayRemove(b)):
+      return NSArray(array: a).isEqual(to: b)
+    case let (.incrementInt(a), .incrementInt(b)):
+      return a == b
+    case let (.incrementDouble(a), .incrementDouble(b)):
+      return a == b
+    default:
+      return false
+    }
+  }
+
+  /// Consistent with `==`. Array elements are `Any`, so only their count is
+  /// hashed. Hashable (not just Equatable) also makes `NSDictionary` equality
+  /// work on Linux, where swift-corelibs-foundation compares boxed Swift values
+  /// through `AnyHashable`.
+  public func hash(into hasher: inout Hasher) {
+    switch sentinel {
+    case .delete_:
+      hasher.combine(0)
+    case .serverTimestamp:
+      hasher.combine(1)
+    case let .arrayUnion(elements):
+      hasher.combine(2)
+      hasher.combine(elements.count)
+    case let .arrayRemove(elements):
+      hasher.combine(3)
+      hasher.combine(elements.count)
+    case let .incrementInt(value):
+      hasher.combine(4)
+      hasher.combine(value)
+    case let .incrementDouble(value):
+      hasher.combine(5)
+      hasher.combine(value)
+    }
   }
 
   public static func serverTimestamp() -> FieldValue {
@@ -1492,7 +1691,7 @@ public final class LoadBundleTaskProgress: @unchecked Sendable {
 
 /// GeoPoint for geographic data.
 /// This wraps the C++ firebase::firestore::GeoPoint.
-public struct GeoPoint: Sendable {
+public struct GeoPoint: Hashable, Sendable {
   public let latitude: Double
   public let longitude: Double
 

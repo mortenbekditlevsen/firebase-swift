@@ -1,13 +1,13 @@
 {
-  "originHash" : "373f512ca4d84593ba5387136221865d1cadc9c71e34c693f6819a5d21d57fce",
+  "originHash" : "2288e9a3f56947ba1a840e56bf0b4dabb74a8f76e444e7f1c304e011502ae80e",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/firebase/abseil-cpp-SwiftPM.git",
+      "location" : "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
       "state" : {
-        "revision" : "24832c3bb8d03f0bd8c35e52069ecb8d2166dfe9",
-        "version" : "0.20240722.2"
+        "branch" : "linux-fixes-0.20240722.2",
+        "revision" : "5c3a2528911f9f07330a5ad05128f8aa56a3c0e7"
       }
     },
     {

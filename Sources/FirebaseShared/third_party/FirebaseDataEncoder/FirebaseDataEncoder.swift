@@ -295,7 +295,44 @@ public class FirebaseDataEncoder: @unchecked Sendable {
       throw Swift.EncodingError.invalidValue(value,
                                              Swift.EncodingError.Context(codingPath: [], debugDescription: "Top-level \(T.self) did not encode any values."))
     }
-    return topLevel
+    // firebase-swift: only unwrap when passthrough values were boxed, so the
+    // output is unchanged for encoders without passthrough types.
+    return encoder.didBoxPassthroughValue ? _unboxPassthroughValues(topLevel) : topLevel
+  }
+}
+
+// firebase-swift: the passthrough types in this port are Swift values and
+// classes rather than NSObject subclasses, so they can't sit directly in the
+// NSObject-based containers. They are boxed while encoding, then unwrapped.
+fileprivate final class _PassthroughBox: NSObject {
+  let value: Any
+  init(_ value: Any) { self.value = _unwrapOptional(value) }
+}
+
+/// Non-nil Optionals pass `isPassthroughType` checks (`t is Timestamp`), but
+/// must be stored unwrapped, as upstream's `as? NSObject` cast did implicitly.
+fileprivate func _unwrapOptional(_ value: Any) -> Any {
+  let mirror = Mirror(reflecting: value)
+  guard mirror.displayStyle == .optional, let wrapped = mirror.children.first?.value else {
+    return value
+  }
+  return _unwrapOptional(wrapped)
+}
+
+fileprivate func _unboxPassthroughValues(_ object: Any) -> Any {
+  switch object {
+  case let box as _PassthroughBox:
+    return box.value
+  case let dictionary as NSDictionary:
+    var result: [String: Any] = [:]
+    for (key, value) in dictionary {
+      result[(key as? String) ?? String(describing: key)] = _unboxPassthroughValues(value)
+    }
+    return result
+  case let array as NSArray:
+    return array.map(_unboxPassthroughValues)
+  default:
+    return object
   }
 }
 
@@ -309,6 +346,9 @@ fileprivate class __JSONEncoder : Encoder {
 
   /// The encoder's storage.
   fileprivate var storage: _JSONEncodingStorage
+
+  /// firebase-swift: set once a passthrough value has been boxed.
+  fileprivate var didBoxPassthroughValue = false
 
   /// Options set on the top-level encoder.
   fileprivate let options: FirebaseDataEncoder._Options
@@ -954,8 +994,10 @@ extension __JSONEncoder {
       return (value as! NSDecimalNumber)
     } else if value is _JSONStringDictionaryEncodableMarker {
       return try self.box(value as! [String : Encodable])
-    } else if let object = value as? NSObject, self.options.passthroughTypeResolver.isPassthroughType(value) {
-      return object
+    } else if self.options.passthroughTypeResolver.isPassthroughType(value) {
+      // firebase-swift: box instead of requiring an NSObject subclass.
+      self.didBoxPassthroughValue = true
+      return _PassthroughBox(value)
     }
 
     // The value should request a container from the __JSONEncoder.
@@ -2208,10 +2250,21 @@ extension __JSONDecoder {
 
   fileprivate func getNumber(_ value: Any, as type: Any.Type) throws -> NSNumber {
     let val = rcValNumberAdaptor(value)
-    guard let number = val as? NSNumber else {
+    guard let number = val as? NSNumber, !_isBoolean(val, number) else {
       throw DecodingError._typeMismatch(at: self.codingPath, expectation: type, reality: val)
     }
     return number
+  }
+
+  /// firebase-swift: upstream compares against the CoreFoundation boolean
+  /// singletons, which swift-corelibs-foundation doesn't expose; there, a Swift
+  /// `Bool` is recognized by its dynamic type instead.
+  private func _isBoolean(_ value: Any, _ number: NSNumber) -> Bool {
+    #if canImport(Darwin)
+      return number === kCFBooleanTrue || number === kCFBooleanFalse
+    #else
+      return Swift.type(of: value) == Bool.self
+    #endif
   }
 
   fileprivate func unbox(_ value: Any, as type: Int.Type) throws -> Int? {

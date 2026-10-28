@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// firebase-swift: guarded so SwiftPM can compile this file on all platforms.
+#if __APPLE__
+
 #include "Firestore/core/src/util/error_apple.h"
 
 #include "Firestore/core/include/firebase/firestore/firestore_errors.h"
@@ -66,3 +69,5 @@ util::StatusCallback MakeCallback(VoidErrorBlock _Nullable block) {
 }  // namespace util
 }  // namespace firestore
 }  // namespace firebase
+
+#endif  // __APPLE__

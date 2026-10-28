@@ -1118,12 +1118,14 @@ extension Auth: AuthInterop {
   public func addIDTokenDidChangeListener(
     _ listener: @escaping @Sendable (Auth, User?) -> Void
   ) -> any NSObjectProtocol {
+    // swift-corelibs-foundation never matches an `object:` filter that is a
+    // pure Swift class, so filter by identity in the block instead.
     let handle = NotificationCenter.default.addObserver(
       forName: Auth.authStateDidChangeNotification,
-      object: self,
+      object: nil,
       queue: OperationQueue.main
-    ) { notification in
-      if let auth = notification.object as? Auth {
+    ) { [weak self] notification in
+      if let auth = notification.object as? Auth, auth === self {
         listener(auth, auth.currentUser)
       }
     }
@@ -1430,8 +1432,9 @@ extension Auth: AuthInterop {
 
   // MARK: Private methods
 
-  /// Posts the auth state change notification if the current user's token has changed.
-  /// Caller must hold the state lock; the actual notification post is dispatched async.
+  /// Posts the auth state change notifications if the current user's token has changed.
+  /// Caller must hold the state lock. The public notification is dispatched async; the
+  /// internal one is posted synchronously (see below).
   private func _possiblyPostAuthStateChangeNotification(state: inout State) {
     let token = state.currentUser?.rawAccessToken()
     if state.lastNotifiedUserToken == token ||
@@ -1450,6 +1453,30 @@ extension Auth: AuthInterop {
     DispatchQueue.main.async {
       center.post(name: name, object: auth)
     }
+
+    // The internal notification other Firebase SDKs listen to, as upstream
+    // FIRAuth posts alongside the public one. Like upstream, it's posted
+    // synchronously, before the sign-in or sign-out call returns: Firestore
+    // assigns each write to the user it believes is current, so a write issued
+    // right after sign-in must not race ahead of this notification. (A write
+    // assigned to the previous user waits until that user signs in again.)
+    // Observers run while the state lock is held, so they must not call back
+    // into this Auth instance; upstream has the same rule for its work queue.
+    var userInfo: [String: Any] = [:]
+    if let app = self.app {
+      userInfo[FIRAuthStateDidChangeInternalNotificationAppKey] = app
+    }
+    if let token {
+      userInfo[FIRAuthStateDidChangeInternalNotificationTokenKey] = token
+    }
+    if let uid = state.currentUser?.uid {
+      userInfo[FIRAuthStateDidChangeInternalNotificationUIDKey] = uid
+    }
+    center.post(
+      name: .FIRAuthStateDidChangeInternalNotification,
+      object: auth,
+      userInfo: userInfo
+    )
   }
 
   /// Schedules a task to automatically refresh tokens on the current user.
