@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  license-headers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: scripts/check-license-headers.sh
+
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift --version
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: macos-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: macos-spm-
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        run: swift test --skip-build
+
+  # Firestore is left out of the Linux build by Package.swift until the
+  # abseil/gRPC port works there (see the Linux guard at the bottom of the manifest).
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift --version
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: linux-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: linux-spm-
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        run: swift test --skip-build
+
+  # Tracks progress on Firestore for Linux. Allowed to fail until it builds.
+  linux-firestore:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    continue-on-error: true
+    env:
+      FIREBASE_FIRESTORE_LINUX: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: linux-firestore-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: linux-firestore-spm-
+      - name: Build Firestore
+        run: swift build --product FirebaseFirestore
