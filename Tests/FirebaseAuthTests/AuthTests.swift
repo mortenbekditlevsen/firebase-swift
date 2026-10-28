@@ -50,7 +50,8 @@ final class AuthTests: RPCBaseTests {
       projectID: "myProjectID",
       googleAppID: AuthTests.kFakeGoogleAppID,
       apiKey: AuthTests.kFakeAPIKey,
-      clientID: nil
+      clientID: nil,
+      storageBucket: nil
     )
     testApp = FirebaseApp(options: options, name: "test-AuthTests-\(n)")
     auth = Auth(app: testApp, keychainStorageProvider: FakeAuthKeychainServices.self)
