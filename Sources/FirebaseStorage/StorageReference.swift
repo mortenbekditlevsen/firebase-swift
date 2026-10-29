@@ -404,12 +404,12 @@ public struct StorageReference: Sendable {
   }
 
   /// For maxSize API, return an error if the size is exceeded.
-  private func checkSizeOverflow(progress: Progress, maxSize: Int64) -> NSError? {
+  private func checkSizeOverflow(progress: Progress, maxSize: Int64) -> StorageError? {
     if progress.totalUnitCount > maxSize || progress.completedUnitCount > maxSize {
       return StorageError.downloadSizeExceeded(
         total: progress.totalUnitCount,
         maxSize: maxSize
-      ) as NSError
+      )
     }
     return nil
   }

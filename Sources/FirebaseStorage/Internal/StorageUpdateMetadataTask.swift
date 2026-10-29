@@ -31,8 +31,7 @@ enum StorageUpdateMetadataTask {
         let data = try await task.start(request: request,
                                         httpMethod: "PATCH",
                                         fetcherComment: "GetMetadataTask")
-        if let responseDictionary = try? JSONSerialization
-            .jsonObject(with: data) as? [String: AnyHashable] {
+        if let responseDictionary = StorageUtils.jsonDictionary(from: data) {
             var metadata = StorageMetadata(dictionary: responseDictionary)
             metadata.fileType = .file
             return metadata

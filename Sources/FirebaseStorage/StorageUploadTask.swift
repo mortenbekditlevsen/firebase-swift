@@ -139,8 +139,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
             self.observer.fire(state: .progress)
             
             
-            if let responseDictionary = try? JSONSerialization
-                .jsonObject(with: data) as? [String: AnyHashable] {
+            if let responseDictionary = StorageUtils.jsonDictionary(from: data) {
                 var metadata = StorageMetadata(dictionary: responseDictionary)
                 metadata.fileType = .file
                 self.state = .success(metadata)

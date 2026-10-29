@@ -85,7 +85,7 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
    * Cancels a task.
    */
     public func cancel() {
-        cancel(withError: StorageError.cancelled as NSError)
+        cancel(withError: StorageError.cancelled)
   }
 
   /**
