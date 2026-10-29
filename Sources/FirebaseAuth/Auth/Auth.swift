@@ -1120,10 +1120,14 @@ extension Auth: AuthInterop {
   ) -> any NSObjectProtocol {
     // swift-corelibs-foundation never matches an `object:` filter that is a
     // pure Swift class, so filter by identity in the block instead.
+    // The notification is already posted on the main queue, so deliver it on
+    // the posting thread. With `queue: OperationQueue.main`, swift-corelibs
+    // enqueues the block on the main queue and waits for it while running on
+    // that same queue, which deadlocks.
     let handle = NotificationCenter.default.addObserver(
       forName: Auth.authStateDidChangeNotification,
       object: nil,
-      queue: OperationQueue.main
+      queue: nil
     ) { [weak self] notification in
       if let auth = notification.object as? Auth, auth === self {
         listener(auth, auth.currentUser)

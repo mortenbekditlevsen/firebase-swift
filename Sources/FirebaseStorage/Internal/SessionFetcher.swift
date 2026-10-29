@@ -430,9 +430,9 @@ class GTMSessionUploadFetcher: @unchecked Sendable {
 
         let totalBytes = Int64(bodyData.count)
 
-        // Perform the upload using URLSession
         let delegate = UploadDelegate(
             sendProgressBlock: sendProgressBlock,
+            totalBytes: totalBytes,
             isStopped: { [weak self] in self?.isStopped ?? true }
         )
         let session = URLSession(
@@ -442,28 +442,90 @@ class GTMSessionUploadFetcher: @unchecked Sendable {
         )
         defer { session.finishTasksAndInvalidate() }
 
-        // Build the actual upload request with the body data
-        var uploadRequest = request
-        uploadRequest.httpBody = bodyData
-        uploadRequest.setValue(uploadMIMEType, forHTTPHeaderField: "X-Upload-Content-Type")
-        uploadRequest.setValue("\(totalBytes)", forHTTPHeaderField: "X-Upload-Content-Length")
+        // The resumable upload protocol, as GTMSessionUploadFetcher speaks it:
+        // a "start" request carries the metadata (the request's JSON body) and
+        // returns the upload URL; the data then goes there in chunks, the last
+        // one finalizing the upload and returning the object's metadata.
+        var startRequest = request
+        startRequest.setValue("resumable", forHTTPHeaderField: "X-Goog-Upload-Protocol")
+        startRequest.setValue("start", forHTTPHeaderField: "X-Goog-Upload-Command")
+        startRequest.setValue(uploadMIMEType, forHTTPHeaderField: "X-Goog-Upload-Content-Type")
+        startRequest.setValue("\(totalBytes)", forHTTPHeaderField: "X-Goog-Upload-Content-Length")
 
-        let (data, urlResponse) = try await session.upload(for: uploadRequest, from: bodyData)
+        let (startData, startResponse) = try await send(startRequest, in: session)
+        guard let uploadURLString = startResponse.value(forHTTPHeaderField: "X-Goog-Upload-URL"),
+              let uploadURL = URL(string: uploadURLString) else {
+            self.response = startResponse
+            throw Self.statusError(code: startResponse.statusCode, data: startData)
+        }
+
+        // Every chunk but the last must be a multiple of the server's granularity.
+        var chunkSize = max(chunkSize, 1)
+        if let granularityString = startResponse.value(forHTTPHeaderField: "X-Goog-Upload-Chunk-Granularity"),
+           let granularity = Int64(granularityString), granularity > 0 {
+            chunkSize = max(granularity, chunkSize - chunkSize % granularity)
+        }
+
+        var offset: Int64 = 0
+        repeat {
+            while isPaused && !isStopped {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard !isStopped else {
+                throw URLError(.cancelled)
+            }
+
+            let length = min(chunkSize, totalBytes - offset)
+            let isLast = offset + length == totalBytes
+            let chunk = bodyData.subdata(in: Int(offset) ..< Int(offset + length))
+
+            var chunkRequest = URLRequest(url: uploadURL)
+            chunkRequest.httpMethod = "PUT"
+            chunkRequest.timeoutInterval = request.timeoutInterval
+            chunkRequest.setValue(isLast ? "upload, finalize" : "upload",
+                                  forHTTPHeaderField: "X-Goog-Upload-Command")
+            chunkRequest.setValue("\(offset)", forHTTPHeaderField: "X-Goog-Upload-Offset")
+            chunkRequest.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            if let authorizer = fetcherService.authorizer {
+                try await authorizer.authorizeRequest(&chunkRequest)
+            }
+
+            delegate.setOffset(offset)
+            let (data, response) = try await send(chunkRequest, body: chunk, in: session)
+            offset += length
+            if isLast {
+                return data
+            }
+            guard response.value(forHTTPHeaderField: "X-Goog-Upload-Status") == "active" else {
+                throw Self.statusError(code: response.statusCode, data: data)
+            }
+        } while true
+    }
+
+    /// Sends one request of the upload, throwing for an HTTP error status.
+    private func send(_ request: URLRequest, body: Data? = nil,
+                      in session: URLSession) async throws -> (Data, HTTPURLResponse) {
+        let (data, urlResponse) = if let body {
+            try await session.upload(for: request, from: body)
+        } else {
+            try await session.data(for: request)
+        }
         guard let httpResponse = urlResponse as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
         self.response = httpResponse
-
-        let statusCode = httpResponse.statusCode
-        if statusCode >= 400 {
-            let errorInfo: [String: Any] = [
-                NSLocalizedDescriptionKey: HTTPURLResponse.localizedString(forStatusCode: statusCode),
-                "data": data,
-            ]
-            throw NSError(domain: "com.google.HTTPStatus", code: statusCode, userInfo: errorInfo)
+        if httpResponse.statusCode >= 400 {
+            throw Self.statusError(code: httpResponse.statusCode, data: data)
         }
+        return (data, httpResponse)
+    }
 
-        return data
+    private static func statusError(code: Int, data: Data) -> NSError {
+        let errorInfo: [String: Any] = [
+            NSLocalizedDescriptionKey: HTTPURLResponse.localizedString(forStatusCode: code),
+            "data": data,
+        ]
+        return NSError(domain: "com.google.HTTPStatus", code: code, userInfo: errorInfo)
     }
 
     // MARK: - Control
@@ -489,14 +551,26 @@ class GTMSessionUploadFetcher: @unchecked Sendable {
 
 // MARK: - UploadDelegate
 
-/// URLSession delegate for tracking upload progress.
+/// URLSession delegate for tracking upload progress across all chunks.
 private final class UploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let sendProgressBlock: GTMSessionFetcherSendProgressBlock?
+    let totalBytes: Int64
     let isStopped: (() -> Bool)?
+    private let lock = NSLock()
+    private var offset: Int64 = 0
 
-    init(sendProgressBlock: GTMSessionFetcherSendProgressBlock?, isStopped: (() -> Bool)?) {
+    init(sendProgressBlock: GTMSessionFetcherSendProgressBlock?, totalBytes: Int64,
+         isStopped: (() -> Bool)?) {
         self.sendProgressBlock = sendProgressBlock
+        self.totalBytes = totalBytes
         self.isStopped = isStopped
+    }
+
+    /// Sets where the chunk being sent starts in the whole upload.
+    func setOffset(_ offset: Int64) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.offset = offset
     }
 
     func urlSession(
@@ -510,7 +584,10 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked
             task.cancel()
             return
         }
-        sendProgressBlock?(bytesSent, totalBytesSent, totalBytesExpectedToSend)
+        lock.lock()
+        let offset = self.offset
+        lock.unlock()
+        sendProgressBlock?(bytesSent, offset + totalBytesSent, totalBytes)
     }
 }
 

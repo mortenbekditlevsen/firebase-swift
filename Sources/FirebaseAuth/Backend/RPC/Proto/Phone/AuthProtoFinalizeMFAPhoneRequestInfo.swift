@@ -16,7 +16,7 @@ import Foundation
 
 
 public struct AuthProtoFinalizeMFAPhoneRequestInfo:
-  Decodable, Sendable /* AuthProto */ {
+  Codable, Sendable /* AuthProto */ {
 
   var sessionInfo: String?
   var code: String?
@@ -36,7 +36,9 @@ public struct AuthProtoFinalizeMFAPhoneRequestInfo:
         self.code = try container.decodeIfPresent(String.self, forKey: .code)
     }
 
-  public var dictionary: [String: Any] {
-      [:]
-  }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(sessionInfo, forKey: .sessionInfo)
+        try container.encodeIfPresent(code, forKey: .code)
+    }
 }

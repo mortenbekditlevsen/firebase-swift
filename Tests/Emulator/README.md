@@ -1,10 +1,13 @@
 # Emulator integration tests
 
-The `*IntegrationTests` targets run against the
+The `FirebaseIntegrationTests` target (`Tests/FirebaseIntegrationTests`) runs
+Auth, Database, Firestore and Storage against the
 [Firebase Emulator Suite](https://firebase.google.com/docs/emulator-suite).
-They're skipped unless the emulator environment variables
-(`FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST`) are set, so a plain
-`swift test` stays offline.
+Each suite is skipped unless its emulators' environment variables
+(`FIREBASE_AUTH_EMULATOR_HOST`, `FIREBASE_DATABASE_EMULATOR_HOST`,
+`FIRESTORE_EMULATOR_HOST`, `FIREBASE_STORAGE_EMULATOR_HOST`) are set, so a
+plain `swift test` stays offline. Functions isn't covered yet: its emulator
+needs deployed callable functions.
 
 ## Running them
 
@@ -13,7 +16,7 @@ You need Java 21 or later and Node 20 or later, then:
 ```sh
 npm install -g firebase-tools
 swift build --build-tests
-firebase emulators:exec --project demo-firebase-swift --only auth,firestore \
+firebase emulators:exec --project demo-firebase-swift --only auth,database,firestore,storage \
   "swift test --skip-build --filter IntegrationTests"
 ```
 
@@ -37,8 +40,10 @@ install.
 - `firestore.rules`: everything under `public/` is open; `users/{uid}/**` is
   readable and writable only by that signed-in user, so the tests can check
   which user's token Firestore sends.
-- `database.rules.json`, `storage.rules`: open rules for the Database and
-  Storage emulators.
+- `database.rules.json`, `storage.rules`: the same split for Database and
+  Storage. Database also indexes `score` under `public/<scratch>/` for the
+  query tests.
 
-Each test creates its own `FirebaseApp` and writes under a random
-`public/<uuid>/` path, so tests can run in parallel against the same emulators.
+Each test creates its own `FirebaseApp` (`EmulatorApp` in
+`Support/EmulatorSupport.swift`) and writes under a random `public/<uuid>/`
+path, so tests can run in parallel against the same emulators.

@@ -45,3 +45,12 @@ struct FinalizeMFASignInRequest: IdentityToolkitRequest, AuthRPCRequest {
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension FinalizeMFASignInRequest {
+  func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encodeIfPresent(mfaPendingCredential, forKey: .init("mfaPendingCredential"))
+    try c.encodeIfPresent(verificationInfo, forKey: .init("phoneVerificationInfo"))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+  }
+}

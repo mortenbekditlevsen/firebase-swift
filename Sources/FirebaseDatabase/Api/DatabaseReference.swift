@@ -958,7 +958,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * @return A FIRDatabaseReference for the parent location.
      */
-    var parent: DatabaseReference? {
+    public var parent: DatabaseReference? {
         guard let parentPath = path.parent() else { return nil }
         return DatabaseReference(repo: repo, path: parentPath)
     }
@@ -968,7 +968,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * @return A new FIRDatabaseReference to root location.
      */
-    var root: DatabaseReference { .init(repo: repo, path: .empty) }
+    public var root: DatabaseReference { .init(repo: repo, path: .empty) }
 
     /**
      * Gets the last token in a Firebase Database location (e.g. 'fred' in
@@ -976,7 +976,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * @return The key of the location this reference points to.
      */
-    var key: String? { self.path.getBack() }
+    public var key: String? { self.path.getBack() }
 
      /**
       * Gets the URL for the Firebase Database location referenced by this
@@ -984,7 +984,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
       *
       * @return The url of the location this reference points to.
       */
-    var URL: String {
+    public var URL: String {
         if let parent = parent, let key = key {
             return "\(parent.description)/\(FStringUtilities.urlEncoded(key))"
         } else {
@@ -997,5 +997,5 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * @return The FIRDatabase object for this reference.
      */
-    var database: Database { self.repo.database }
+    public var database: Database { self.repo.database }
 }

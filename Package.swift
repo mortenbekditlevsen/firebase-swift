@@ -270,9 +270,14 @@ let package = Package(
         // Runs against the Firebase emulators; skipped unless started via
         // `firebase emulators:exec` (see Tests/Emulator/README.md).
         .testTarget(
-            name: "FirebaseFirestoreIntegrationTests",
-            dependencies: ["FirebaseFirestore", "FirebaseAuth"],
-            path: "Tests/FirebaseFirestoreIntegrationTests",
+            name: "FirebaseIntegrationTests",
+            dependencies: [
+                "FirebaseAuth",
+                "FirebaseDatabase",
+                "FirebaseFirestore",
+                "FirebaseStorage",
+            ],
+            path: "Tests/FirebaseIntegrationTests",
             swiftSettings: [
                 .swiftLanguageMode(SwiftLanguageMode.v5),
                 .interoperabilityMode(.Cxx),

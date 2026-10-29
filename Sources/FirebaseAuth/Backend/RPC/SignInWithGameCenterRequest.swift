@@ -107,3 +107,20 @@ public struct SignInWithGameCenterRequest: IdentityToolkitRequest,
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension SignInWithGameCenterRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encode(playerID, forKey: .init("playerId"))
+    try c.encode(publicKeyURL.absoluteString, forKey: .init("publicKeyUrl"))
+    try c.encode(signature.base64URLEncodedString(), forKey: .init("signature"))
+    try c.encode(salt.base64URLEncodedString(), forKey: .init("salt"))
+    if timestamp != 0 {
+      try c.encode(timestamp, forKey: .init("timestamp"))
+    }
+    try c.encodeIfPresent(teamPlayerID, forKey: .init("teamPlayerId"))
+    try c.encodeIfPresent(gamePlayerID, forKey: .init("gamePlayerId"))
+    try c.encodeIfPresent(accessToken, forKey: .init("idToken"))
+    try c.encodeIfPresent(displayName, forKey: .init("displayName"))
+  }
+}

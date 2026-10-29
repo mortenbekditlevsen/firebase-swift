@@ -154,3 +154,16 @@ extension AuthOperationType {
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension VerifyPhoneNumberRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encodeIfPresent(verificationID, forKey: .init(kVerificationIDKey))
+    try c.encodeIfPresent(verificationCode, forKey: .init(kVerificationCodeKey))
+    try c.encodeIfPresent(accessToken, forKey: .init(kIDTokenKey))
+    try c.encodeIfPresent(temporaryProof, forKey: .init(kTemporaryProofKey))
+    try c.encodeIfPresent(phoneNumber, forKey: .init(kPhoneNumberKey))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+    try c.encode(operation.operationString, forKey: .init(kOperationKey))
+  }
+}

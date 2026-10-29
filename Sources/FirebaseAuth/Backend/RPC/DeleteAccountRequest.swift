@@ -61,3 +61,11 @@ private let kLocalIDKey = "localId"
        self.requestConfiguration = requestConfiguration
   }
 }
+
+extension DeleteAccountRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encode(accessToken, forKey: .init(kIDTokenKey))
+    try c.encode(localID, forKey: .init(kLocalIDKey))
+  }
+}

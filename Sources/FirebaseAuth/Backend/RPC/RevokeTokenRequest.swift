@@ -95,3 +95,13 @@ private let kIDTokenKey = "idToken"
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension RevokeTokenRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encode(providerID, forKey: .init(kProviderIDKey))
+    try c.encode("\(tokenType.rawValue)", forKey: .init(kTokenTypeKey))
+    try c.encode(token, forKey: .init(kTokenKey))
+    try c.encode(idToken, forKey: .init(kIDTokenKey))
+  }
+}

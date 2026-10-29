@@ -46,7 +46,7 @@ jobs:
       - run: npm install -g firebase-tools
       - name: Integration tests (Firebase emulators)
         run: >-
-          firebase emulators:exec --project demo-firebase-swift --only auth,firestore
+          firebase emulators:exec --project demo-firebase-swift --only auth,database,firestore,storage
           "swift test --skip-build --filter IntegrationTests"
 
   linux:
@@ -79,5 +79,5 @@ jobs:
       - run: npm install -g firebase-tools
       - name: Integration tests (Firebase emulators)
         run: >-
-          firebase emulators:exec --project demo-firebase-swift --only auth,firestore
+          firebase emulators:exec --project demo-firebase-swift --only auth,database,firestore,storage
           "swift test --skip-build --filter IntegrationTests"

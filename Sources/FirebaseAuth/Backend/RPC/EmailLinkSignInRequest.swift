@@ -79,3 +79,13 @@ private let kTenantIDKey = "tenantId"
   }
 
 }
+
+extension EmailLinkSignInRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encode(email, forKey: .init(kEmailKey))
+    try c.encode(oobCode, forKey: .init(kOOBCodeKey))
+    try c.encodeIfPresent(idToken, forKey: .init(kIDTokenKey))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+  }
+}

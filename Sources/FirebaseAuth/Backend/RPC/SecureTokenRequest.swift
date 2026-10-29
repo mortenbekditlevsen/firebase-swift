@@ -168,3 +168,13 @@ public struct SecureTokenRequest: AuthRPCRequest {
 //    gAPIHost = host
 //  }
 }
+
+extension SecureTokenRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encode(grantType.value, forKey: .init(kGrantTypeKey))
+    try c.encodeIfPresent(scope, forKey: .init(kScopeKey))
+    try c.encodeIfPresent(refreshToken, forKey: .init(kRefreshTokenKey))
+    try c.encodeIfPresent(code, forKey: .init(kCodeKey))
+  }
+}

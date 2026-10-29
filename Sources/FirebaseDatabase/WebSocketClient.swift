@@ -65,15 +65,16 @@ final class WebSocketClient {
 
         let httpHandler = HTTPInitialRequestHandler(url: url, headers: headers)
 
-        let configuration = TLSConfiguration.makeClientConfiguration()
-        let sslContext = try! NIOSSLContext(configuration: configuration)
+        // `ws://` (the emulator) is plain TCP; only `wss://` gets TLS.
+        let secure = url.scheme != "ws"
+        let sslContext = secure
+            ? try! NIOSSLContext(configuration: TLSConfiguration.makeClientConfiguration())
+            : nil
 
         let bootstrap = ClientBootstrap(group: group)
             // Enable SO_REUSEADDR.
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .channelInitializer { [webSocketHandler] channel in
-                let sslHandler =  try! NIOSSLClientHandler(context: sslContext, serverHostname: url.host!)
-
                 let websocketUpgrader = NIOWebSocketClientUpgrader(upgradePipelineHandler: { (channel: Channel, _: HTTPResponseHead) in
                     channel.pipeline.addHandler(webSocketHandler)
                 })
@@ -84,7 +85,18 @@ final class WebSocketClient {
                         channel.pipeline.removeHandler(httpHandler, promise: nil)
                 })
 
-                return channel.pipeline.addHandler(sslHandler).flatMap {
+                let addTLS: EventLoopFuture<Void>
+                if let sslContext {
+                    do {
+                        let sslHandler = try NIOSSLClientHandler(context: sslContext, serverHostname: url.host!)
+                        addTLS = channel.pipeline.addHandler(sslHandler)
+                    } catch {
+                        return channel.eventLoop.makeFailedFuture(error)
+                    }
+                } else {
+                    addTLS = channel.eventLoop.makeSucceededVoidFuture()
+                }
+                return addTLS.flatMap {
                     channel.pipeline.addHTTPClientHandlers(leftOverBytesStrategy: .forwardBytes,
                                                            withClientUpgrade: config)
                         .flatMap {
@@ -93,7 +105,7 @@ final class WebSocketClient {
                 }
         }
         self.openClosure = {
-            _ = try bootstrap.connect(host: url.host!, port: url.port ?? 443).wait()
+            _ = try bootstrap.connect(host: url.host!, port: url.port ?? (secure ? 443 : 80)).wait()
         }
     }
 }

@@ -34,8 +34,8 @@ protocol DatabaseConnectionContextProviderProtocol: Sendable {
 
     /// Adds a listener to the Auth token updates.
     /// @param listener A block that will be invoked each time the Auth token is
-    /// updated.
-    func listenForAuthTokenChanges(_ listener:  @escaping @DatabaseActor (String) -> Void)
+    /// updated, with `nil` when the user signs out.
+    func listenForAuthTokenChanges(_ listener:  @escaping @DatabaseActor (String?) -> Void)
 
     /// Adds a listener to the FAC token updates.
     /// @param listener A block that will be invoked each time the FAC token is
@@ -44,16 +44,18 @@ protocol DatabaseConnectionContextProviderProtocol: Sendable {
 }
 
 private final class FAuthStateListenerWrapper: @unchecked Sendable {
-    private let listener: @DatabaseActor (String) -> Void
+    private let listener: @DatabaseActor (String?) -> Void
     private weak var auth: AuthInterop?
+    private var observer: (any NSObjectProtocol)?
 
-    init(listener: @escaping @DatabaseActor (String) -> Void, auth: AuthInterop) {
+    init(listener: @escaping @DatabaseActor (String?) -> Void, auth: AuthInterop) {
         self.listener = listener
         self.auth = auth
-        NotificationCenter.default.addObserver(forName: .FIRAuthStateDidChangeInternalNotification, object: nil, queue: nil) { [weak self] notification in
+        observer = NotificationCenter.default.addObserver(forName: .FIRAuthStateDidChangeInternalNotification, object: nil, queue: nil) { [weak self] notification in
             let userInfo = notification.userInfo
             guard (notification.object as? AnyObject) === self?.auth else { return }
-            guard let token = userInfo?[FIRAuthStateDidChangeInternalNotificationTokenKey] as? String else { return }
+            // No token means the user signed out; the connection then unauthenticates.
+            let token = userInfo?[FIRAuthStateDidChangeInternalNotificationTokenKey] as? String
             Task { @DatabaseActor in
                 self?.listener(token)
             }
@@ -61,7 +63,9 @@ private final class FAuthStateListenerWrapper: @unchecked Sendable {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 }
 
@@ -133,7 +137,7 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
         return DatabaseConnectionContext(authToken: authToken, appCheckToken: appCheckToken)
     }
 
-    func listenForAuthTokenChanges(_ listener: @escaping @DatabaseActor (String) -> Void) {
+    func listenForAuthTokenChanges(_ listener: @escaping @DatabaseActor (String?) -> Void) {
         guard let auth = auth else {
             return
         }

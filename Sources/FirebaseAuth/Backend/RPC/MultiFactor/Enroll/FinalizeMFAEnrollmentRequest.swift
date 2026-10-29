@@ -50,3 +50,13 @@ struct FinalizeMFAEnrollmentRequest: IdentityToolkitRequest, AuthRPCRequest {
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension FinalizeMFAEnrollmentRequest {
+  func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encodeIfPresent(idToken, forKey: .init("idToken"))
+    try c.encodeIfPresent(displayName, forKey: .init("displayName"))
+    try c.encodeIfPresent(verificationInfo, forKey: .init("phoneVerificationInfo"))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+  }
+}

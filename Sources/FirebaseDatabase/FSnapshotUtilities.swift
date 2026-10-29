@@ -103,7 +103,7 @@ public enum FSnapshotUtilities {
 
          if isLeafNode {
              let leafValue: LeafValue
-             if let boolVal = value as? Bool {
+             if isBoolean(value), let boolVal = value as? Bool {
                  // Check Bool before NSNumber since Bool bridges to NSNumber
                  leafValue = .bool(boolVal)
              } else if let numVal = value as? NSNumber {
@@ -281,4 +281,16 @@ public enum FSnapshotUtilities {
         output += "\""
     }
 
+}
+
+/// Whether `value` is a Boolean rather than a number. `as? Bool` alone isn't
+/// enough: on Darwin it also matches `NSNumber` 0 and 1, which is what JSON
+/// numbers from the server decode to.
+private func isBoolean(_ value: Any) -> Bool {
+    #if canImport(Darwin)
+    if let number = value as? NSNumber {
+        return number === kCFBooleanTrue || number === kCFBooleanFalse
+    }
+    #endif
+    return type(of: value) == Bool.self
 }

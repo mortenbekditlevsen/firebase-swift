@@ -35,3 +35,9 @@ public struct GetProjectConfigRequest: IdentityToolkitRequest,
     
     public func containsPostBody() -> Bool { false }
 }
+
+extension GetProjectConfigRequest {
+  public func encode(to _: any Encoder) throws {
+    // A GET request: there is no body.
+  }
+}

@@ -82,3 +82,16 @@ public struct SendVerificationCodeRequest: IdentityToolkitRequest, AuthRPCReques
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension SendVerificationCodeRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encode(phoneNumber, forKey: .init(kPhoneNumberKey))
+    if let appCredential {
+      try c.encode(appCredential.receipt, forKey: .init(kReceiptKey))
+      try c.encodeIfPresent(appCredential.secret, forKey: .init(kSecretKey))
+    }
+    try c.encodeIfPresent(reCAPTCHAToken, forKey: .init(kreCAPTCHATokenKey))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+  }
+}

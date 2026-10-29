@@ -28,12 +28,6 @@ import FoundationNetworking
 //  import GTMSessionFetcherCore
 //#endif
 
-// XXX TODO: Just to silence warnings for now
-extension AuthRPCRequest {
-    public func encode(to encoder: any Encoder) throws {
-    }
-}
-
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 public protocol AuthBackendRPCIssuer: Sendable {
