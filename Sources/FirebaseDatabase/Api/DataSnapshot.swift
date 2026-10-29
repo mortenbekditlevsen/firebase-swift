@@ -43,7 +43,7 @@ public struct DataSnapshot: Sendable {
      * @param childPathString A relative path to the location of child data.
      * @return The FIRDataSnapshot for the child location.
      */
-    public func childSnapshotForPath(_ childPathString: String) -> DataSnapshot {
+    public func childSnapshot(forPath childPathString: String) -> DataSnapshot {
         FValidation.validateFrom("child:", validPathString: childPathString)
         let childPath = FPath(with: childPathString)
         let childRef = self.ref.child(childPathString)
@@ -81,7 +81,7 @@ public struct DataSnapshot: Sendable {
      *
      * @return YES if this snapshot contains a non-null value, else NO.
      */
-    public var exists: Bool {
+    public func exists() -> Bool {
         !node.node.isEmpty
     }
 
@@ -95,7 +95,7 @@ public struct DataSnapshot: Sendable {
      * instances of NSDictionary. For leaf locations with priorities, the value will
      * be under the ".value" key.
      */
-    var valueInExportFormat: Any? {
+    func valueInExportFormat() -> Any? {
         node.node.val(forExport: true)
     }
 

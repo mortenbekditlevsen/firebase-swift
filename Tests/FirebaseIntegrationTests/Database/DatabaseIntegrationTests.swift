@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import FirebaseAuth
-import FirebaseDatabase
+@testable import FirebaseDatabase
 import Foundation
 import Testing
 
@@ -34,11 +34,11 @@ struct DatabaseIntegrationTests {
     try await ref.setValue(["name": "Ada", "born": 1815, "tags": ["math", "poetry"]])
     let snapshot = try await ref.getData()
 
-    #expect(snapshot.exists)
+    #expect(snapshot.exists())
     #expect(snapshot.key == ref.key)
-    #expect(snapshot.childSnapshotForPath("name").value as? String == "Ada")
-    #expect((snapshot.childSnapshotForPath("born").value as? NSNumber)?.intValue == 1815)
-    #expect(snapshot.childSnapshotForPath("tags").childrenCount == 2)
+    #expect(snapshot.childSnapshot(forPath: "name").value as? String == "Ada")
+    #expect((snapshot.childSnapshot(forPath: "born").value as? NSNumber)?.intValue == 1815)
+    #expect(snapshot.childSnapshot(forPath: "tags").childrenCount == 2)
     #expect(snapshot.hasChild("tags/1"))
     #expect(!snapshot.hasChild("died"))
   }
@@ -52,10 +52,10 @@ struct DatabaseIntegrationTests {
     // A second app, so the values come from the server rather than the local cache.
     let fromServer = try await EmulatorApp().database().reference().child(ref.parent!.key!)
       .child(ref.key!).getData()
-    #expect(fromServer.childSnapshotForPath("yes").value as? Bool == true)
-    #expect(fromServer.childSnapshotForPath("no").value as? Bool == false)
+    #expect(fromServer.childSnapshot(forPath: "yes").value as? Bool == true)
+    #expect(fromServer.childSnapshot(forPath: "no").value as? Bool == false)
     for key in ["one", "zero"] {
-      let value = try #require(fromServer.childSnapshotForPath(key).value as? NSNumber)
+      let value = try #require(fromServer.childSnapshot(forPath: key).value as? NSNumber)
       #expect(!isBoolean(value), "\(key) came back as a Boolean")
     }
   }
@@ -66,9 +66,9 @@ struct DatabaseIntegrationTests {
     try await ref.setValue(["name": "Ada", "born": 1815])
     try await ref.updateChildValues(["born": 1816, "died": 1852])
     var snapshot = try await ref.getData()
-    #expect(snapshot.childSnapshotForPath("name").value as? String == "Ada")
-    #expect((snapshot.childSnapshotForPath("born").value as? NSNumber)?.intValue == 1816)
-    #expect((snapshot.childSnapshotForPath("died").value as? NSNumber)?.intValue == 1852)
+    #expect(snapshot.childSnapshot(forPath: "name").value as? String == "Ada")
+    #expect((snapshot.childSnapshot(forPath: "born").value as? NSNumber)?.intValue == 1816)
+    #expect((snapshot.childSnapshot(forPath: "died").value as? NSNumber)?.intValue == 1852)
 
     try await ref.child("died").removeValue()
     snapshot = try await ref.getData()
@@ -76,7 +76,7 @@ struct DatabaseIntegrationTests {
 
     try await ref.removeValue()
     snapshot = try await ref.getData()
-    #expect(!snapshot.exists)
+    #expect(!snapshot.exists())
   }
 
   @Test func queriesOrderAndLimit() async throws {
@@ -171,6 +171,119 @@ struct DatabaseIntegrationTests {
     }
     let received = events.withLock { $0 }
     #expect(received == ["added x", "changed x", "removed x"])
+  }
+
+  @Test func concurrentTransactionsDontLoseUpdates() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValue(0)
+    // Several apps, each with its own connection and local cache, so the
+    // server rejects stale attempts and the blocks rerun.
+    let refs = try (0 ..< 3).map { _ in
+      try EmulatorApp().database().reference().child(ref.parent!.key!).child(ref.key!)
+    }
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for counter in refs {
+        group.addTask {
+          for _ in 0 ..< 5 {
+            let (committed, _) = try await counter.runTransactionBlock { currentData in
+              currentData.value = ((currentData.value as? NSNumber)?.intValue ?? 0) + 1
+              return .success(withValue: currentData)
+            }
+            #expect(committed)
+          }
+        }
+      }
+      try await group.waitForAll()
+    }
+
+    let total = (try await ref.getData().value as? NSNumber)?.intValue
+    #expect(total == 15)
+  }
+
+  @Test func abortedTransactionsLeaveTheDataAlone() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValue("original")
+
+    let (committed, _) = try await ref.runTransactionBlock { currentData in
+      currentData.value = "discarded"
+      return .abort()
+    }
+
+    // The returned snapshot is the client's local view when the block aborted,
+    // which is empty here: nothing listens to `ref`, so it isn't cached.
+    #expect(!committed)
+    #expect(try await ref.getData().value as? String == "original")
+  }
+
+  @Test func transactionsCanEditChildren() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValue(["likes": 1, "title": "Post"])
+
+    let (committed, snapshot) = try await ref.runTransactionBlock { currentData in
+      let likes = (currentData.childData(byAppendingPath: "likes").value as? NSNumber)?.intValue ?? 0
+      currentData[childPath: "likes"].value = likes + 1
+      currentData[childPath: "likedBy/ada"].value = true
+      return .success(withValue: currentData)
+    }
+
+    #expect(committed)
+    #expect((snapshot.childSnapshot(forPath: "likes").value as? NSNumber)?.intValue == 2)
+    let fromServer = try await EmulatorApp().database().reference().child(ref.parent!.key!)
+      .child(ref.key!).getData()
+    #expect((fromServer.childSnapshot(forPath: "likes").value as? NSNumber)?.intValue == 2)
+    #expect(fromServer.childSnapshot(forPath: "likedBy/ada").value as? Bool == true)
+    #expect(fromServer.childSnapshot(forPath: "title").value as? String == "Post")
+  }
+
+  /// The server only accepts a transaction if the client's hash of the current
+  /// data matches its own, and children with priorities are hashed differently.
+  @Test func transactionsWorkOnDataWithPriorities() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.child("a").setValue(1, andPriority: 2)
+    try await ref.child("b").setValue(2, andPriority: 1)
+
+    let (committed, _) = try await ref.runTransactionBlock { currentData in
+      currentData[childPath: "c"].value = 3
+      return .success(withValue: currentData)
+    }
+
+    #expect(committed)
+    let fromServer = try await EmulatorApp().database().reference().child(ref.parent!.key!)
+      .child(ref.key!).getData()
+    #expect((fromServer.childSnapshot(forPath: "c").value as? NSNumber)?.intValue == 3)
+    #expect((fromServer.childSnapshot(forPath: "a").priority as? NSNumber)?.intValue == 2)
+  }
+
+  @Test func onDisconnectWritesApplyWhenTheClientDisconnects() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValue(["online": true, "session": "abc", "kept": "yes"])
+
+    ref.child("online").onDisconnectSetValue(false)
+    ref.child("session").onDisconnectRemoveValue()
+    ref.child("status").onDisconnectUpdateChildValues(["state": "offline"])
+    ref.child("kept").onDisconnectSetValue("overwritten")
+    ref.child("kept").cancelDisconnectOperations()
+    // The public calls don't report back, so wait for the server to queue one
+    // more operation; the earlier ones are sent before it on the same connection.
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      ref.child("barrier").onDisconnectSetValue(1) { error, _ in
+        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+      }
+    }
+
+    ref.database.goOffline()
+
+    // Read through a second app, which never had the onDisconnect writes locally.
+    let other = try EmulatorApp().database().reference().child(ref.parent!.key!).child(ref.key!)
+    try? await eventually {
+      (try? await other.child("online").getData().value as? Bool) == false
+    }
+    let snapshot = try await other.getData()
+    #expect(snapshot.childSnapshot(forPath: "online").value as? Bool == false)
+    #expect(!snapshot.hasChild("session"))
+    #expect(snapshot.childSnapshot(forPath: "status/state").value as? String == "offline")
+    #expect(snapshot.childSnapshot(forPath: "kept").value as? String == "yes")
   }
 
   @Test func unauthenticatedWritesToProtectedPathsFail() async throws {

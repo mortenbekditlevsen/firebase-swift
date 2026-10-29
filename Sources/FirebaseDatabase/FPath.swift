@@ -16,7 +16,7 @@ import Foundation
 
 private let emptyPath = FPath(with: "")
 
-public struct FPath: Hashable, Sendable {
+public struct FPath: Hashable, Sendable, CustomStringConvertible {
     let pieceNum: Int
     let pieces: [String]
 
@@ -82,7 +82,7 @@ public struct FPath: Hashable, Sendable {
         toString(withTrailingSlash: false)
     }
 
-    var description: String {
+    public var description: String {
         toString()
     }
 

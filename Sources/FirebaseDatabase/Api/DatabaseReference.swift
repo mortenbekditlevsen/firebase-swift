@@ -652,7 +652,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * @param value The value to be set after the connection is lost.
      */
-    func onDisconnectSetValue(_ value: AnyHashable?) {
+    public func onDisconnectSetValue(_ value: Any?) {
         onDisconnectSetValueInternal(value, andPriority: nil, withCompletionBlock: nil, from: "onDisconnectSetValue:")
     }
 
@@ -668,7 +668,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @param block Block to be triggered when the operation has been queued up on
      * the Firebase Database servers
      */
-    func onDisconnectSetValue(_ value: AnyHashable?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
+    func onDisconnectSetValue(_ value: Any?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
         onDisconnectSetValueInternal(value, andPriority: nil, withCompletionBlock: block, from: "onDisconnectSetValue:withCompletionBlock:")
     }
 
@@ -680,7 +680,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @param value The value to be set after the connection is lost.
      * @param priority The priority to be set after the connection is lost.
      */
-    func onDisconnectSetValue(_ value: AnyHashable?, andPriority priority: AnyHashable?) {
+    public func onDisconnectSetValue(_ value: Any?, andPriority priority: Any?) {
         onDisconnectSetValueInternal(value, andPriority: priority, withCompletionBlock: nil, from: "onDisconnectSetValue:andPriority:")
     }
 
@@ -697,11 +697,11 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @param block Block to be triggered when the operation has been queued up on
      * the Firebase Database servers
      */
-    func onDisconnectSetValue(_ value: AnyHashable?, andPriority priority: AnyHashable?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
+    func onDisconnectSetValue(_ value: Any?, andPriority priority: Any?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
         onDisconnectSetValueInternal(value, andPriority: priority, withCompletionBlock: block, from: "onDisconnectSetValue:andPriority:withCompletionBlock:")
     }
 
-    private func onDisconnectSetValueInternal(_ value: AnyHashable?, andPriority priority: AnyHashable?, withCompletionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?, from fn: String) {
+    private func onDisconnectSetValueInternal(_ value: Any?, andPriority priority: Any?, withCompletionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?, from fn: String) {
         FValidation.validateFrom(fn, writablePath: path)
         let newNodeUnresolved = FSnapshotUtilities.nodeFrom(value, priority: priority, withValidationFrom: fn)
         // was: DatabaseQuery.sharedQueue.async {
@@ -718,7 +718,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * onDisconnectRemoveValue is especially useful for implementing "presence"
      * systems.
      */
-    func onDisconnectRemoveValue() {
+    public func onDisconnectRemoveValue() {
         onDisconnectSetValueInternal(nil, andPriority: nil, withCompletionBlock: nil, from: "onDisconnectRemoveValue")
     }
 
@@ -746,7 +746,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @param values A dictionary of child node keys and the values to set them to
      * after the connection is lost.
      */
-    func onDisconnectUpdateChildValues(_ values: [String: Any]) {
+    public func onDisconnectUpdateChildValues(_ values: [String: Any]) {
         onDisconnectUpdateChildValuesInternal(values, withCompletionBlock: nil, from: "onDisconnectUpdateChildValues:")
     }
 
@@ -780,7 +780,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * onDisconnectUpdateChildValues:, and no longer want the values updated when
      * the connection is lost, call cancelDisconnectOperations:
      */
-    func cancelDisconnectOperations() {
+    public func cancelDisconnectOperations() {
         cancelDisconnectOperations(completionBlock: nil)
     }
 
@@ -825,7 +825,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * Note: Invoking this method will impact all Firebase Database connections.
      */
-    class func goOffline() {
+    public class func goOffline() {
         FRepoManager.interruptAll()
     }
 
@@ -848,7 +848,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      *
      * Note: Invoking this method will impact all Firebase Database connections.
      */
-    class func goOnline() {
+    public class func goOnline() {
         FRepoManager.resumeAll()
     }
 
@@ -871,7 +871,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @param block This block receives the current data at this location and must
      * return an instance of FIRTransactionResult
      */
-    func runTransactionBlock(_ block: @escaping @Sendable (MutableData) -> TransactionResult) {
+    public func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult) {
         FValidation.validateFrom("runTransactionBlock:", writablePath: path)
         runTransactionBlock(block, andCompletionBlock: nil, withLocalEvents: true)
     }
@@ -897,7 +897,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * error, whether or not the data was committed, and what the current value of
      * the data at this location is.
      */
-    func runTransactionBlock(_ block: @escaping @Sendable (MutableData) -> TransactionResult, andCompletionBlock completionBlock: @escaping @Sendable (Error?, Bool, DataSnapshot?) -> Void) {
+    func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult, andCompletionBlock completionBlock: @escaping @Sendable (Error?, Bool, DataSnapshot?) -> Void) {
         FValidation.validateFrom("runTransactionBlock:andCompletionBlock:", writablePath: path)
         runTransactionBlock(block, andCompletionBlock: completionBlock, withLocalEvents: true)
     }
@@ -930,11 +930,53 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @param localEvents Set this to NO to suppress events raised for intermediate
      * states, and only get events based on the final state of the transaction.
      */
-    func runTransactionBlock(_ block: @escaping @Sendable (MutableData) -> TransactionResult, andCompletionBlock onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents localEvents: Bool) {
+    func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult, andCompletionBlock onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents localEvents: Bool) {
         FValidation.validateFrom("runTransactionBlock:andCompletionBlock:withLocalEvents", writablePath: path)
         // was: DatabaseQuery.sharedQueue.async {
         Task { @DatabaseActor in
             self.repo.startTransactionOnPath(self.path, update: block, onComplete: onComplete, withLocalEvents: localEvents)
+        }
+    }
+
+    /**
+     * Performs an optimistic-concurrency transactional update to the data at this
+     * location, and returns once the transaction is complete. See
+     * runTransactionBlock(_:) for how the block is run.
+     *
+     * @param block This block receives the current data at this location and must
+     * return a TransactionResult
+     * @return Whether the data was committed (false if the block aborted), and
+     * the current value of the data at this location.
+     */
+    public func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult) async throws -> (Bool, DataSnapshot) {
+        try await runTransactionBlock(block, withLocalEvents: true)
+    }
+
+    /**
+     * The same as runTransactionBlock(_:), with the option of suppressing the
+     * events raised for intermediate states.
+     *
+     * @param block This block receives the current data at this location and must
+     * return a TransactionResult
+     * @param localEvents Set this to false to suppress events raised for intermediate
+     * states, and only get events based on the final state of the transaction.
+     * @return Whether the data was committed (false if the block aborted), and
+     * the current value of the data at this location.
+     */
+    public func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult, withLocalEvents localEvents: Bool) async throws -> (Bool, DataSnapshot) {
+        FValidation.validateFrom("runTransactionBlock:andCompletionBlock:withLocalEvents", writablePath: path)
+        return try await withCheckedThrowingContinuation { continuation in
+            runTransactionBlock(block, andCompletionBlock: { error, committed, snapshot in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let snapshot {
+                    continuation.resume(returning: (committed, snapshot))
+                } else {
+                    continuation.resume(throwing: NSError(domain: kFirebaseCoreErrorDomain, code: 1, userInfo: [
+                        NSLocalizedDescriptionKey: "Transaction completed without a snapshot",
+                    ]))
+                }
+            }, withLocalEvents: localEvents)
         }
     }
 
@@ -946,7 +988,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
      * @return The absolute URL of the referenced Firebase Database location.
      */
     public override var description: String {
-        URL
+        url
     }
 
     // MARK: Properties
@@ -984,7 +1026,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
       *
       * @return The url of the location this reference points to.
       */
-    public var URL: String {
+    public var url: String {
         if let parent = parent, let key = key {
             return "\(parent.description)/\(FStringUtilities.urlEncoded(key))"
         } else {

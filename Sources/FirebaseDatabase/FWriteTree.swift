@@ -200,7 +200,7 @@ class FWriteTree {
                 } else {
                     let filter: (FWriteRecord) -> Bool = { record in
                         (record.visible || includeHiddenWrites) &&
-                        (excludeWriteIds?.contains(record.writeId) ?? true) &&
+                        !(excludeWriteIds?.contains(record.writeId) ?? false) &&
                         (record.path.contains(treePath) || treePath.contains(record.path))
                     }
                     let mergeAtPath = FWriteTree.layerTreeFromWrites(allWrites, filter: filter, treeRoot: treePath)
@@ -234,7 +234,7 @@ class FWriteTree {
             } else {
                 let filter: (FWriteRecord) -> Bool = { record in
                     (record.visible || includeHiddenWrites) &&
-                    (excludeWriteIds?.contains(record.writeId) ?? true) &&
+                    !(excludeWriteIds?.contains(record.writeId) ?? false) &&
                     (record.path.contains(treePath) || treePath.contains(record.path))
                 }
                 let mergeAtPath = FWriteTree.layerTreeFromWrites(allWrites, filter: filter, treeRoot: treePath)

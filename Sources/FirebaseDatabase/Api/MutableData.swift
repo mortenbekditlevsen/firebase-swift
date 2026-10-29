@@ -15,11 +15,11 @@
 import Foundation
 
 /**
- * A FIRMutableData instance is populated with data from a Firebase Database
- * location. When you are using runTransactionBlock:, you will be given an
- * instance containing the current data at that location. Your block will be
- * responsible for updating that instance to the data you wish to save at that
- * location, and then returning using [FIRTransactionResult successWithValue:].
+ * A MutableData value is populated with data from a Firebase Database
+ * location. When you are using runTransactionBlock:, you will be given a
+ * value containing the current data at that location. Your block will be
+ * responsible for updating it to the data you wish to save at that
+ * location, and then returning using `TransactionResult.success(withValue:)`.
  *
  * To modify the data, set its value property to any of the native types support
  * by Firebase Database:
@@ -30,11 +30,24 @@ import Foundation
  * + NSString
  * + nil / NSNull to remove the data
  *
- * Note that changes made to a child FIRMutableData instance will be visible to
- * the parent.
+ * Unlike upstream's FIRMutableData, this is a value type: a copy can't change
+ * the data of the transaction it came from. `childData(byAppendingPath:)` and
+ * `children` return copies; to change a child in place, use
+ * `self[childPath:]`, e.g. `currentData[childPath: "count"].value = 1`.
  */
+public struct MutableData: Sendable {
 
-class MutableData {
+    internal private(set) var nodeValue: FNode
+
+    /**
+     * @return The key name of this node, or nil if it is the top-most location
+     */
+    public let key: String?
+
+    internal init(node: FNode, key: String? = nil) {
+        self.nodeValue = node
+        self.key = key
+    }
 
     // MARK: - Inspecting and navigating the data
 
@@ -43,13 +56,8 @@ class MutableData {
      *
      * @return YES if this data contains child nodes.
      */
-    var hasChildren: Bool {
-        let node = data.getNode(prefixPath)
-        return !node.children.isEmpty
-//        guard let childrenNode = node as? FChildrenNode else {
-//            return false
-//        }
-//        return !childrenNode.isEmpty
+    public func hasChildren() -> Bool {
+        !nodeValue.children.isEmpty
     }
 
     /**
@@ -59,51 +67,43 @@ class MutableData {
      * 'child', or multiple segments, 'a/deeper/child'
      * @return YES if this data contains a child at the specified relative path
      */
-    func hasChildAtPath(_ path: String) -> Bool {
-        let node = data.getNode(prefixPath)
-        let childPath = FPath(with: path)
-        return !node.getChild(childPath).isEmpty
+    public func hasChild(atPath path: String) -> Bool {
+        !nodeValue.getChild(FPath(with: path)).isEmpty
     }
 
     /**
-     * Used to obtain a FIRMutableData instance that encapsulates the data at the
-     * given relative path. Note that changes made to the child will be visible to
-     * the parent.
+     * Returns a copy of the data at the given relative path. Changes made to
+     * the copy don't affect this value; use `self[childPath:]` for that.
      *
      * @param path A path string, consisting either of a single segment, like
      * 'child', or multiple segments, 'a/deeper/child'
-     * @return A FIRMutableData instance containing the data at the given path
+     * @return A MutableData value containing the data at the given path
      */
-    func childDataByAppendingPath(_ path: String) -> MutableData {
-        let wholePath = prefixPath.child(fromString: path)
-        return MutableData(prefixPath: wholePath, andSnapshotHolder: data)
+    public func childData(byAppendingPath path: String) -> MutableData {
+        self[childPath: path]
     }
 
-    internal var parent: MutableData? {
-        guard let path = prefixPath.parent() else {
-            return nil
+    /**
+     * The data at the given relative path. Setting it replaces that child,
+     * so `currentData[childPath: "a/b"].value = 1` changes this value.
+     *
+     * @param path A path string, consisting either of a single segment, like
+     * 'child', or multiple segments, 'a/deeper/child'
+     */
+    public subscript(childPath path: String) -> MutableData {
+        get {
+            let childPath = FPath(with: path)
+            return MutableData(node: nodeValue.getChild(childPath), key: childPath.getBack() ?? key)
         }
-        return MutableData(prefixPath: path, andSnapshotHolder: data)
+        set {
+            nodeValue = nodeValue.updateChild(FPath(with: path), withNewChild: newValue.nodeValue)
+        }
     }
-
-    func setValue(_ value: AnyHashable?) {
-        let node = FSnapshotUtilities.nodeFrom(value,
-                                                    withValidationFrom: "setValue:")
-        data.updateSnapshot(prefixPath, withNewSnapshot: node)
-    }
-
-    func setPriority(_ priority: AnyHashable) {
-        var node = data.getNode(prefixPath)
-        let pri = FSnapshotUtilities.nodeFrom(priority)
-        node = node.updatePriority(pri)
-        data.updateSnapshot(prefixPath, withNewSnapshot: node)
-    }
-
 
     // MARK: - Properties
 
     /**
-     * To modify the data contained by this instance of FIRMutableData, set this to
+     * To modify the data contained by this value, set this to
      * any of the native types supported by Firebase Database:
      *
      * + NSNumber (includes BOOL)
@@ -116,8 +116,13 @@ class MutableData {
      *
      * @return The current data at this location as a native object
      */
-    var value: Any {
-        data.getNode(prefixPath).val()
+    public var value: Any? {
+        get {
+            nodeValue.val()
+        }
+        set {
+            nodeValue = FSnapshotUtilities.nodeFrom(newValue, withValidationFrom: "setValue:")
+        }
     }
 
     /**
@@ -130,58 +135,38 @@ class MutableData {
      *
      * @return The priority of the data at this location
      */
-    var priority: Any {
-        data.getNode(prefixPath).getPriority().val()
+    public var priority: Any? {
+        get {
+            nodeValue.getPriority().val()
+        }
+        set {
+            nodeValue = nodeValue.updatePriority(FSnapshotUtilities.nodeFrom(newValue))
+        }
     }
 
     /**
      * @return The number of child nodes at this location
      */
-    var childrenCount: Int {
-        data.getNode(prefixPath).numChildren()
-    }
-
-    // NOTE: Only used for testing
-    var children: [MutableData] {
-        let indexedNode = FIndexedNode(node: nodeValue)
-        return indexedNode.children.map { namedNode in
-            let childPath = self.prefixPath.child(fromString: namedNode.name)
-            let childData = MutableData(prefixPath: childPath, andSnapshotHolder: self.data)
-            return childData
-        }
+    public var childrenCount: Int {
+        nodeValue.numChildren()
     }
 
     /**
-     * @return The key name of this node, or nil if it is the top-most location
+     * Copies of the immediate children of this location, in priority order.
      */
-    var key: String? {
-        prefixPath.getBack()
-    }
-
-    internal var nodeValue: FNode {
-        data.getNode(prefixPath)
-    }
-
-    internal var data: FSnapshotHolder
-    internal let prefixPath: FPath
-
-    public convenience init(node: FNode) {
-        var holder = FSnapshotHolder()
-        let path = FPath.empty
-        holder.updateSnapshot(path, withNewSnapshot: node)
-        self.init(prefixPath: path, andSnapshotHolder: holder)
-    }
-
-    internal init(prefixPath: FPath, andSnapshotHolder snapshotHolder: FSnapshotHolder) {
-        self.prefixPath = prefixPath
-        self.data = snapshotHolder
-    }
-    var description: String {
-        if let key = key {
-            return "FIRMutableData (\(key)) \(value)"
-        } else {
-            return "FIRMutableData (top-most transaction) \(value)"
+    public var children: [MutableData] {
+        FIndexedNode(node: nodeValue).children.map { namedNode in
+            MutableData(node: namedNode.node, key: namedNode.name)
         }
+    }
+}
 
+extension MutableData: CustomStringConvertible {
+    public var description: String {
+        if let key = key {
+            return "MutableData (\(key)) \(String(describing: value))"
+        } else {
+            return "MutableData (top-most transaction) \(String(describing: value))"
+        }
     }
 }
