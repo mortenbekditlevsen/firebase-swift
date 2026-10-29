@@ -29,40 +29,38 @@ struct StorageTokenAuthorizer {
         // Set GMP ID on each request
         request.setValue(googleAppID, forHTTPHeaderField: "x-firebase-gmpid")
         
-        var tokenError: StorageError?
+        // Fetch both tokens concurrently, then set the headers, as upstream does:
+        // the Auth token goes in `Authorization`, the App Check token in its own header.
         let auth = auth
-        async let authToken: Void = {
-            if let auth {
-                do {
-                    let token = try await auth.getToken(forcingRefresh: false)
-                    request.setValue(token, forHTTPHeaderField: "Authorization")
-                } catch {
-                    let error = error as NSError
-                    var errorDictionary = error.userInfo
-                    errorDictionary["ResponseErrorDomain"] = error.domain
-                    errorDictionary["ResponseErrorCode"] = error.code
-                    tokenError =  StorageError.unauthenticated(serverError: errorDictionary)
-                }
+        async let authToken: Result<String?, StorageError> = {
+            guard let auth else { return .success(nil) }
+            do {
+                return .success(try await auth.getToken(forcingRefresh: false))
+            } catch {
+                let error = error as NSError
+                var errorDictionary = error.userInfo
+                errorDictionary["ResponseErrorDomain"] = error.domain
+                errorDictionary["ResponseErrorCode"] = error.code
+                return .failure(StorageError.unauthenticated(serverError: errorDictionary))
             }
         }()
 
         let appCheck = appCheck
-        async let appCheckToken: Void = {
-            if let appCheck {
-                do {
-                    let token = try await appCheck.getToken(forcingRefresh: false)
-                    let firebaseToken = "Firebase \(token)"
-                    request.setValue(firebaseToken, forHTTPHeaderField: "Authorization")
-                } catch {
-                    print("[FirebaseStorage][I-STR000001] Failed to fetch AppCheck token. Error: \(error)")
-                }
+        async let appCheckToken: String? = {
+            guard let appCheck else { return nil }
+            do {
+                return try await appCheck.getToken(forcingRefresh: false)
+            } catch {
+                print("[FirebaseStorage][I-STR000001] Failed to fetch AppCheck token. Error: \(error)")
+                return nil
             }
-                
         }()
-            
-        let (_, _) = await (authToken, appCheckToken)
-        if let tokenError {
-            throw tokenError
+
+        if let token = try await authToken.get() {
+            request.setValue("Firebase \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let token = await appCheckToken {
+            request.setValue(token, forHTTPHeaderField: "X-Firebase-AppCheck")
         }
   }
 

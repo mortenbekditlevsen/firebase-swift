@@ -217,3 +217,60 @@ private let kLastNameKey = "lastName"
   }
 
 }
+
+extension VerifyAssertionRequest {
+  public func encode(to encoder: any Encoder) throws {
+    var queryItems = [URLQueryItem(name: kProviderIDKey, value: providerID)]
+    if let providerIDToken {
+      queryItems.append(URLQueryItem(name: kProviderIDTokenKey, value: providerIDToken))
+    }
+    if let providerRawNonce {
+      queryItems.append(URLQueryItem(name: kProviderNonceKey, value: providerRawNonce))
+    }
+    if let providerAccessToken {
+      queryItems.append(URLQueryItem(name: kProviderAccessTokenKey, value: providerAccessToken))
+    }
+    guard providerIDToken != nil || providerAccessToken != nil || pendingToken != nil ||
+      requestURI != nil else {
+      fatalError("One of IDToken, accessToken, pendingToken, or requestURI must be supplied.")
+    }
+    if let providerOAuthTokenSecret {
+      queryItems.append(URLQueryItem(name: kProviderOAuthTokenSecretKey,
+                                     value: providerOAuthTokenSecret))
+    }
+    if let inputEmail {
+      queryItems.append(URLQueryItem(name: kIdentifierKey, value: inputEmail))
+    }
+    if fullName?.givenName != nil || fullName?.familyName != nil {
+      var nameDict = [String: String]()
+      if let given = fullName?.givenName {
+        nameDict[kFirstNameKey] = given
+      }
+      if let lastName = fullName?.familyName {
+        nameDict[kLastNameKey] = lastName
+      }
+      let jsonEncoder = JSONEncoder()
+      jsonEncoder.outputFormatting = .sortedKeys
+      let userJSON = try jsonEncoder.encode([kNameKey: nameDict])
+      queryItems.append(URLQueryItem(name: kUserKey, value: String(decoding: userJSON, as: UTF8.self)))
+    }
+    var components = URLComponents()
+    components.queryItems = queryItems
+
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    // Unused by the server, but required.
+    try c.encode(requestURI ?? "http://localhost", forKey: .init(kRequestURIKey))
+    try c.encodeIfPresent(components.query, forKey: .init(kPostBodyKey))
+    try c.encodeIfPresent(pendingToken, forKey: .init(kPendingTokenKey))
+    try c.encodeIfPresent(accessToken, forKey: .init(kIDTokenKey))
+    if returnSecureToken {
+      try c.encode(true, forKey: .init(kReturnSecureTokenKey))
+    }
+    if returnIDPCredential {
+      try c.encode(true, forKey: .init(kReturnIDPCredentialKey))
+    }
+    try c.encodeIfPresent(sessionID, forKey: .init(kSessionIDKey))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+    try c.encode(autoCreate, forKey: .init(kAutoCreateKey))
+  }
+}

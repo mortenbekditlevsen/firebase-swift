@@ -43,7 +43,7 @@ public struct DataSnapshot: Sendable {
      * @param childPathString A relative path to the location of child data.
      * @return The FIRDataSnapshot for the child location.
      */
-    func childSnapshotForPath(_ childPathString: String) -> DataSnapshot {
+    public func childSnapshotForPath(_ childPathString: String) -> DataSnapshot {
         FValidation.validateFrom("child:", validPathString: childPathString)
         let childPath = FPath(with: childPathString)
         let childRef = self.ref.child(childPathString)
@@ -57,7 +57,7 @@ public struct DataSnapshot: Sendable {
      * @param childPathString A relative path to the location of a potential child.
      * @return YES if data exists at the specified childPathString, else NO.
      */
-    func hasChild(_ childPathString: String) -> Bool {
+    public func hasChild(_ childPathString: String) -> Bool {
         FValidation.validateFrom("hasChild:", validPathString: childPathString)
         let childPath = FPath(with: childPathString)
         return !node.node.getChild(childPath).isEmpty
@@ -68,7 +68,7 @@ public struct DataSnapshot: Sendable {
      *
      * @return YES if this snapshot has any children, else NO.
      */
-    func hasChildren() -> Bool {
+    public func hasChildren() -> Bool {
         if node.node.isLeafNode() {
             return false
         } else {
@@ -121,7 +121,7 @@ public struct DataSnapshot: Sendable {
      *
      * @return An integer indicating the number of children.
      */
-    var childrenCount: Int {
+    public var childrenCount: Int {
         node.node.numChildren()
     }
 
@@ -138,12 +138,11 @@ public struct DataSnapshot: Sendable {
      * @return An NSString containing the key for the location of this
      * FIRDataSnapshot.
      */
-    var key: String? {
+    public var key: String? {
         ref.key
     }
 
-    public
-    var children: [DataSnapshot] {
+    public var children: [DataSnapshot] {
         node.children.map { namedNode -> DataSnapshot in
             let childRef = self.ref.child(namedNode.name)
             return DataSnapshot(ref: childRef, indexedNode: FIndexedNode(node: namedNode.node))
@@ -159,7 +158,7 @@ public struct DataSnapshot: Sendable {
      *
      * @return The priority as a string, or nil if no priority was set.
      */
-    var priority: Any? {
+    public var priority: Any? {
         node.node.getPriority().val()
     }
 }

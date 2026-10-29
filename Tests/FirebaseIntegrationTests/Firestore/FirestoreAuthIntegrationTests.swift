@@ -20,7 +20,7 @@ import Testing
 /// Uses the rules in Tests/Emulator/firestore.rules: only the signed-in user
 /// may read or write `users/{uid}`. That makes the Auth token Firestore sends,
 /// and which user it belongs to, visible to the test.
-@Suite(.enabled(if: Emulators.available, "Needs the Firebase emulators"), .timeLimit(.minutes(1)))
+@Suite(.enabled(if: Emulators.firestore != nil && Emulators.auth != nil, "Needs the Firestore and Auth emulators"), .timeLimit(.minutes(1)))
 struct FirestoreAuthIntegrationTests {
   @Test func unauthenticatedWritesToProtectedPathsFail() async throws {
     let fixture = try EmulatorFixture()

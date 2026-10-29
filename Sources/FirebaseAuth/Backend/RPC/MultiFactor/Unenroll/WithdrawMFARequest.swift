@@ -45,3 +45,12 @@ struct WithdrawMFARequest: IdentityToolkitRequest, AuthRPCRequest {
       self.requestConfiguration = requestConfiguration
   }
 }
+
+extension WithdrawMFARequest {
+  func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
+    try c.encodeIfPresent(idToken, forKey: .init("idToken"))
+    try c.encodeIfPresent(mfaEnrollmentID, forKey: .init("mfaEnrollmentId"))
+    try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
+  }
+}

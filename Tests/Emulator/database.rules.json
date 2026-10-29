@@ -1,6 +1,10 @@
 {
   "rules": {
-    "public": { ".read": true, ".write": true },
+    "public": {
+      ".read": true,
+      ".write": true,
+      "$scratch": { ".indexOn": ["score"] }
+    },
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",

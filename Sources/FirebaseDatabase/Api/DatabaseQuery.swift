@@ -700,7 +700,7 @@ public class DatabaseQuery: @unchecked Sendable {
             fatalError("Can't call \(methodName) after queryEndingAtValue, queryEndingAfterValue, or queryEqualToValue was previously called")
         }
         let endNode = FSnapshotUtilities.nodeFrom(endValue)
-        let params = queryParams.startAt(endNode, childKey: childKey)
+        let params = queryParams.endAt(endNode, childKey: childKey)
         validateQueryEndpointsForParams(params)
         return .init(repo: repo, path: path, params: params, orderByCalled: orderByCalled, priorityMethodCalled: priorityMethod || priorityMethodCalled)
     }

@@ -17,7 +17,7 @@ import FirebaseFirestore
 import Foundation
 import Testing
 
-@Suite(.enabled(if: Emulators.available, "Needs the Firebase emulators"), .timeLimit(.minutes(1)))
+@Suite(.enabled(if: Emulators.firestore != nil && Emulators.auth != nil, "Needs the Firestore and Auth emulators"), .timeLimit(.minutes(1)))
 struct FirestoreIntegrationTests {
   @Test func writesAndReadsADocument() async throws {
     let fixture = try EmulatorFixture()

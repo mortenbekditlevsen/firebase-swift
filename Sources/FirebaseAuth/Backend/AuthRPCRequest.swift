@@ -63,3 +63,14 @@ public extension AuthRPCRequest {
         false
     }
 }
+
+/// A coding key made from a request's `k…Key` constant, so `encode(to:)`
+/// implementations use the same key names as upstream's request bodies.
+struct AuthRPCCodingKey: CodingKey {
+  let stringValue: String
+  var intValue: Int? { nil }
+
+  init(_ stringValue: String) { self.stringValue = stringValue }
+  init?(stringValue: String) { self.stringValue = stringValue }
+  init?(intValue: Int) { nil }
+}

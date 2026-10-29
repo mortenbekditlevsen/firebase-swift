@@ -19,7 +19,7 @@ import Foundation
  * priority that will automatically be populated by the Firebase Database
  * server.
  */
-struct ServerValue {
+public struct ServerValue {
 
     /**
      * Placeholder value for the number of milliseconds since the Unix epoch
@@ -41,7 +41,7 @@ struct ServerValue {
      * @param delta the amount to modify the current value atomically.
      * @return a placeholder value for modifying data atomically server-side.
      */
-    static func increment(_ delta: NSNumber) -> [String: Any] {
+    public static func increment(_ delta: NSNumber) -> [String: Any] {
         [kServerValueSubKey: [ServerValues.incrementKey: delta]]
     }
 }
