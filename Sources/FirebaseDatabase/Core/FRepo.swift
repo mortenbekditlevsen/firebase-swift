@@ -683,7 +683,7 @@ class FRepo: FPersistentConnectionDelegate {
      * Creates a new transaction, add its to the transactions we're tracking, and
      * sends it to the server if possible
      */
-    internal func startTransactionOnPath(_ path: FPath, update: @escaping (MutableData) -> TransactionResult, onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents applyLocally: Bool) {
+    internal func startTransactionOnPath(_ path: FPath, update: @escaping (inout MutableData) -> TransactionResult, onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents applyLocally: Bool) {
         if config.persistenceEnabled && !loggedTransactionPersistenceWarning {
             loggedTransactionPersistenceWarning = true
             FFInfo("I-RDB038020", """
@@ -709,8 +709,8 @@ offline for more details.
 
         // Run transaction initially
         let currentState = latestStateAtPath(path, excludeWriteIds: [])
-        let mutableCurrent = MutableData(node: currentState)
-        let result = update(mutableCurrent)
+        var mutableCurrent = MutableData(node: currentState)
+        let result = update(&mutableCurrent)
         do {
             let updated = try result.result.get()
             let currentWriteId = nextWriteId()
@@ -944,8 +944,8 @@ offline for more details.
                     // This code reruns a transaction
                     let currentNode = latestStateAtPath(transaction.path, excludeWriteIds: writeIdsToExclude)
                     transaction.currentInputSnapshot = currentNode
-                    let mutableCurrent = MutableData(node: currentNode)
-                    let result = transaction.update(mutableCurrent)
+                    var mutableCurrent = MutableData(node: currentNode)
+                    let result = transaction.update(&mutableCurrent)
                     if case let .success(update) = result.result {
                         let oldWriteId = transaction.currentWriteId
                         let serverValues = FServerValues.generateServerValues(serverClock)

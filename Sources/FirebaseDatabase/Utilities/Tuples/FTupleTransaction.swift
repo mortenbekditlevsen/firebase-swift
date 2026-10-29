@@ -16,7 +16,7 @@ import Foundation
 
 @DatabaseActor
 class FTupleTransaction {
-    internal init(path: FPath, update: @escaping (MutableData) -> TransactionResult, onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, status: FTransactionStatus, order: Int, applyLocally: Bool, retryCount: Int, unwatcher: @escaping () -> Void, abortStatus: String? = nil, abortReason: String? = nil, currentWriteId: Int, currentInputSnapshot: FNode, currentOutputSnapshotRaw: FNode, currentOutputSnapshotResolved: FNode) {
+    internal init(path: FPath, update: @escaping (inout MutableData) -> TransactionResult, onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, status: FTransactionStatus, order: Int, applyLocally: Bool, retryCount: Int, unwatcher: @escaping () -> Void, abortStatus: String? = nil, abortReason: String? = nil, currentWriteId: Int, currentInputSnapshot: FNode, currentOutputSnapshotRaw: FNode, currentOutputSnapshotResolved: FNode) {
         self.path = path
         self.update = update
         self.onComplete = onComplete
@@ -34,7 +34,7 @@ class FTupleTransaction {
     }
 
     let path: FPath
-    let update: (MutableData) -> TransactionResult // fbt_transactionresult_mutabledata
+    let update: (inout MutableData) -> TransactionResult // fbt_transactionresult_mutabledata
     let onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)? // fbt_void_nserror_bool_datasnapshot
     var status: FTransactionStatus
 

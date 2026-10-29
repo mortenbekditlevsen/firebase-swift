@@ -174,7 +174,7 @@ public final class Database:  Sendable {
      * Shuts down our connection to the Firebase Database backend until goOnline is
      * called.
      */
-    func goOffline() {
+    public func goOffline() {
         let repo = ensureRepo()
 
         // was: DatabaseQuery.sharedQueue.async {
@@ -187,7 +187,7 @@ public final class Database:  Sendable {
      * Resumes our connection to the Firebase Database backend after a previous
      * goOffline call.
      */
-    func goOnline() {
+    public func goOnline() {
         let repo = ensureRepo()
 
         // was: DatabaseQuery.sharedQueue.async {

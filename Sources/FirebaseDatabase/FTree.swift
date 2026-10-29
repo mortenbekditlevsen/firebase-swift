@@ -68,7 +68,7 @@ internal final class FTree<T: Sendable> {
   }
 
   internal var path: FPath {
-    FPath(with: parent.map { "\($0.path)/\(name)" } ?? name)
+    parent.map { $0.path.child(fromString: name) } ?? FPath(with: name)
   }
 
   func updateChild(_ childName: String, withNode child: FTree<T>) {

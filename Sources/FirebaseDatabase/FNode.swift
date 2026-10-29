@@ -339,7 +339,7 @@ struct FNode: Equatable, Hashable, Sendable {
             }
             var sawPriority = false
             for node in children.values {
-                sawPriority = sawPriority || node.getPriority().isEmpty
+                sawPriority = sawPriority || !node.getPriority().isEmpty
                 if sawPriority { break }
             }
             if sawPriority {
@@ -354,7 +354,7 @@ struct FNode: Equatable, Hashable, Sendable {
                 }
                 for namedNode in array {
                     let childHash = namedNode.node.dataHash()
-                    if !children.isEmpty {
+                    if !childHash.isEmpty {
                         toHash += ":\(namedNode.name):\(childHash)"
                     }
                 }

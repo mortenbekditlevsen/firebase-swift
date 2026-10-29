@@ -107,7 +107,7 @@ typealias OnDisconnectTuple = (pathString: String,
 
 typealias PutToAckTuple = (continuation: CheckedContinuation<(String, String?), Never>,
                            status: String,
-                           errorReason: String)
+                           errorReason: String?)
 
 @DatabaseActor
 class FPersistentConnection: FConnectionDelegate {
@@ -697,9 +697,11 @@ class FPersistentConnection: FConnectionDelegate {
             let currentPut = self.outstandingPuts[index]
             if currentPut === put {
                 self.outstandingPuts.removeValue(forKey: index)
-                if let onComplete,
-                   let status = data?[kFWPResponseForActionStatus] as? String,
-                   let errorReason = data?[kFWPResponseForActionData] as? String {
+                if let onComplete {
+                    // Successful puts carry no reason, so it must stay optional;
+                    // requiring it left the caller suspended forever.
+                    let status = data?[kFWPResponseForActionStatus] as? String ?? kFWPResponseForActionStatusFailed
+                    let errorReason = data?[kFWPResponseForActionData] as? String
 
                     if self.unackedListentsCount == 0 {
                         onComplete.resume(returning: (status, errorReason))
