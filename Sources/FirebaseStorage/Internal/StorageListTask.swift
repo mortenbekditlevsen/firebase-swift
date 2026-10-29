@@ -55,8 +55,7 @@ enum StorageListTask {
             request: request,
             httpMethod: "GET",
             fetcherComment: "ListTask")
-        if let responseDictionary = try? JSONSerialization
-            .jsonObject(with: data) as? [String: AnyHashable] {
+        if let responseDictionary = StorageUtils.jsonDictionary(from: data) {
             let listResult = StorageListResult(with: responseDictionary, reference: reference)
             return listResult
         } else {

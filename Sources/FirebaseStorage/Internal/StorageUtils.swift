@@ -23,6 +23,30 @@ private import UniformTypeIdentifiers
 #endif
 
 enum StorageUtils {
+  /// The JSON object in `data` with every value made `AnyHashable`.
+  ///
+  /// On Darwin `JSONSerialization` returns `NSDictionary`/`NSArray`, which are
+  /// hashable, so `as? [String: AnyHashable]` works there. swift-corelibs
+  /// returns Swift `[String: Any]`/`[Any]`, which aren't, so the cast fails
+  /// as soon as the response contains a nested object or array.
+  static func jsonDictionary(from data: Data) -> [String: AnyHashable]? {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+    return object.compactMapValues(hashable)
+  }
+
+  private static func hashable(_ value: Any) -> AnyHashable? {
+    switch value {
+    case let dictionary as [String: Any]:
+      return AnyHashable(dictionary.compactMapValues(hashable))
+    case let array as [Any]:
+      return AnyHashable(array.compactMap(hashable))
+    default:
+      return value as? AnyHashable
+    }
+  }
+
   static func defaultRequestForReference(reference: StorageReference,
                                         queryParams: [String: String]? = nil)
     -> URLRequest {

@@ -56,7 +56,7 @@ fileprivate class FOutstandingPut {
 
 struct FOutstandingGetResultData: @unchecked Sendable {
     let status: String
-    let data: AnyHashable?
+    let data: Any?
     let errorReason: String?
 }
 
@@ -738,7 +738,7 @@ class FPersistentConnection: FConnectionDelegate {
             }
             if let status {
                 if status == kFWPResponseForActionStatusOk {
-                    get.onComplete.resume(returning: .init(status: status, data: resultData as? AnyHashable, errorReason: nil))
+                    get.onComplete.resume(returning: .init(status: status, data: resultData, errorReason: nil))
                     return
                 }
                 get.onComplete.resume(returning: .init(status: status, data: nil, errorReason: resultData as? String))

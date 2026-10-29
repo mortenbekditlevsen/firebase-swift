@@ -82,7 +82,7 @@ public enum StorageErrorCode: Int, Swift.Error {
         message: "Unexpected \(serverError.code) code from backend", serverError: errorDictionary
       )
     }
-    return storageError as NSError
+    return storageError
   }
 
   /** Creates a Firebase Storage error from an invalid request.
@@ -90,7 +90,7 @@ public enum StorageErrorCode: Int, Swift.Error {
    * @param request The Data representation of the invalid user request.
    * @return Returns the corresponding Firebase Storage error.
    */
-  static func error(withInvalidRequest request: Data?) -> NSError {
+  static func error(withInvalidRequest request: Data?) -> StorageError {
     var requestString: String
     if let request {
       requestString = String(data: request, encoding: .utf8) ?? "<unstringable data>"
@@ -98,7 +98,7 @@ public enum StorageErrorCode: Int, Swift.Error {
       requestString = "<nil request returned from server>"
     }
     let invalidDataString = "Invalid data returned from the server: \(requestString)"
-    return StorageError.unknown(message: invalidDataString, serverError: [:]) as NSError
+    return StorageError.unknown(message: invalidDataString, serverError: [:])
   }
 }
 
