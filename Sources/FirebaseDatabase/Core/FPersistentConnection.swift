@@ -39,7 +39,7 @@ fileprivate class FOutstandingPut {
     fileprivate init(
         action: String,
         request: [String : Any],
-        onComplete: CheckedContinuation<(String, String?), Never>,
+        onComplete: @escaping (String, String?) -> Void,
         sent: Bool
     ) {
         self.action = action
@@ -50,7 +50,7 @@ fileprivate class FOutstandingPut {
 
     let action: String
     let request: [String : Any]
-    let onComplete: CheckedContinuation<(String, String?), Never>?
+    let onComplete: ((String, String?) -> Void)?
     var sent: Bool
 }
 
@@ -105,7 +105,7 @@ typealias OnDisconnectTuple = (pathString: String,
                                data: Any,
                                onComplete: (String, String?) -> Void)
 
-typealias PutToAckTuple = (continuation: CheckedContinuation<(String, String?), Never>,
+typealias PutToAckTuple = (onComplete: (String, String?) -> Void,
                            status: String,
                            errorReason: String?)
 
@@ -133,7 +133,7 @@ class FPersistentConnection: FConnectionDelegate {
     var requestCBHash: [Int: ([String: Any]?) -> Void] = [:]
     let config: DatabaseConfig
     var unackedListentsCount: Int
-    var putsToAck: [PutToAckTuple]
+    var putsToAck: [PutToAckTuple] = []
 //    let dispatchQueue: DispatchQueue
     var lastSessionID: String?
     var interruptReasons: Set<String>
@@ -164,7 +164,6 @@ class FPersistentConnection: FConnectionDelegate {
         self.getCounter = FAtomicNumber()
         self.requestNumber = FAtomicNumber()
         self.unackedListentsCount = 0
-        self.putsToAck = []
         self.connectionState = .disconnected
         self.firstConnection = true
         self.reconnectDelay = kPersistentConnReconnectMinDelay
@@ -260,18 +259,36 @@ class FPersistentConnection: FConnectionDelegate {
     func putData(_ data: Any,
                  forPath pathString: String,
                  withHash hash: String?) async -> (String, String?) {
-        await putInternal(data,
-                          forAction: kFWPRequestActionPut,
-                          forPath: pathString,
-                          withHash: hash)
+        await withCheckedContinuation { continuation in
+            putData(data, forPath: pathString, withHash: hash) { status, errorReason in
+                continuation.resume(returning: (status, errorReason))
+            }
+        }
+    }
+
+    /// Queues the put before returning, which transactions rely on: their
+    /// hash must still match the local data when the put is queued.
+    func putData(_ data: Any,
+                 forPath pathString: String,
+                 withHash hash: String?,
+                 onComplete: @escaping (String, String?) -> Void) {
+        putInternal(data,
+                    forAction: kFWPRequestActionPut,
+                    forPath: pathString,
+                    withHash: hash,
+                    onComplete: onComplete)
     }
 
     func mergeData(_ data: Any,
                    forPath pathString: String) async -> (String, String?) {
-        await putInternal(data,
-                          forAction: kFWPRequestActionMerge,
-                          forPath: pathString,
-                          withHash: nil)
+        await withCheckedContinuation { continuation in
+            putInternal(data,
+                        forAction: kFWPRequestActionMerge,
+                        forPath: pathString,
+                        withHash: nil) { status, errorReason in
+                continuation.resume(returning: (status, errorReason))
+            }
+        }
     }
 
     func onDisconnectPutData(_ data: Any,
@@ -704,9 +721,9 @@ class FPersistentConnection: FConnectionDelegate {
                     let errorReason = data?[kFWPResponseForActionData] as? String
 
                     if self.unackedListentsCount == 0 {
-                        onComplete.resume(returning: (status, errorReason))
+                        onComplete(status, errorReason)
                     } else {
-                        let putToAck: PutToAckTuple = (continuation: onComplete, status: status, errorReason: errorReason)
+                        let putToAck: PutToAckTuple = (onComplete: onComplete, status: status, errorReason: errorReason)
                         self.putsToAck.append(putToAck)
                     }
                 } else {
@@ -752,7 +769,7 @@ class FPersistentConnection: FConnectionDelegate {
                               queryParams: FQueryParams,
                               tagId: Int?) {
         FFLog("I-RDB034023", "Unlisten on \(path) for \(queryParams)")
-        var request: [String: Any] = [path.description: kFWPRequestPath]
+        var request: [String: Any] = [kFWPRequestPath: path.description]
         if let tagId = tagId {
             request[kFWPRequestQueries] = queryParams.wireProtocolParams
             request[kFWPRequestTag] = tagId
@@ -762,27 +779,24 @@ class FPersistentConnection: FConnectionDelegate {
                    sensitive: false, callback: { _ in })
     }
 
-    private func putInternal(_ data: Any, forAction action: String, forPath pathString: String, withHash hash: String?) async -> (String, String?) {
-        await withCheckedContinuation { continuation in
-            var request: [String: Any] = [kFWPRequestPath: pathString,
-                                          kFWPRequestData: data]
-            if let hash = hash {
-                request[kFWPRequestHash] = hash
-            }
-            let put = FOutstandingPut(action: action,
-                                      request: request,
-                                      onComplete: continuation,
-                                      sent: false)
-            let index = putCounter.getAndIncrement()
-            outstandingPuts[index] = put
-            if canSendWrites {
-                FFLog("I-RDB034024", "Was connected, and added as index: \(index)")
-                sendPut(index)
-            } else {
-                FFLog("I-RDB034025",
-                      "Wasn't connected or writes paused, so added to outstanding puts only. Path: \(pathString)")
-                
-            }
+    private func putInternal(_ data: Any, forAction action: String, forPath pathString: String, withHash hash: String?, onComplete: @escaping (String, String?) -> Void) {
+        var request: [String: Any] = [kFWPRequestPath: pathString,
+                                      kFWPRequestData: data]
+        if let hash = hash {
+            request[kFWPRequestHash] = hash
+        }
+        let put = FOutstandingPut(action: action,
+                                  request: request,
+                                  onComplete: onComplete,
+                                  sent: false)
+        let index = putCounter.getAndIncrement()
+        outstandingPuts[index] = put
+        if canSendWrites {
+            FFLog("I-RDB034024", "Was connected, and added as index: \(index)")
+            sendPut(index)
+        } else {
+            FFLog("I-RDB034025",
+                  "Wasn't connected or writes paused, so added to outstanding puts only. Path: \(pathString)")
         }
     }
 
@@ -919,8 +933,8 @@ better performance
             // `onCompleteBlock:` may invoke `rerunTransactionsForPath:` and
             // enqueue new writes. We defer calling it until we have finished
             // enumerating all existing writes.
-            outstandingPut.onComplete?.resume(returning: (kFTransactionDisconnect,
-                                      "Client was disconnected while running a transaction"))
+            outstandingPut.onComplete?(kFTransactionDisconnect,
+                                       "Client was disconnected while running a transaction")
             outstandingPuts.removeValue(forKey: index)
         }
     }
@@ -1071,7 +1085,7 @@ better performance
         let keys = outstandingPuts.keys.sorted()
         for key in keys {
             guard let put = outstandingPuts[key] else { continue }
-            put.onComplete?.resume(returning: (kFErrorWriteCanceled, nil))
+            put.onComplete?(kFErrorWriteCanceled, nil)
         }
         for onDisconnect in onDisconnectQueue {
             onDisconnect.onComplete(kFErrorWriteCanceled, nil)
@@ -1082,7 +1096,7 @@ better performance
 
     private func ackPuts() {
         for put in putsToAck {
-            put.continuation.resume(returning: (put.status, put.errorReason))
+            put.onComplete(put.status, put.errorReason)
         }
         putsToAck.removeAll()
     }

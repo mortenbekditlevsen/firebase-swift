@@ -5,9 +5,11 @@
     "firestore": { "host": "127.0.0.1", "port": 8080 },
     "database": { "host": "127.0.0.1", "port": 9000 },
     "storage": { "host": "127.0.0.1", "port": 9199 },
+    "functions": { "host": "127.0.0.1", "port": 5001 },
     "ui": { "enabled": false }
   },
   "firestore": { "rules": "Tests/Emulator/firestore.rules" },
   "database": { "rules": "Tests/Emulator/database.rules.json" },
-  "storage": { "rules": "Tests/Emulator/storage.rules" }
+  "storage": { "rules": "Tests/Emulator/storage.rules" },
+  "functions": { "source": "Tests/Emulator/functions" }
 }

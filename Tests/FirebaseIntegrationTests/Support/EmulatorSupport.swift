@@ -16,8 +16,12 @@ import FirebaseAuth
 import FirebaseCore
 import FirebaseDatabase
 import FirebaseFirestore
+import FirebaseFunctions
 import FirebaseStorage
 import Foundation
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
 import Testing
 
 /// Emulator addresses, from the environment variables `firebase emulators:exec` sets.
@@ -28,6 +32,8 @@ enum Emulators {
   static let database = address(from: "FIREBASE_DATABASE_EMULATOR_HOST")
   static let firestore = address(from: "FIRESTORE_EMULATOR_HOST")
   static let storage = address(from: "FIREBASE_STORAGE_EMULATOR_HOST")
+  /// `emulators:exec` sets no variable for Functions, so ask the emulator hub.
+  static let functions = address(from: "FUNCTIONS_EMULATOR_HOST") ?? hubAddress(of: "functions")
 
   struct Address {
     let host: String
@@ -40,6 +46,26 @@ enum Emulators {
           let port = Int(value[value.index(after: colon)...]) else { return nil }
     return Address(host: String(value[..<colon]), port: port)
   }
+
+  /// Looks `emulator` up in the hub's `/emulators` listing, which maps each
+  /// running emulator's name to its `host` and `port`.
+  private static func hubAddress(of emulator: String) -> Address? {
+    guard let hub = address(from: "FIREBASE_EMULATOR_HUB"),
+          let url = URL(string: "http://\(hub.host):\(hub.port)/emulators") else { return nil }
+    let listing = Locked<Data?>(nil)
+    let done = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: url) { data, _, _ in
+      listing.withLock { $0 = data }
+      done.signal()
+    }.resume()
+    guard done.wait(timeout: .now() + 10) == .success,
+          let data = listing.withLock({ $0 }),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let info = json[emulator] as? [String: Any],
+          let host = info["host"] as? String,
+          let port = info["port"] as? Int else { return nil }
+    return Address(host: host, port: port)
+  }
 }
 
 /// A fresh app with Auth wired to the emulator, so tests don't share state.
@@ -48,7 +74,9 @@ struct EmulatorApp {
   let app: FirebaseApp
   let auth: Auth
 
-  init() throws {
+  /// - Parameter name: Apps with the same name share Auth's stored user,
+  ///   so a second one acts like the app relaunching.
+  init(name: String = "integration-\(UUID().uuidString)") throws {
     let authAddress = try #require(Emulators.auth)
     let options = FirebaseApp.Options(
       projectID: Emulators.projectID,
@@ -57,7 +85,7 @@ struct EmulatorApp {
       clientID: nil,
       storageBucket: "\(Emulators.projectID).appspot.com"
     )
-    app = FirebaseApp(options: options, name: "integration-\(UUID().uuidString)")
+    app = FirebaseApp(options: options, name: name)
 
     // Auth must exist before the other services: they pick up `app.auth`
     // when they're created.
@@ -91,6 +119,13 @@ struct EmulatorApp {
     let storage = Storage.storage(app: app)
     storage.useEmulator(withHost: address.host, port: address.port)
     return storage
+  }
+
+  func functions() throws -> Functions {
+    let address = try #require(Emulators.functions)
+    let functions = Functions.functions(app: app)
+    functions.useEmulator(withHost: address.host, port: address.port)
+    return functions
   }
 }
 

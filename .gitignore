@@ -5,3 +5,4 @@
 .build-linux/
 .build-linux-clean/
 *-debug.log
+node_modules/

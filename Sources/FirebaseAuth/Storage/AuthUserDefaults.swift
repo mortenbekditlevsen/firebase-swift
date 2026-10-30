@@ -13,8 +13,14 @@
 // limitations under the License.
 
 import Foundation
+import Synchronization
 
 private let kPersistentDomainNamePrefix = "com.google.Firebase.Auth."
+
+/// Serializes the read-modify-write of persistent domains. Every Auth with
+/// the same app ID shares a domain, and each Auth only locks itself, so
+/// unlocked updates from two apps could undo each other.
+private let persistentDomainLock = Mutex(())
 
 /** @class AuthUserDefaults
     @brief The utility class to storage data in NSUserDefaults.
@@ -40,24 +46,25 @@ class AuthUserDefaults: AuthStorage {
   }
 
   func data(forKey key: String) throws -> Data? {
-    guard let allData = storage.persistentDomain(forName: persistentDomainName)
-    else { return nil }
-    if let data = allData[key] as? Data {
-      return data
+    persistentDomainLock.withLock { _ in
+      storage.persistentDomain(forName: persistentDomainName)?[key] as? Data
     }
-    return nil
   }
 
   func setData(_ data: Data, forKey key: String) throws {
-    var allData = storage.persistentDomain(forName: persistentDomainName) ?? [:]
-    allData[key] = data
-    storage.setPersistentDomain(allData, forName: persistentDomainName)
+    persistentDomainLock.withLock { _ in
+      var allData = storage.persistentDomain(forName: persistentDomainName) ?? [:]
+      allData[key] = data
+      storage.setPersistentDomain(allData, forName: persistentDomainName)
+    }
   }
 
   func removeData(forKey key: String) throws {
-    guard var allData = storage.persistentDomain(forName: persistentDomainName) else { return }
-    allData.removeValue(forKey: key)
-    storage.setPersistentDomain(allData, forName: persistentDomainName)
+    persistentDomainLock.withLock { _ in
+      guard var allData = storage.persistentDomain(forName: persistentDomainName) else { return }
+      allData.removeValue(forKey: key)
+      storage.setPersistentDomain(allData, forName: persistentDomainName)
+    }
   }
 
   /** @fn clear
@@ -65,6 +72,8 @@ class AuthUserDefaults: AuthStorage {
       @remarks This method is only supposed to be called from tests.
    */
   func clear() {
-    storage.setPersistentDomain([:], forName: persistentDomainName)
+    persistentDomainLock.withLock { _ in
+      storage.setPersistentDomain([:], forName: persistentDomainName)
+    }
   }
 }

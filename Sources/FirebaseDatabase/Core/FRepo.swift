@@ -266,10 +266,7 @@ class FRepo: FPersistentConnectionDelegate {
         self.ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
         defer {
             let affectedPath = abortTransactionsAtPath(path, error: kFTransactionSet)
-            // XXX TODO
-            Task {
-                await rerunTransactionsForPath(affectedPath)
-            }
+            rerunTransactionsForPath(affectedPath)
         }
         let statusOk = status == kFWPResponseForActionStatusOk
         if !statusOk {
@@ -296,11 +293,11 @@ class FRepo: FPersistentConnectionDelegate {
             self.warnIfWriteFailedAtPath(path, status: status, message: "updateChildValues:")
             self.ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
             
-            await nodes.enumerateWrites { @DatabaseActor childPath, node, stop in
+            nodes.enumerateWrites { childPath, node, stop in
                 let pathFromRoot = path.child(childPath)
                 FFLog("I-RDB038005", "Cancelling transactions at path: \(pathFromRoot)")
                 let affectedPath = self.abortTransactionsAtPath(pathFromRoot, error: kFTransactionSet)
-                await self.rerunTransactionsForPath(affectedPath)
+                self.rerunTransactionsForPath(affectedPath)
             }
             let statusOk = status == kFWPResponseForActionStatusOk
             if !statusOk {
@@ -490,10 +487,7 @@ class FRepo: FPersistentConnectionDelegate {
             let success = status == kFWPResponseForActionStatusOk
             let clearEvents = serverSyncTree.ackUserWriteWithWriteId(writeId, revert: !success, persist: true, clock: serverClock)
             if !clearEvents.isEmpty {
-                // XXX TODO
-                Task {
-                    await rerunTransactionsForPath(path)
-                }
+                rerunTransactionsForPath(path)
             }
             eventRaiser.raiseEvents(clearEvents)
         }
@@ -537,12 +531,7 @@ class FRepo: FPersistentConnectionDelegate {
         if !events.isEmpty {
             // Since we have a listener outstanding for each transaction, receiving
             // any events is a proxy for some change having occurred.
-
-            // XXX TODO
-            Task {
-                await rerunTransactionsForPath(path)
-            }
-            
+            rerunTransactionsForPath(path)
         }
         eventRaiser.raiseEvents(events)
 
@@ -564,11 +553,7 @@ class FRepo: FPersistentConnectionDelegate {
         if !events.isEmpty {
             // Since we have a listener outstanding for each transaction, receiving
             // any events is a proxy for some change having occurred.
-
-            // XXX TODO
-            Task {
-                await rerunTransactionsForPath(path)
-            }
+            rerunTransactionsForPath(path)
         }
         eventRaiser.raiseEvents(events)
     }
@@ -653,10 +638,7 @@ class FRepo: FPersistentConnectionDelegate {
                                 serverValues:serverValues)
             events.append(contentsOf: serverSyncTree.applyServerOverwriteAtPath(path, newData: resolved))
             let affectedPath = abortTransactionsAtPath(path, error: kFTransactionSet)
-            // XXX TODO
-            Task {
-                await rerunTransactionsForPath(affectedPath)
-            }
+            rerunTransactionsForPath(affectedPath)
         }
 
         self.onDisconnect = FSparseSnapshotTree()
@@ -749,9 +731,7 @@ offline for more details.
 
             let events = serverSyncTree.applyUserOverwriteAtPath(path, newData: newVal, writeId: currentWriteId, isVisible: transaction.applyLocally)
             eventRaiser.raiseEvents(events)
-            Task { // XXX TODO
-                await sendAllReadyTransactions()
-            }
+            sendAllReadyTransactions()
         } catch {
             // Abort the transaction
             unwatcher()
@@ -775,14 +755,14 @@ offline for more details.
      * Internally, calls itself recursively with a particular transactionQueueTree
      * node to recurse through the tree
      */
-    private func sendAllReadyTransactions() async {
+    private func sendAllReadyTransactions() {
         let node = self.transactionQueueTree
 
         pruneCompletedTransactionsBelowNode(node)
-        await sendReadyTransactionsForTree(node)
+        sendReadyTransactionsForTree(node)
     }
 
-    private func sendReadyTransactionsForTree(_ node: FTree<[FTupleTransaction]>) async {
+    private func sendReadyTransactionsForTree(_ node: FTree<[FTupleTransaction]>) {
         if node.getValue() != nil {
             let queue = buildTransactionQueueAtNode(node)
             assert(!queue.isEmpty, "Sending zero length transaction queue")
@@ -790,11 +770,11 @@ offline for more details.
                 transaction.status != .run
             }
             if notRunIndex == nil {
-                await sendTransactionQueue(queue, atPath: node.path)
+                sendTransactionQueue(queue, atPath: node.path)
             }
         } else if node.hasChildren {
-            await node.forEachChild { child in
-                await sendReadyTransactionsForTree(child)
+            node.forEachChild { child in
+                sendReadyTransactionsForTree(child)
             }
         }
     }
@@ -803,7 +783,7 @@ offline for more details.
      * Given a list of run transactions, send them to the server and then handle the
      * result (success or failure).
      */
-    private func sendTransactionQueue(_ queue: [FTupleTransaction], atPath path: FPath) async {
+    private func sendTransactionQueue(_ queue: [FTupleTransaction], atPath path: FPath) {
         // Mark transactions as sent and bump the retry count
         let writeIdsToExclude: [Int] = queue.map(\.currentWriteId)
         let latestState = latestStateAtPath(path, excludeWriteIds: writeIdsToExclude)
@@ -817,81 +797,88 @@ offline for more details.
             let relativePath = FPath.relativePath(from: path, to: transaction.path)
             // If we've gotten to this point, the output snapshot must be defined.
             snapToSend = snapToSend.updateChild(relativePath, withNewChild: transaction.currentOutputSnapshotRaw)
-            let dataToSend = snapToSend.val(forExport: true)
-            let pathToSend = path.description
-            latestHash = hijackHash ? "badhash" : latestHash
+        }
 
-            // Send the put
-            let (status, errorReason) = await connection.putData(dataToSend, forPath: pathToSend, withHash: latestHash)
-            
-            FFLog("I-RDB038022", "Transaction put response: \(pathToSend) : \(status)")
-            
-            var events: [FEvent] = []
-            if status == kFWPResponseForActionStatusOk {
-                // Queue up the callbacks and fire them after cleaning up all of
-                // our transaction state, since the callback could trigger more
-                // transactions or sets.
-                var callbacks: [@Sendable () -> Void] = []
-                for transaction in queue {
-                    transaction.status = .completed
-                    events.append(contentsOf: self.serverSyncTree.ackUserWriteWithWriteId(transaction.currentWriteId, revert: false, persist: false, clock: self.serverClock))
-                    if let onComplete = transaction.onComplete  {
-                        // We never unset the output snapshot, and given that this
-                        // transaction is complete, it should be set
-                        let node = transaction.currentOutputSnapshotResolved
-                        let indexedNode = FIndexedNode.indexedNode(node: node)
-                        let ref = DatabaseReference(repo: self, path: transaction.path)
-                        let snapshot = DataSnapshot(ref: ref, indexedNode: indexedNode)
-                        callbacks.append {
-                            onComplete(nil, true, snapshot)
-                        }
+        let dataToSend = snapToSend.val(forExport: true)
+        let pathToSend = path.description
+        latestHash = hijackHash ? "badhash" : latestHash
+
+        // Send the put. It must be queued before anything else runs on the
+        // actor, while `latestHash` still matches the data the outputs came from.
+        connection.putData(dataToSend, forPath: pathToSend, withHash: latestHash) { [self] status, errorReason in
+            handleTransactionPutResponse(queue, atPath: path, pathToSend: pathToSend, status: status, errorReason: errorReason)
+        }
+    }
+
+    private func handleTransactionPutResponse(_ queue: [FTupleTransaction], atPath path: FPath, pathToSend: String, status: String, errorReason: String?) {
+        FFLog("I-RDB038022", "Transaction put response: \(pathToSend) : \(status)")
+
+        var events: [FEvent] = []
+        if status == kFWPResponseForActionStatusOk {
+            // Queue up the callbacks and fire them after cleaning up all of
+            // our transaction state, since the callback could trigger more
+            // transactions or sets.
+            var callbacks: [@Sendable () -> Void] = []
+            for transaction in queue {
+                transaction.status = .completed
+                events.append(contentsOf: self.serverSyncTree.ackUserWriteWithWriteId(transaction.currentWriteId, revert: false, persist: false, clock: self.serverClock))
+                if let onComplete = transaction.onComplete  {
+                    // We never unset the output snapshot, and given that this
+                    // transaction is complete, it should be set
+                    let node = transaction.currentOutputSnapshotResolved
+                    let indexedNode = FIndexedNode.indexedNode(node: node)
+                    let ref = DatabaseReference(repo: self, path: transaction.path)
+                    let snapshot = DataSnapshot(ref: ref, indexedNode: indexedNode)
+                    callbacks.append {
+                        onComplete(nil, true, snapshot)
                     }
-                    transaction.unwatcher()
                 }
+                transaction.unwatcher()
+            }
 
-                // Now remove the completed transactions.
-                self.pruneCompletedTransactionsBelowNode(self.transactionQueueTree.subTree(path))
-                // There may be pending transactions that we can now send.
-                await self.sendAllReadyTransactions()
-                
-                // Finally, trigger onComplete callbacks
-//                self.eventRaiser.raiseCallbacks(callbacks)
-                for callback in callbacks {
-                    callback()
+            // Now remove the completed transactions.
+            self.pruneCompletedTransactionsBelowNode(self.transactionQueueTree.subTree(path))
+            // There may be pending transactions that we can now send.
+            self.sendAllReadyTransactions()
+
+            // Finally, trigger onComplete callbacks
+//            self.eventRaiser.raiseCallbacks(callbacks)
+            for callback in callbacks {
+                callback()
+            }
+        } else {
+            // transactions are no longer sent. Update their status
+            // appropriately.
+            if status == kFWPResponseForActionStatusDataStale {
+                for transaction in queue {
+                    if transaction.status == .sentNeedsAbort {
+                        transaction.status = .needsAbort
+                    } else {
+                        transaction.status = .run
+                    }
                 }
             } else {
-                // transactions are no longer sent. Update their status
-                // appropriately.
-                if status == kFWPResponseForActionStatusDataStale {
-                    for transaction in queue {
-                        if transaction.status == .sentNeedsAbort {
-                            transaction.status = .needsAbort
-                        } else {
-                            transaction.status = .run
-                        }
-                    }
-                } else {
-                    FFWarn("I-RDB038023",
-                           "runTransactionBlock: at \(path) failed: \(status)")
-                    for transaction in queue {
-                        transaction.status = .needsAbort
-                        transaction.setAbortStatus(abortStatus: status, reason: errorReason)
-                    }
-                    
+                FFWarn("I-RDB038023",
+                       "runTransactionBlock: at \(path) failed: \(status)")
+                for transaction in queue {
+                    transaction.status = .needsAbort
+                    transaction.setAbortStatus(abortStatus: status, reason: errorReason)
                 }
             }
-            await self.rerunTransactionsForPath(path)
-            self.eventRaiser.raiseEvents(events)
         }
+        self.rerunTransactionsForPath(path)
+        self.eventRaiser.raiseEvents(events)
     }
 
     /**
      * Finds all transactions dependent on the data at changed Path and reruns them.
      *
-     * Should be called any time cached data changes.
+     * Should be called any time cached data changes, before anything else
+     * runs on the actor, like the sends: a send in between would pair outputs
+     * computed from the old data with the hash of the new data, which the
+     * server accepts.
      */
-
-    private func rerunTransactionsForPath(_ changedPath: FPath) async {
+    private func rerunTransactionsForPath(_ changedPath: FPath) {
         // For the common case that there are no transactions going on, skip all
         // this!
         guard !transactionQueueTree.isEmpty else {
@@ -901,14 +888,14 @@ offline for more details.
         let rootMostTransactionNode = getAncestorTransactionNodeForPath(changedPath)
         let path = rootMostTransactionNode.path
         let queue = buildTransactionQueueAtNode(rootMostTransactionNode)
-        await rerunTransactionQueue(queue, atPath: path)
+        rerunTransactionQueue(queue, atPath: path)
     }
 
     /**
      * Does all the work of rerunning transactions (as well as cleans up aborted
      * transactions and whatnot).
      */
-    private func rerunTransactionQueue(_ queue: [FTupleTransaction], atPath path: FPath) async {
+    private func rerunTransactionQueue(_ queue: [FTupleTransaction], atPath path: FPath) {
         guard !queue.isEmpty else { return }
 
         // Queue up the callbacks and fire them after cleaning up all of our
@@ -1008,7 +995,7 @@ offline for more details.
         }
 
         // Try to send the transaction result to the server
-        await sendAllReadyTransactions()
+        sendAllReadyTransactions()
     }
 
     

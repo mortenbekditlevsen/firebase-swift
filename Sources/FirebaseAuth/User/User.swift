@@ -1158,6 +1158,17 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
         get { _auth.withLock { $0.value } }
         set { _auth.withLock { $0.value = newValue } }
     }
+
+    /// Points the user's requests, including token refreshes, at
+    /// `configuration`. Upstream's `auth` setter does this; it can't here,
+    /// because Auth calls it while holding the lock its configuration needs.
+    /// A user decoded from storage can't refresh its token until this is set.
+    func useRequestConfiguration(_ configuration: AuthRequestConfiguration) {
+        _userData.withLock {
+            $0.requestConfiguration = configuration
+            $0.tokenService.requestConfiguration = configuration
+        }
+    }
     
     // MARK: Private functions
     
@@ -1613,10 +1624,10 @@ struct UserData: Codable, Equatable, Sendable {
         try container.encodeIfPresent(displayName, forKey: .displayName)
         try container.encode(metadata, forKey: .metadata)
         try container.encodeIfPresent(tenantID, forKey: .tenantID)
-//        if let auth {
-//            try container.encode(auth.requestConfiguration.apiKey, forKey: .APIKey)
-//            try container.encode(auth.requestConfiguration.appID, forKey: .appID)
-//        }
+        // Upstream encodes these from `auth`, but reading Auth's configuration
+        // here would retake the lock Auth holds while saving the user.
+        try container.encode(requestConfiguration.apiKey, forKey: .APIKey)
+        try container.encode(requestConfiguration.appID, forKey: .appID)
         try container.encode(tokenService, forKey: .tokenService)
 #if os(iOS)
         try container.encode(multiFactor, forKey: .multiFactor)
@@ -1628,11 +1639,10 @@ struct UserData: Codable, Equatable, Sendable {
         
         self.uid = try container.decode(String.self, forKey: .uid)
         
-        let apiKey = try container.decode(String.self, forKey: .APIKey)
-        let appID = try container.decode(
-            String.self,
-            forKey: .appID
-        )
+        // Users saved before these were encoded lack them; Auth replaces the
+        // configuration when it restores a user anyway.
+        let apiKey = try container.decodeIfPresent(String.self, forKey: .APIKey) ?? ""
+        let appID = try container.decodeIfPresent(String.self, forKey: .appID) ?? ""
         self.tokenService = try container.decode(SecureTokenService.self, forKey: .tokenService)
         self.isAnonymous = try container.decode(Bool.self, forKey: .isAnonymous)
         self.hasEmailPasswordCredential = try container.decode(Bool.self, forKey: .hasEmailPasswordCredential)
