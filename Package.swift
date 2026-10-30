@@ -275,6 +275,7 @@ let package = Package(
                 "FirebaseAuth",
                 "FirebaseDatabase",
                 "FirebaseFirestore",
+                "FirebaseFunctions",
                 "FirebaseStorage",
             ],
             path: "Tests/FirebaseIntegrationTests",

@@ -40,6 +40,23 @@ struct AuthIntegrationTests {
     #expect(signedIn.uid == created.uid)
   }
 
+  @Test func signedInUsersSurviveARelaunch() async throws {
+    let name = "relaunch-\(UUID().uuidString)"
+    // The apps are kept alive, as configured apps are: Auth holds them weakly.
+    let first = try EmulatorApp(name: name)
+    let user = try await first.auth.signInAnonymously().user
+
+    // A new app with the same name reads the stored user, like a relaunch.
+    let relaunched = try EmulatorApp(name: name)
+    let restored = try #require(relaunched.auth.currentUser)
+    #expect(restored.uid == user.uid)
+    #expect(try await restored.getIDToken() != nil)
+
+    try relaunched.auth.signOut()
+    let afterSignOut = try EmulatorApp(name: name)
+    #expect(afterSignOut.auth.currentUser == nil)
+  }
+
   @Test func creatingADuplicateAccountFails() async throws {
     let auth = try EmulatorApp().auth
     let email = newEmail()

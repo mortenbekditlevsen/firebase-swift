@@ -386,12 +386,26 @@ public final class Functions: Sendable {
       context: context
     )
 
+    let rawData: Data
+    let response: URLResponse
     do {
-        let (rawData, _) = try await URLSession.shared.data(for: fetcher)
-      return try callableResult(fromResponseData: rawData, endpointURL: url)
+      (rawData, response) = try await URLSession.shared.data(for: fetcher)
     } catch {
-      throw processedError(fromResponseError: error, endpointURL: url)
+      throw processedError(fromResponseError: error)
     }
+    // URLSession doesn't fail on HTTP errors; GTMSessionFetcher, which
+    // upstream uses, fails on any status of 300 or above.
+    if let response = response as? HTTPURLResponse, response.statusCode >= 300,
+       let error = FunctionsError(
+         httpStatusCode: response.statusCode,
+         region: region,
+         url: url,
+         body: rawData,
+         serializer: serializer
+       ) {
+      throw error
+    }
+    return try callableResult(fromResponseData: rawData, endpointURL: url)
   }
 
   @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
@@ -546,11 +560,7 @@ public final class Functions: Sendable {
                                                timeout: TimeInterval,
                                                context: FunctionsContext) throws
     -> URLRequest {
-    var urlRequest = URLRequest(
-      url: url,
-      cachePolicy: .useProtocolCachePolicy,
-      timeoutInterval: timeout
-    )
+    var urlRequest = makeURLRequest(url: url, timeout: timeout)
 
     let data = data ?? NSNull()
     let encoded = try serializer.encode(data)
@@ -589,22 +599,32 @@ public final class Functions: Sendable {
     return urlRequest
   }
 
+  private func makeURLRequest(url: URL, timeout: TimeInterval) -> URLRequest {
+    // swift-corelibs-foundation ignores a timeout passed to the initializer,
+    // and truncates the property to whole seconds, timing out at once when
+    // that gives 0. Round up so a timeout never fires early.
+    var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy)
+    #if canImport(FoundationNetworking)
+      request.timeoutInterval = timeout.rounded(.up)
+    #else
+      request.timeoutInterval = timeout
+    #endif
+    return request
+  }
+
   private func makeFetcher(url: URL,
                            data: Any?,
                            options: HTTPSCallableOptions?,
                            timeout: TimeInterval,
                            context: FunctionsContext) throws -> URLRequest {
-    var request = URLRequest(
-      url: url,
-      cachePolicy: .useProtocolCachePolicy,
-      timeoutInterval: timeout
-    )
-      
+    var request = makeURLRequest(url: url, timeout: timeout)
+
     let data = data ?? NSNull()
     let encoded = try serializer.encode(data)
     let body = ["data": encoded]
     let payload = try JSONSerialization.data(withJSONObject: body)
     request.httpBody = payload
+    request.httpMethod = "POST"
 
     // Set the headers.
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -631,32 +651,15 @@ public final class Functions: Sendable {
       )
     }
 
-    // Override normal security rules if this is a local test.
-    if emulatorOrigin != nil {
-//      fetcher.allowLocalhostRequest = true
-//      fetcher.allowedInsecureSchemes = ["http"]
-    }
-
     return request
   }
 
-  private func processedError(fromResponseError error: any Error,
-                              endpointURL url: URL) -> any Error {
-    let error = error as NSError
-      /// XXX TODO: Examine domain of error
-    let localError: (any Error)? = if error.domain == "kGTMSessionFetcherStatusDomain" {
-      FunctionsError(
-        httpStatusCode: error.code,
-        region: region,
-        url: url,
-        body: error.userInfo["data"] as? Data,
-        serializer: serializer
-      )
-    } else if error.domain == NSURLErrorDomain, error.code == NSURLErrorTimedOut {
-      FunctionsError(.deadlineExceeded)
-    } else { nil }
-
-    return localError ?? error
+  /// Maps transport errors; HTTP errors are handled in `callFunction`.
+  private func processedError(fromResponseError error: any Error) -> any Error {
+    if let error = error as? URLError, error.code == .timedOut {
+      return FunctionsError(.deadlineExceeded)
+    }
+    return error
   }
 
   private func callableResult(fromResponseData data: Data,

@@ -142,7 +142,13 @@ extension Auth: AuthInterop {
 //    let provider = ComponentType<AuthProvider>.instance(for: AuthProvider.self,
 //                                                        in: app.container)
 //    return provider.auth()
-      let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
+      #if os(Linux)
+        // No keychain. Files under XDG_DATA_HOME rather than corelibs'
+        // UserDefaults plist in ~/.config, which isn't meant for credentials.
+        let auth = Auth(app: app, keychainStorageProvider: AuthFileStorage.self)
+      #else
+        let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
+      #endif
       app.auth = auth
 
       return auth
@@ -1168,6 +1174,9 @@ extension Auth: AuthInterop {
     let formattedHost = host.contains(":") ? "[\(host)]" : host
     _state.withLock { state in
       state.requestConfiguration.emulatorHostAndPort = "\(formattedHost):\(port)"
+      // The configuration is a value, so a user restored at launch kept a copy
+      // without the emulator.
+      state.currentUser?.useRequestConfiguration(state.requestConfiguration)
       #if os(iOS)
         state.settings?.appVerificationDisabledForTesting = true
       #endif
@@ -1378,6 +1387,7 @@ extension Auth: AuthInterop {
       let decoder = JSONDecoder()
       user = try decoder.decode(User.self, from: encodedUserData)
     }
+    user?.useRequestConfiguration(state.requestConfiguration)
     user?.auth = self
     return user
   }
