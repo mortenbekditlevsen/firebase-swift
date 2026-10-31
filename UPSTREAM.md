@@ -40,7 +40,7 @@ same have identical upstream files.
 | FirebaseAuth | `Sources/FirebaseAuth` | `FirebaseAuth/Sources/Swift` | **11.0.0** | 11.0.0 | `a5c253d1b440` (2024-07-26) | 0.506 (±0.002) | low |
 | FirebaseFunctions | `Sources/FirebaseFunctions` | `FirebaseFunctions/Sources` | **13.1.1** | 13.1.0 – main | `b82cdca747fc` (2026-10-30) | 0.849 (±0.001) | low |
 | FirebaseStorage | `Sources/FirebaseStorage` | `FirebaseStorage/Sources` | **13.1.1** | 12.14.0 – 12.16.0 | `9ab4a7e6e5d6` (2026-07-07) | 0.568 (±0.003) | medium |
-| FirebaseDatabase | `Sources/FirebaseDatabase` | `FirebaseDatabase/Sources` | **11.2.0** | 11.9.0 – 12.6.0 | `087bb95235f6` (2025-11-04) | 0.343 (±0.000) | low |
+| FirebaseDatabase | `Sources/FirebaseDatabase` | `FirebaseDatabase/Sources` | **13.1.1** | 11.9.0 – 12.6.0 | `087bb95235f6` (2025-11-04) | 0.343 (±0.000) | low |
 <!-- baselines:end -->
 
 ## Reading the results
@@ -62,20 +62,22 @@ from 12.16.0 and have since been synced; the checklists in
 Storage scores low overall because its networking was rewritten:
 `SessionFetcher` replaces GTMSessionFetcher, and has no upstream counterpart.
 
-**FirebaseAuth: mixed; triage from 11.0.0.** Upstream Auth became Swift in
-11.0.0, and the port's core (`Auth`, `User`, `SecureTokenService`,
-`AuthBackend`, providers, multi-factor) is closest to 11.0–11.5. Most RPC
-requests are closest to 12.14 or later: they were ported from upstream `main`.
+**FirebaseAuth: core synced to 13.1.1; iOS-only and multi-factor work pending.**
+Upstream Auth became Swift in 11.0.0. The port's core (`Auth`, `User`,
+`SecureTokenService`, `AuthBackend`, providers) was ported from 11.0–11.5 and
+its RPC requests from upstream `main`, so *Synced to* stays at 11.0.0 while
+work remains. Every upstream change since then is triaged in
+[Docs/upstream/FirebaseAuth.md](Docs/upstream/FirebaseAuth.md): the core
+fixes are ported, and the open items are iOS-only code (phone auth, APNs,
+reCAPTCHA, the OAuth web UI, Game Center), multi-factor auth (which is
+iOS-only, phone-only and without TOTP here), and the `AuthProviderID` enum.
 The RPC types were rewritten as `Codable`, so their scores are low and say
-little on their own. Run with `--files --module Auth` for the per-file view;
-until those files are reconciled, upstream Auth changes since 11.0.0 need
-triage.
+little on their own; `--files --module Auth` gives the per-file view.
 
-**FirebaseDatabase: about 11.2–11.8.1, low confidence; triage from 11.2.0.**
-Upstream's Objective-C Database rarely changes, so most files are the same in
-every release and the overall score is flat; ignore its *Closest releases*. The
-files that do differ between releases mostly point to 11.2–11.8.1
-(`FWebSocketConnection`, `FStringUtilities`).
+**FirebaseDatabase: synced to 13.1.1.** It was ported from about 11.2–11.8.1
+(low confidence: upstream's Objective-C Database rarely changes, so most files
+are the same in every release), and every upstream change since 11.2.0 has
+been triaged. Its *Closest releases* stay meaningless for the same reason.
 
 ## The version the SDK reports
 

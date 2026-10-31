@@ -400,6 +400,6 @@ struct RelativeDate: Decodable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let relativeDate = try container.decode(String.self)
-        self.date = Date(timeIntervalSinceNow: Double(relativeDate) ?? 0)
+        self.date = AuthTokenLifetime.expirationDate(expiresIn: relativeDate)
     }
 }

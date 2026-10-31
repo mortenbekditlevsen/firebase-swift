@@ -19,17 +19,16 @@ import Foundation
       @brief A convenience factory method for constructing a @c FIRUserInfo instance from data
           returned by the getAccountInfo endpoint.
       @param providerUserInfo Data returned by the getAccountInfo endpoint.
-      @return A new instance of @c FIRUserInfo using data from the getAccountInfo endpoint.
+      @return A new instance of @c FIRUserInfo using data from the getAccountInfo endpoint, or
+          `nil` if the response entry has no `providerID`.
    */
   public static func userInfo(withGetAccountInfoResponseProviderUserInfo providerUserInfo: GetAccountInfoResponseProviderUserInfo)
-    -> UserInfoImpl {
-    guard let providerID = providerUserInfo.providerID,
-          let uid = providerUserInfo.federatedID else {
-      // This was a crash in ObjC implementation. Should providerID and federatedID be not nullable?
-      fatalError("Missing providerID or federatedID from GetAccountInfoResponseProviderUserInfo")
+    -> UserInfoImpl? {
+    guard let providerID = providerUserInfo.providerID else {
+      return nil
     }
     return UserInfoImpl(withProviderID: providerID,
-                        userID: uid,
+                        userID: providerUserInfo.federatedID ?? "",
                         displayName: providerUserInfo.displayName,
                         photoURL: providerUserInfo.photoURL,
                         email: providerUserInfo.email,

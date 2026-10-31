@@ -53,10 +53,9 @@ import Foundation
    */
   public var androidInstallIfNotAvailable: Bool = false
 
-  /** @property dynamicLinkDomain
-      @brief The Firebase Dynamic Link domain used for out of band code flow.
-   */
-  public var dynamicLinkDomain: String?
+  /// The out of band custom domain for handling code in app: a Firebase Hosting link domain.
+  /// (It replaces `dynamicLinkDomain`; Firebase Dynamic Links has shut down.)
+  public var linkDomain: String?
 
   /** @fn
       @brief Sets the iOS bundle Id.

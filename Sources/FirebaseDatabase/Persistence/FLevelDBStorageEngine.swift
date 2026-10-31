@@ -515,16 +515,28 @@ class FLevelDBStorageEngine: FStorageEngine {
         } catch {
             fatalError("Failed to create persistence directory. Error: \(error) Path: \(path.path)")
         }
+        #if canImport(Darwin)
+            // Readable after the first unlock, so the database keeps working in
+            // the background. No effect on simulators.
+            do {
+                try FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                    ofItemAtPath: path.path)
+            } catch {
+                FFWarn("I-RDB076036",
+                       "Failed to set file protection attribute on persistence directory: \(error)")
+            }
+        #endif
         guard markAsDoNotBackup else { return }
         do {
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             try path.setResourceValues(values)
         } catch {
+            // Not worth crashing over: the data is only a cache.
             FFWarn(
                 "I-RDB076035",
                 "Failed to mark firebase database folder as do not backup: \(error)")
-            fatalError("Failed to mark folder \(path.path) as do not backup")
         }
     }
 
