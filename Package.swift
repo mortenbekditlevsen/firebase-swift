@@ -37,10 +37,11 @@ let package = Package(
             url: "https://github.com/mortenbekditlevsen/leveldb.git",
             branch: "1.22.2-headerfix"
         ),
-        // The versions firebase-ios-sdk 13.1 pins. See Docs/UpstreamPatches.md.
+        // The versions firebase-ios-sdk 13.1 pins; abseil with a Linux build fix.
+        // See Docs/UpstreamPatches.md.
         .package(
-            url: "https://github.com/firebase/abseil-cpp-SwiftPM.git",
-            "0.20250512.1" ..< "0.20250513.0"
+            url: "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
+            branch: "linux-fixes-0.20250512.1"
         ),
         .package(url: "https://github.com/grpc/grpc-ios.git", "1.83.1" ..< "1.84.0"),
         .package(
