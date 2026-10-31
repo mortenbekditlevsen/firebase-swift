@@ -653,7 +653,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
             do {
                 response = try await AuthBackend.post(withRequest: request)
             } catch {
-                self.signOutIfTokenIsInvalid(withError: error)
+                await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
                 throw error
             }
             let additionalUserInfo = AdditionalUserInfo.userInfo(verifyAssertionResponse: response)
@@ -792,7 +792,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
             do {
                 response = try await AuthBackend.post(withRequest: request)
             } catch {
-                self.signOutIfTokenIsInvalid(withError: error)
+                await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
                 throw error
             }
             // We can't just use the provider info objects in FIRSetAccountInfoResponse
@@ -902,7 +902,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
         do {
             _ = try await AuthBackend.post(withRequest: request)
         } catch {
-            self.signOutIfTokenIsInvalid(withError: error)
+            await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
             throw error
         }
     }
@@ -1199,7 +1199,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
                 do {
                     response = try await AuthBackend.post(withRequest: getAccountInfoRequest)
                 } catch {
-                    self.signOutIfTokenIsInvalid(withError: error)
+                    await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
                     throw error
                 }
                 // Set the account to non-anonymous if there are any providers, even if
@@ -1245,7 +1245,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
                 do {
                     response = try await AuthBackend.post(withRequest: setAccountInfoRequest)
                 } catch {
-                    self.signOutIfTokenIsInvalid(withError: error)
+                    await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
                     throw error
                 }
                 if let idToken = response.idToken,
@@ -1297,7 +1297,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
             return accountInfoResponse.user
             
         } catch {
-            self.signOutIfTokenIsInvalid(withError: error)
+            await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
             throw error
         }
     }
@@ -1316,10 +1316,10 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
         var providerData: [String: UserInfoImpl] = [:]
         if let providerUserInfos = user.providerUserInfo {
             for providerUserInfo in providerUserInfos {
-                let userInfo = UserInfoImpl.userInfo(withGetAccountInfoResponseProviderUserInfo:
-                                                        providerUserInfo)
-                if let providerID = providerUserInfo.providerID {
-                    providerData[providerID] = userInfo
+                // Entries without a provider ID are skipped.
+                if let userInfo = UserInfoImpl.userInfo(withGetAccountInfoResponseProviderUserInfo:
+                                                            providerUserInfo) {
+                    providerData[userInfo.providerID] = userInfo
                 }
             }
         }
@@ -1529,7 +1529,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
       do {
           response = try await AuthBackend.post(withRequest: getAccountInfoRequest)
       } catch {
-          self.signOutIfTokenIsInvalid(withError: error)
+          await self.signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
           throw error
       }
       self.userdata.isAnonymous = false
@@ -1554,6 +1554,49 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
     }
   }
 
+  /// Handles an error from a backend request that sent this user's ID token.
+  ///
+  /// The backend returns `INVALID_ID_TOKEN` (`invalidUserToken`) when the ID token's `exp`
+  /// timestamp has passed and `TOKEN_EXPIRED` (`userTokenExpired`) when the account's
+  /// `valid_since` timestamp is newer than the token's issue time. Neither necessarily means
+  /// that the session has ended, so instead of signing out, force a token refresh to check. The
+  /// user stays signed in if the refresh succeeds or fails with a network error, and is signed
+  /// out if it fails otherwise. Other errors go to `signOutIfTokenIsInvalid(withError:)`.
+  func signOutIfSessionIsInvalid(afterIDTokenRequestError error: Error) async {
+    let code = (error as NSError).code
+    guard code == AuthErrorCode.invalidUserToken.rawValue ||
+      code == AuthErrorCode.userTokenExpired.rawValue else {
+      signOutIfTokenIsInvalid(withError: error)
+      return
+    }
+    // Skip the check if this user is no longer signed in.
+    guard auth?.currentUser === self else {
+      return
+    }
+    let refreshToken = userdata.tokenService.refreshToken
+    AuthLog.logNotice(code: "I-AUT000032",
+                      message: "ID token rejected by the backend. Refreshing it to check whether " +
+                        "the user is still signed in.")
+    do {
+      let (_, tokenUpdated) = try await fetchAccessToken(forcingRefresh: true)
+      if tokenUpdated {
+        try? updateKeychain()
+      }
+    } catch let refreshError {
+      // If the credentials were replaced, or another user signed in, while the refresh was in
+      // flight, the failure is about the old session, not the current one.
+      guard userdata.tokenService.refreshToken == refreshToken, auth?.currentUser === self else {
+        return
+      }
+      // A network error doesn't show whether the session has ended; the next refresh checks
+      // again.
+      if (refreshError as NSError).code == AuthErrorCode.networkError.rawValue {
+        return
+      }
+      signOutIfTokenIsInvalid(withError: error)
+    }
+  }
+
   /** @fn internalGetToken
       @brief Retrieves the Firebase authentication token, possibly refreshing it if it has expired.
       @param callback The block to invoke when the token is available. Invoked asynchronously on the
@@ -1563,8 +1606,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
   
     public func internalGetToken(forceRefresh: Bool = false) async throws -> String {
         do {
-            let (token, tokenUpdated) = try await userdata.tokenService.fetchAccessToken(forcingRefresh: forceRefresh)
-            print("internalGetToken: \(token) \(tokenUpdated)")
+            let (token, tokenUpdated) = try await fetchAccessToken(forcingRefresh: forceRefresh)
             if tokenUpdated {
                 try self.updateKeychain()
             }
@@ -1575,6 +1617,50 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
             throw error
         }
     }
+
+    /// Returns the access token, refreshing it if it's (nearly) expired or
+    /// `forceRefresh` is set. Concurrent refreshes share one request, as
+    /// upstream's `TokenRefreshCoalescer` does.
+    private func fetchAccessToken(forcingRefresh forceRefresh: Bool) async throws -> (String, Bool) {
+        let tokenService = userdata.tokenService
+        if !forceRefresh, tokenService.hasValidAccessToken() {
+            return (tokenService.accessToken, false)
+        }
+        let (id, task) = tokenRefresh.withLock { state in
+            if let pending = state.pending { return pending }
+            state.lastID += 1
+            let id = state.lastID
+            let task = Task { () async throws -> (String, Bool) in
+                // Refresh a copy, then store only its tokens: the user's other
+                // data can change meanwhile, and writing back the whole copy
+                // would undo those changes.
+                var refreshed = tokenService
+                let result = try await refreshed.fetchAccessToken(forcingRefresh: true)
+                self._userData.withLock { data in
+                    // Unless the user got a new token service meanwhile (e.g.
+                    // by re-authenticating), whose tokens are newer.
+                    guard data.tokenService.refreshToken == tokenService.refreshToken else { return }
+                    data.tokenService.accessToken = refreshed.accessToken
+                    data.tokenService.accessTokenExpirationDate = refreshed.accessTokenExpirationDate
+                    data.tokenService.refreshToken = refreshed.refreshToken
+                }
+                return result
+            }
+            state.pending = (id, task)
+            return (id, task)
+        }
+        defer {
+            // Only clear our own refresh: a newer one may have started already.
+            tokenRefresh.withLock { state in
+                if state.pending?.id == id { state.pending = nil }
+            }
+        }
+        return try await task.value
+    }
+
+    /// The token refresh in flight, if any, which concurrent callers join.
+    private let tokenRefresh = Mutex<(lastID: UInt64, pending: (id: UInt64, task: Task<(String, Bool), Error>)?)>(
+        (lastID: 0, pending: nil))
 
   /** @fn updateKeychain:
       @brief Updates the keychain for user token or info changes.

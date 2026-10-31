@@ -104,10 +104,8 @@ private let kAndroidMinimumVersionKey = "androidMinimumVersion"
  */
 private let kCanHandleCodeInAppKey = "canHandleCodeInApp"
 
-/** @var kDynamicLinkDomainKey
-    @brief The key for the "dynamic link domain" value in the request.
- */
-private let kDynamicLinkDomainKey = "dynamicLinkDomain"
+/// The key for the "link domain" value in the request.
+private let kLinkDomainKey = "linkDomain"
 
 /** @var kPasswordResetRequestTypeValue
     @brief The value for the "PASSWORD_RESET" request type.
@@ -194,10 +192,8 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
    */
   public var handleCodeInApp: Bool
 
-  /** @property dynamicLinkDomain
-      @brief The Firebase Dynamic Link domain used for out of band code flow.
-   */
-  public var dynamicLinkDomain: String?
+  /// The Firebase Hosting domain used for out of band code flow.
+  public var linkDomain: String?
 
   /** @fn initWithRequestType:email:APIKey:
       @brief Designated initializer.
@@ -232,7 +228,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
     androidMinimumVersion = actionCodeSettings?.androidMinimumVersion
     androidInstallApp = actionCodeSettings?.androidInstallIfNotAvailable ?? false
     handleCodeInApp = actionCodeSettings?.handleCodeInApp ?? false
-    dynamicLinkDomain = actionCodeSettings?.dynamicLinkDomain
+    linkDomain = actionCodeSettings?.linkDomain
         self.requestConfiguration = requestConfiguration
   }
 
@@ -296,7 +292,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
     case androidMinimumVersion
     case androidInstallApp
     case canHandleCodeInApp
-    case dynamicLinkDomain
+    case linkDomain
     case tenantID = "tenantId"
   }
 
@@ -312,7 +308,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
     try c.encodeIfPresent(androidMinimumVersion, forKey: .androidMinimumVersion)
     if androidInstallApp { try c.encode(true, forKey: .androidInstallApp) }
     if handleCodeInApp { try c.encode(true, forKey: .canHandleCodeInApp) }
-    try c.encodeIfPresent(dynamicLinkDomain, forKey: .dynamicLinkDomain)
+    try c.encodeIfPresent(linkDomain, forKey: .linkDomain)
     try c.encodeIfPresent(tenantID, forKey: .tenantID)
   }
 }

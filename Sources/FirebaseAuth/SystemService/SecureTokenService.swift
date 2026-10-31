@@ -107,6 +107,15 @@ private let kFiveMinutes = 5 * 60.0
          refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
          accessToken = try container.decode(String.self, forKey: .accessToken)
          accessTokenExpirationDate = try container.decodeIfPresent(Date.self, forKey: .accessTokenExpirationDate)
+         // Earlier versions saved an expiration date for any token lifetime from the backend.
+         // Drop one that isn't finite or is too far ahead, so the token gets refreshed.
+         if let expirationDate = accessTokenExpirationDate,
+            !AuthTokenLifetime.isInRange(expirationDate: expirationDate) {
+           AuthLog.logWarning(code: "I-AUT000034",
+                              message: "Ignoring an invalid saved access token expiration date. " +
+                                "The access token will be refreshed.")
+           accessTokenExpirationDate = nil
+         }
          requestConfiguration = nil
 //         taskQueue = AuthSerialTaskQueue()
      }
@@ -177,7 +186,7 @@ private let kFiveMinutes = 5 * 60.0
       return (response.accessToken, tokenUpdated)
   }
 
-  private func hasValidAccessToken() -> Bool {
+  func hasValidAccessToken() -> Bool {
     if let accessTokenExpirationDate,
        accessTokenExpirationDate.timeIntervalSinceNow > kFiveMinutes {
       AuthLog.logDebug(code: "I-AUT000017",

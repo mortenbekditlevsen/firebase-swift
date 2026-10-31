@@ -61,7 +61,7 @@ MODULES = [
     Module("FirebaseStorage", "Sources/FirebaseStorage", "FirebaseStorage/Sources", "lines",
            "13.1.1", "FirebaseStorage/CHANGELOG.md"),
     Module("FirebaseDatabase", "Sources/FirebaseDatabase", "FirebaseDatabase/Sources", "strings",
-           "11.2.0", "FirebaseDatabase/CHANGELOG.md", exclude=("third_party/",)),
+           "13.1.1", "FirebaseDatabase/CHANGELOG.md", exclude=("third_party/",)),
 ]
 
 RELEASE_TAG = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")

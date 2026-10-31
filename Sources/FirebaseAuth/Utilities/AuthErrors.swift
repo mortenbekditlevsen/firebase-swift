@@ -66,7 +66,7 @@ import Foundation
     "FIRAuthErrorUserInfoMultiFactorResolverKey"
 }
 
- public enum AuthErrorCode: Int {
+ public enum AuthErrorCode: Int, Error, CustomNSError {
   /** Indicates a validation error with the custom token.
    */
   case invalidCustomToken = 17000
@@ -315,10 +315,6 @@ import Foundation
    */
   case nullUser = 17067
 
-  /** Indicates that a Firebase Dynamic Link is not activated.
-   */
-  case dynamicLinkNotActivated = 17068
-
   /**
    * Represents the error code for when the given provider id for a web operation is invalid.
    */
@@ -336,10 +332,11 @@ import Foundation
    */
   case unsupportedTenantOperation = 17073
 
-  /** Indicates that the Firebase Dynamic Link domain used is either not configured or is
-   unauthorized for the current project.
-   */
-  case invalidDynamicLinkDomain = 17074
+  /// Indicates that the provided Firebase Hosting Link domain is not owned by the current project.
+  case invalidHostingLinkDomain = 17214
+
+  /// Indicates that the password does not meet the project's password policy.
+  case passwordDoesNotMeetRequirements = 17211
 
   /** Indicates that the credential is rejected because it's misformed or mismatching.
    */
@@ -535,8 +532,10 @@ import Foundation
       return kFIRAuthErrorMessageNullUser
     case .invalidProviderID:
       return kFIRAuthErrorMessageInvalidProviderID
-    case .invalidDynamicLinkDomain:
-      return kFIRAuthErrorMessageInvalidDynamicLinkDomain
+    case .invalidHostingLinkDomain:
+      return kErrorInvalidHostingLinkDomain
+    case .passwordDoesNotMeetRequirements:
+      return kErrorPasswordDoesNotMeetRequirements
     case .webInternalError:
       return kFIRAuthErrorMessageWebInternalError
     case .webSignInUserInteractionFailure:
@@ -569,8 +568,6 @@ import Foundation
       return FIRAuthErrorMessageUnsupportedFirstFactor
     case .emailChangeNeedsVerification:
       return FIRAuthErrorMessageEmailChangeNeedsVerification
-    case .dynamicLinkNotActivated:
-      return kFIRAuthErrorMessageDynamicLinkNotActivated
     case .rejectedCredential:
       return kFIRAuthErrorMessageRejectedCredential
     case .missingOrInvalidNonce:
@@ -700,8 +697,10 @@ import Foundation
       return "ERROR_NULL_USER"
     case .invalidProviderID:
       return "ERROR_INVALID_PROVIDER_ID"
-    case .invalidDynamicLinkDomain:
-      return "ERROR_INVALID_DYNAMIC_LINK_DOMAIN"
+    case .invalidHostingLinkDomain:
+      return "ERROR_INVALID_HOSTING_LINK_DOMAIN"
+    case .passwordDoesNotMeetRequirements:
+      return "ERROR_PASSWORD_DOES_NOT_MEET_REQUIREMENTS"
     case .webInternalError:
       return "ERROR_WEB_INTERNAL_ERROR"
     case .webSignInUserInteractionFailure:
@@ -734,8 +733,6 @@ import Foundation
       return "ERROR_UNSUPPORTED_FIRST_FACTOR"
     case .emailChangeNeedsVerification:
       return "ERROR_EMAIL_CHANGE_NEEDS_VERIFICATION"
-    case .dynamicLinkNotActivated:
-      return "ERROR_DYNAMIC_LINK_NOT_ACTIVATED"
     case .rejectedCredential:
       return "ERROR_REJECTED_CREDENTIAL"
     case .missingOrInvalidNonce:
@@ -1100,11 +1097,10 @@ private let kFIRAuthErrorMessageNullUser =
 private let kFIRAuthErrorMessageInvalidProviderID =
   "The provider ID provided for the attempted web operation is invalid."
 
-/** @var kFIRAuthErrorMessageInvalidDynamicLinkDomain
-    @brief Message for @c kFIRAuthErrorMessageInvalidDynamicLinkDomain error code.
- */
-private let kFIRAuthErrorMessageInvalidDynamicLinkDomain =
-  "The Firebase Dynamic Link domain used is either not configured or is unauthorized for the current project."
+private let kErrorInvalidHostingLinkDomain =
+  "The provided hosting link domain is not configured in Firebase Hosting or is not owned by the current project."
+
+private let kErrorPasswordDoesNotMeetRequirements = "Missing password requirements."
 
 /** @var kFIRAuthErrorMessageInternalError
     @brief Message for @c FIRAuthErrorCodeInternalError error code.
@@ -1184,12 +1180,6 @@ private let FIRAuthErrorMessageUnsupportedFirstFactor =
 private let FIRAuthErrorMessageEmailChangeNeedsVerification =
   "Multi-factor users must always have a verified email."
 
-/** @var kFIRAuthErrorMessageDynamicLinkNotActivated
-    @brief Error message constant describing @c FIRAuthErrorCodeDynamicLinkNotActivated errors.
- */
-private let kFIRAuthErrorMessageDynamicLinkNotActivated =
-  "Please activate Dynamic Links in the Firebase Console and agree to the terms and conditions."
-
 /** @var kFIRAuthErrorMessageRejectedCredential
     @brief Error message constant describing @c FIRAuthErrorCodeRejectedCredential errors.
  */
@@ -1219,3 +1209,15 @@ private let kFIRAuthErrorMessageUnsupportedTenantOperation =
  */
 private let kFIRAuthErrorMessageBlockingCloudFunctionReturnedError =
   "Blocking cloud function returned an error."
+
+public extension AuthErrorCode {
+  /// The error code. It's redundant but implemented for compatibility with the Objective-C
+  /// implementation.
+  var code: Self {
+    return self
+  }
+
+  static var errorDomain: String {
+    AuthErrors.domain
+  }
+}

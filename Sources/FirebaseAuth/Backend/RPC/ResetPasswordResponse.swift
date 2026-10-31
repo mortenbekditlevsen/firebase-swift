@@ -26,9 +26,10 @@ import Foundation
  */
  public struct ResetPasswordResponse: AuthRPCResponse, Decodable {
   /** @property email
-   @brief The email address corresponding to the reset password request.
+   @brief The email address corresponding to the reset password request. The backend doesn't
+   return one for email sign-in codes.
    */
-  public var email: String
+  public var email: String?
 
   /** @property verifiedEmail
    @brief The verified email returned from the backend.
@@ -48,7 +49,7 @@ import Foundation
      
      public init(from decoder: any Decoder) throws {
          let container = try decoder.container(keyedBy: CodingKeys.self)
-         self.email = try container.decode(String.self, forKey: .email)
+         self.email = try container.decodeIfPresent(String.self, forKey: .email)
          self.verifiedEmail = try container.decodeIfPresent(String.self, forKey: .verifiedEmail)
          self.requestType = try container.decodeIfPresent(String.self, forKey: .requestType)
      }

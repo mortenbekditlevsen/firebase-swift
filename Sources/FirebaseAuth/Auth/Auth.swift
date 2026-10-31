@@ -240,7 +240,7 @@ extension Auth: AuthInterop {
    */
   public func fetchSignInMethods(forEmail email: String) async throws -> [String] {
       let request = CreateAuthURIRequest(identifier: email,
-                                         continueURI: "http:www.google.com",
+                                         continueURI: "http://www.google.com/",
                                          requestConfiguration: self.requestConfiguration)
       return try await AuthBackend.post(withRequest: request).signinMethods
   }
@@ -830,8 +830,17 @@ extension Auth: AuthInterop {
                                             requestConfiguration: self.requestConfiguration)
          let response = try await AuthBackend.post(withRequest: request)
          let operation = ActionCodeInfo.actionCodeOperation(forRequestType: response.requestType)
+         let email: String
+         if let responseEmail = response.email {
+             email = responseEmail
+         } else if operation == .emailLink {
+             // The backend doesn't return an email address for email sign-in codes.
+             email = ""
+         } else {
+             throw AuthErrorUtils.unexpectedResponse(deserializedResponse: response)
+         }
          let actionCodeInfo = ActionCodeInfo(withOperation: operation,
-                                             email: response.email,
+                                             email: email,
                                              newEmail: response.verifiedEmail)
          return actionCodeInfo
      }
@@ -1146,8 +1155,11 @@ extension Auth: AuthInterop {
 
       @param listenerHandle The handle for the listener.
    */
-  public func removeIDTokenDidChangeListener(_ listenerHandle: AnyObject) {
-    // TODO: implement me
+  public func removeIDTokenDidChangeListener(_ listenerHandle: any NSObjectProtocol) {
+    NotificationCenter.default.removeObserver(listenerHandle)
+    _state.withLock { state in
+      state.listenerHandles.removeAll(where: { $0 === listenerHandle })
+    }
   }
 
   /** @fn useAppLanguage
@@ -1336,9 +1348,13 @@ extension Auth: AuthInterop {
         try _internalUseUserAccessGroup(storedUserAccessGroup, state: &state)
       } else {
         let user = try _getUser(state: &state)
-        try _updateCurrentUser(user, byForce: false, savingToDisk: false, state: &state)
+        // Take the tenant from the stored user first: updating to a user of another tenant
+        // than `tenantID` fails, which lost multi-tenant users at every launch.
         if let user {
           state.tenantID = user.tenantID
+        }
+        try _updateCurrentUser(user, byForce: false, savingToDisk: false, state: &state)
+        if let user {
           state.lastNotifiedUserToken = user.rawAccessToken()
         }
       }
@@ -1500,6 +1516,9 @@ extension Auth: AuthInterop {
     guard let accessToken = state.currentUser?.rawAccessToken() else {
       return
     }
+    // A delay from an expiration date that isn't finite or is too far ahead would crash the
+    // conversions below, or postpone the refresh too long; it becomes 0.
+    let delay = AuthTokenLifetime.boundedRefreshDelay(delay)
     let intDelay = Int(ceil(delay))
     if retry {
       AuthLog.logInfo(code: "I-AUT000003", message: "Token auto-refresh re-scheduled in " +

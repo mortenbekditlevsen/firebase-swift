@@ -19,7 +19,6 @@ let logger = Logger(label: "[FirebaseAuth]")
 
 struct FirebaseLogger {
     static func log(level: FirebaseLoggerLevel, service: String, code: String, message: String) {
-        print(message)
         logger.log(level: level.mapped, "\(code): \(message)")
 
     }

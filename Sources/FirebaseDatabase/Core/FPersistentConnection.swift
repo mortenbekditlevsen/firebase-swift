@@ -420,7 +420,8 @@ class FPersistentConnection: FConnectionDelegate {
                 callback(message[kFWPResponseForRNData] as? [String: Any])
             }
         } else if let error = message[kFWPRequestError] as? String {
-            fatalError("FirebaseDatabaseServerError: \(error)")
+            // Log the error and ignore the message: crashing helps no one.
+            FFWarn("I-RDB034058", "Received an error from the server: \(error)")
         } else if let action = message[kFWPAsyncServerAction] as? String,
             let body = message[kFWPAsyncServerPayloadBody] as? [String: Any] {
             // this is a server push of some sort
@@ -564,6 +565,17 @@ class FPersistentConnection: FConnectionDelegate {
 
     nonisolated
     private func setupNotifications() {
+#if canImport(Darwin)
+        // A system clock change makes `.info/serverTimeOffset` stale. Reconnect,
+        // so the server's handshake refreshes it.
+        NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange,
+                                               object: nil, queue: nil) { [weak self] _ in
+            Task { @DatabaseActor in
+                self?.interruptForReason(kFInterruptReasonSystemClockChange)
+                self?.resumeForReason(kFInterruptReasonSystemClockChange)
+            }
+        }
+#endif
 #if os(watchOS)
         let center = NotificationCenter.default
         center.addObserver(forName: WKExtension.applicationWillEnterForegroundNotification,

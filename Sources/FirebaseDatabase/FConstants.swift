@@ -23,6 +23,7 @@ let kPersistentConnSuccessfulConnectionEstablishedDelay = 30.0
 let kFInterruptReasonServerKill = "server_kill"
 let kFInterruptReasonWaitingForOpen = "waiting_for_open"
 let kFInterruptReasonRepoInterrupt = "repo_interrupt"
+let kFInterruptReasonSystemClockChange = "system_clock_change"
 
 // MARK: -
 // MARK: Query constants

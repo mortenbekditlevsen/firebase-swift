@@ -59,6 +59,10 @@ class FWebSocketConnection {
         FFLog("I-RDB083002", "(wsc:\(self.connectionId)) FWebSocketConnection open)")
         assert(delegate != nil)
         everConnected = false
+        guard client != nil else {
+            Task { @DatabaseActor in self.closeIfNeverConnected() }
+            return
+        }
         do {
             try client?.open()
         } catch {
@@ -160,7 +164,12 @@ class FWebSocketConnection {
 
         FFLog("I-RDB083001", "(wsc: \(connectionId)) Connecting to:\(connectionURL) as \(userAgent))")
 
-        let url = URL(string: connectionURL)!
+        guard let url = URL(string: connectionURL) else {
+            // No client; open() reports a failed connection attempt instead.
+            // Don't log the URL, since it can include the session ID.
+            FFWarn("I-RDB083022", "(wsc:\(connectionId)) Couldn't parse the connection URL")
+            return
+        }
 
         let headers = createHeaders(with: connectionURL,
                                     userAgent: userAgent,

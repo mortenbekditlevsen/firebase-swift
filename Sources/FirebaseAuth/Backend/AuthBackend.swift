@@ -501,14 +501,23 @@ private final class AuthBackendRPCImplementation: AuthBackendImplementation {
     }
 
 
+    private static func splitStringAtFirstColon(_ input: String) -> (before: String, after: String) {
+      guard let colonIndex = input.firstIndex(of: ":") else {
+        return (input, "")
+      }
+      let before = String(input[..<colonIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+      let after = String(input[input.index(after: colonIndex)...])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      return (before, after)
+    }
+
     private class func clientError<T: AuthRPCResponse>(withServerErrorMessage serverErrorMessage: String,
                                                        errorDictionary: [String: Any],
                                                        responseType: T.Type,
                                                        error: Error?) -> Error? {
-    let split = serverErrorMessage.split(separator: ":")
-    let shortErrorMessage = split.first?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let serverDetailErrorMessage = String(split.count > 1 ? split[1] : "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
+    // Split at the first colon only: details can contain colons (blocking
+    // functions send JSON).
+    let (shortErrorMessage, serverDetailErrorMessage) = splitStringAtFirstColon(serverErrorMessage)
     switch shortErrorMessage {
     case "USER_NOT_FOUND": return AuthErrorUtils
       .userNotFoundError(message: serverDetailErrorMessage)
@@ -545,6 +554,10 @@ private final class AuthBackendRPCImplementation: AuthBackendImplementation {
       .invalidRecipientEmailError(message: serverDetailErrorMessage)
     case "WEAK_PASSWORD": return AuthErrorUtils
       .weakPasswordError(serverResponseReason: serverDetailErrorMessage)
+    case "PASSWORD_DOES_NOT_MEET_REQUIREMENTS": return AuthErrorUtils
+      .passwordDoesNotMeetRequirementsError(message: serverDetailErrorMessage)
+    case "INVALID_HOSTING_LINK_DOMAIN": return AuthErrorUtils
+      .invalidHostingLinkDomainError(message: serverDetailErrorMessage)
     case "TOO_MANY_ATTEMPTS_TRY_LATER": return AuthErrorUtils
       .tooManyRequestsError(message: serverDetailErrorMessage)
     case "EMAIL_NOT_FOUND": return AuthErrorUtils

@@ -176,6 +176,15 @@ final class FConnection: FWebSocketDelegate {
     }
 
     func onReset(host: String) {
+        guard FRepoInfo.isValidHost(host) else {
+            // Go back to the configured host instead. Close without
+            // SERVER_RESET, so the reconnect uses the normal backoff and
+            // doesn't loop without a delay if the server keeps sending this.
+            FFWarn("I-RDB082021", "Reset to invalid host \(host); reconnecting to the configured host.")
+            repoInfo.clearInternalHostCache()
+            close()
+            return
+        }
         FFLog(
             "I-RDB082015",
             "Got a reset; killing connection to: \(repoInfo.internalHost); Updating internalHost to: \(host)")

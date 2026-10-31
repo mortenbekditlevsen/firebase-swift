@@ -146,9 +146,16 @@ class FSyncTree: @unchecked Sendable {
      * awkward. :-(
      */
     func ackUserWriteWithWriteId(_ writeId: Int, revert: Bool, persist: Bool, clock: FClock) -> [FEvent] {
-        let write = pendingWriteTree.writeForId(writeId)
+        guard let write = pendingWriteTree.writeForId(writeId) else {
+            // The write was already removed by removeAllWrites, which reverted
+            // it. The connection can still deliver an ack for it afterwards: it
+            // defers acks that arrive while listens are outstanding, and
+            // delivers them when the writes are purged.
+            FFLog("I-RDB038025", "Ignoring ack for removed write \(writeId)")
+            return []
+        }
         let needToReevaluate = pendingWriteTree.removeWriteId(writeId)
-        if let write = write, write.visible {
+        if write.visible {
             if persist {
                 persistenceManager?.removeUserWrite(writeId)
             }
@@ -166,7 +173,7 @@ class FSyncTree: @unchecked Sendable {
         }
         if !needToReevaluate {
             return []
-        } else if let write = write {
+        } else {
             var affectedTree: FImmutableTree<Bool> = .empty
             switch write.record {
             case .overwrite:
@@ -179,7 +186,6 @@ class FSyncTree: @unchecked Sendable {
             let operation: FOperation = .ackUserWrite(path: write.path, affectedTree: affectedTree, revert: revert)
             return applyOperationToSyncPoints(operation)
         }
-        return []
     }
 
     func applyServerOverwriteAtPath(_ path: FPath, newData: FNode) -> [FEvent] {

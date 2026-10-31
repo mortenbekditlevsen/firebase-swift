@@ -400,7 +400,8 @@ class FRepo: FPersistentConnectionDelegate {
                 return DataSnapshot(ref: query.ref, indexedNode: node)
             } else {
                 let errorDict: [String: Any] = [
-                    NSLocalizedFailureReasonErrorKey: errorReason ?? "",
+                    // The server may omit the reason; fall back to the status.
+                    NSLocalizedFailureReasonErrorKey: errorReason ?? status,
                     NSLocalizedDescriptionKey: "Unable to get latest value for query \(querySpec), client offline with no active listeners and no matching disk cache entries"
                 ]
                 let error = NSError(domain: kFirebaseCoreErrorDomain, code: 1, userInfo: errorDict)

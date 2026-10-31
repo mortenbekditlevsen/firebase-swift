@@ -371,8 +371,12 @@ private let kFIRAuthErrorMessageMalformedJWT =
     error(code: .invalidProviderID, message: message)
   }
 
-  public static func invalidDynamicLinkDomainError(message: String?) -> Error {
-    error(code: .invalidDynamicLinkDomain, message: message)
+  public static func invalidHostingLinkDomainError(message: String?) -> Error {
+    error(code: .invalidHostingLinkDomain, message: message)
+  }
+
+  static func passwordDoesNotMeetRequirementsError(message: String?) -> Error {
+    error(code: .passwordDoesNotMeetRequirements, message: message)
   }
 
   public static func missingOrInvalidNonceError(message: String?) -> Error {
@@ -515,21 +519,37 @@ private let kFIRAuthErrorMessageMalformedJWT =
     guard let message else {
       return error(code: .blockingCloudFunctionError, message: message)
     }
-    var jsonString = message.replacingOccurrences(
-      of: "HTTP Cloud Function returned an error:",
-      with: ""
-    )
-    jsonString = jsonString.trimmingCharacters(in: .whitespaces)
-    let jsonData = jsonString.data(using: .utf8) ?? Data()
-    do {
-      let jsonDict = try JSONSerialization
-        .jsonObject(with: jsonData, options: []) as? [String: Any] ?? [:]
-      let errorDict = jsonDict["error"] as? [String: Any] ?? [:]
-      let errorMessage = errorDict["message"] as? String
-      return error(code: .blockingCloudFunctionError, message: errorMessage)
-    } catch {
-      return JSONSerializationError(underlyingError: error)
+    guard let jsonDict = extractJSONObjectFromString(from: message) else {
+      return error(code: .blockingCloudFunctionError, message: message)
     }
+    let errorDict = jsonDict["error"] as? [String: Any] ?? [:]
+    let errorMessage = errorDict["message"] as? String
+    return error(code: .blockingCloudFunctionError, message: errorMessage)
+  }
+
+  /// The first balanced `{…}` in `string`, parsed as a JSON object. Blocking
+  /// functions' errors arrive as text around such an object.
+  private static func extractJSONObjectFromString(from string: String) -> [String: Any]? {
+    guard let start = string.firstIndex(of: "{") else {
+      return nil
+    }
+    var curlyLevel = 0
+    var endIndex: String.Index?
+    for index in string.indices[start...] {
+      let char = string[index]
+      if char == "{" {
+        curlyLevel += 1
+      } else if char == "}" {
+        curlyLevel -= 1
+        if curlyLevel == 0 {
+          endIndex = index
+          break
+        }
+      }
+    }
+    guard let end = endIndex, let jsonData = String(string[start ... end]).data(using: .utf8)
+    else { return nil }
+    return (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any]
   }
 
   #if os(iOS)
