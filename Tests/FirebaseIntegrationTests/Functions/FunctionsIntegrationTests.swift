@@ -186,6 +186,43 @@ struct FunctionsIntegrationTests {
     #expect(try await function.call([:]) == [:])
   }
 
+  /// A client with a token, for a host that isn't loopback, over plain HTTP.
+  private func insecureFunctions() -> Functions {
+    let functions = Functions(projectID: Emulators.projectID,
+                              region: "us-central1",
+                              customDomain: nil,
+                              auth: FixedTokenAuth(token: "token"),
+                              appCheck: nil)
+    // A non-routable address: nothing must be sent there.
+    functions.useEmulator(withHost: "10.255.255.1", port: 5001)
+    return functions
+  }
+
+  @Test func tokensAreNotSentOverHTTPToOtherHosts() async throws {
+    var call: Callable<Int16, Int> = insecureFunctions().httpsCallable("scalarTest")
+    call.timeoutInterval = 2
+    let error = try await callError { _ = try await call.call(17) }
+    #expect(error.code == FunctionsErrorCode.unauthenticated.rawValue)
+
+    let stream: Callable<EmptyRequest, String> = insecureFunctions().httpsCallable("genStream")
+    let streamError = try await streamError(stream.stream())
+    #expect(streamError.code == .invalidArgument)
+    #expect((streamError.errorUserInfo[NSUnderlyingErrorKey] as? FunctionsError)?.code
+      == .unauthenticated)
+  }
+
+  #if DEBUG
+    @Test func insecureTokenAttachmentCanBeAllowedForDebugging() async throws {
+      let functions = insecureFunctions()
+      functions.allowInsecureTokenAttachment = true
+      var call: Callable<Int16, Int> = functions.httpsCallable("scalarTest")
+      call.timeoutInterval = 1
+      // The request is sent, so it fails on the network instead.
+      let error = try await callError { _ = try await call.call(17) }
+      #expect(error.code != FunctionsErrorCode.unauthenticated.rawValue)
+    }
+  #endif
+
   @Test func passesTheSignedInUserToTheFunction() async throws {
     struct AuthResponse: Decodable { let uid: String? }
     let function = functions.httpsCallable("authTest",
@@ -382,6 +419,19 @@ struct FunctionsIntegrationTests {
     let error = try await streamError(callable.stream())
     #expect(error.code == .unavailable)
     #expect(error.errorUserInfo[NSUnderlyingErrorKey] is URLError)
+  }
+
+  @Test func streamsIgnoreHeartbeatComments() async throws {
+    let callable: Callable<EmptyRequest, StreamResponse<String, String>> =
+      functions.httpsCallable("genStreamHeartbeat")
+    var contents: [String] = []
+    for try await response in try callable.stream() {
+      switch response {
+      case let .message(message): contents.append(message)
+      case let .result(result): contents.append(result)
+      }
+    }
+    #expect(contents == ["after the pings", "done"])
   }
 
   @Test func streamsLargeData() async throws {

@@ -48,7 +48,7 @@ final class StorageInternalTask {
           let data = try await fetcher.beginFetch()
             return data
         } catch {
-            throw StorageErrorCode.error(withServerError: error as NSError,
+            throw StorageErrorCode.error(withServerError: error,
                                                     ref: reference)
         }
       }

@@ -31,6 +31,23 @@ struct StorageIntegrationTests {
     storage.reference().child("public").child(UUID().uuidString)
   }
 
+  @Test func tokensAreNotSentOverHTTPToOtherHosts() async throws {
+    let emulatorApp = try EmulatorApp()
+    _ = try await emulatorApp.auth.signInAnonymously()
+    let storage = Storage.storage(app: emulatorApp.app)
+    // A non-routable address: nothing must be sent there.
+    storage.useEmulator(withHost: "10.255.255.1", port: 9199)
+    storage.maxOperationRetryTime = 2
+
+    let error = await #expect(throws: StorageError.self) {
+      _ = try await storage.reference().child("public/file.txt").getMetadata()
+    }
+    guard case .unauthenticated = error else {
+      Issue.record("Expected unauthenticated, got \(String(describing: error))")
+      return
+    }
+  }
+
   @Test func uploadsAndDownloadsData() async throws {
     let ref = try scratchRef(EmulatorApp().storage()).child("hello.txt")
     let data = Data("Hello, Storage".utf8)

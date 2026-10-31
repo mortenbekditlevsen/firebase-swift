@@ -47,6 +47,11 @@ public enum StorageErrorCode: Int, Swift.Error {
    * @return Returns a Firebase Storage error.
    */
   static func error(withServerError serverError: Error, ref: StorageReference) -> Error {
+    // Already a Storage error (e.g. from the authorizer): its code isn't an
+    // HTTP status, so mapping it again would turn it into `unknown`.
+    if let storageError = serverError as? StorageError {
+      return storageError
+    }
       let serverError = serverError as NSError
     var errorDictionary = serverError.userInfo
     errorDictionary["ResponseErrorDomain"] = serverError.domain
@@ -77,6 +82,11 @@ public enum StorageErrorCode: Int, Swift.Error {
       )
     case 404: StorageError.objectNotFound(
         object: ref.path.object ?? "<object-entity-internal-error>", serverError: errorDictionary
+      )
+    case _ where serverError.domain == NSPOSIXErrorDomain:
+      StorageError.unknown(
+        message: "POSIX errno \(serverError.code) (\(serverError.localizedDescription))",
+        serverError: errorDictionary
       )
     default: StorageError.unknown(
         message: "Unexpected \(serverError.code) code from backend", serverError: errorDictionary

@@ -236,6 +236,19 @@ exports.slowTest = functionsV1.https.onRequest((request, response) => {
   setTimeout(() => response.send({ data: true }), 2500);
 });
 
+// Sends `: ping` SSE comments (every second) before its only chunk, like a
+// long-running streaming function.
+exports.genStreamHeartbeat = functionsV2.https.onCall(
+  { heartbeatSeconds: 1 },
+  async (request, response) => {
+    await sleep(2500);
+    if (request.acceptsStreaming) {
+      response.sendChunk("after the pings");
+    }
+    return "done";
+  }
+);
+
 // Returns the caller's uid, so tests can check that the Auth emulator's ID
 // token reaches the function.
 exports.authTest = functionsV2.https.onCall((request) => {

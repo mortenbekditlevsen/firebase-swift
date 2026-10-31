@@ -37,13 +37,12 @@ let package = Package(
             url: "https://github.com/mortenbekditlevsen/leveldb.git",
             branch: "1.22.2-headerfix"
         ),
-        // firebase/abseil-cpp-SwiftPM 0.20240722.2 (the version firebase-ios-sdk
-        // 12.19 pins) plus Linux build fixes. See Docs/UpstreamPatches.md.
+        // The versions firebase-ios-sdk 13.1 pins. See Docs/UpstreamPatches.md.
         .package(
-            url: "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
-            branch: "linux-fixes-0.20240722.2"
+            url: "https://github.com/firebase/abseil-cpp-SwiftPM.git",
+            "0.20250512.1" ..< "0.20250513.0"
         ),
-        .package(url: "https://github.com/grpc/grpc-ios.git", "1.69.0" ..< "1.70.0"),
+        .package(url: "https://github.com/grpc/grpc-ios.git", "1.83.1" ..< "1.84.0"),
         .package(
           url: "https://github.com/firebase/nanopb.git",
           "2.30910.0" ..< "2.30911.0"
@@ -76,6 +75,7 @@ let package = Package(
           dependencies: [
             "FirebaseCore",
             "FirebaseShared",
+            .product(name: "Logging", package: "swift-log"),
           ],
           path: "Sources/FirebaseFunctions"
         ),
@@ -85,6 +85,7 @@ let package = Package(
               dependencies: [
                 "FirebaseCore",
                 "FirebaseShared",
+                .product(name: "Logging", package: "swift-log"),
               ],
               path: "Sources/FirebaseStorage",
               swiftSettings: [
@@ -235,6 +236,16 @@ let package = Package(
             "Swift/CHANGELOG.md",
             "Swift/Tests/",
             "third_party/nlohmann_json",
+            // The BSON types (13.0) extend Objective-C classes the Swift bridge
+            // doesn't have yet; documents return them as their maps.
+            "Swift/Source/Codable/BSONObjectId+Codable.swift",
+            "Swift/Source/Codable/BSONTimestamp+Codable.swift",
+            "Swift/Source/Codable/Blob+Codable.swift",
+            "Swift/Source/Codable/Decimal128Value+Codable.swift",
+            "Swift/Source/Codable/Int32Value+Codable.swift",
+            "Swift/Source/Codable/MaxKey+Codable.swift",
+            "Swift/Source/Codable/MinKey+Codable.swift",
+            "Swift/Source/Codable/RegexValue+Codable.swift",
           ],
           sources: [
             "Swift/Source/",
@@ -286,6 +297,17 @@ let package = Package(
                 .interoperabilityMode(.Cxx),
             ]
         ),
+        // Upstream's unit tests are being ported one file at a time; `Port`
+        // holds tests for this port's own code.
+        .testTarget(
+            name: "FirebaseStorageTests",
+            dependencies: ["FirebaseStorage"],
+            path: "Tests/FirebaseStorageTests",
+            sources: [
+                "Unit/StoragePathTests.swift",
+                "Port",
+            ]
+        ),
         .testTarget(
             name: "FirebaseSharedTests",
             dependencies: [
@@ -300,5 +322,5 @@ let package = Package(
     // Matches upstream firebase-ios-sdk 12.19 and its abseil/gRPC pins. Abseil
     // builds its own absl::string_view below C++17, so every C++ target must
     // agree on the standard or the link fails.
-    cxxLanguageStandard: .gnucxx14
+    cxxLanguageStandard: .gnucxx17
 )

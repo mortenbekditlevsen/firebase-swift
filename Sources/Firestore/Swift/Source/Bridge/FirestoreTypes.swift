@@ -1473,6 +1473,18 @@ public final class FieldValue: Hashable, @unchecked Sendable {
     self.sentinel = sentinel
   }
 
+  /// The API call that created this sentinel, for error messages, as
+  /// upstream's `methodName`.
+  var methodName: String {
+    switch sentinel {
+    case .delete_: "FieldValue.delete()"
+    case .serverTimestamp: "FieldValue.serverTimestamp()"
+    case .arrayUnion: "FieldValue.arrayUnion()"
+    case .arrayRemove: "FieldValue.arrayRemove()"
+    case .incrementInt, .incrementDouble: "FieldValue.increment()"
+    }
+  }
+
   /// Matches upstream `isEqual:`: sentinels of the same kind are equal, and
   /// array transforms also compare their elements.
   public static func == (lhs: FieldValue, rhs: FieldValue) -> Bool {

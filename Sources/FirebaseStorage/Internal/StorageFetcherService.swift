@@ -37,7 +37,10 @@ actor StorageFetcherService {
       let authorizer = StorageTokenAuthorizer(
         googleAppID: app.options.googleAppID,
         authProvider: storage.auth,
-        appCheck: storage.appCheck
+        appCheck: storage.appCheck,
+        allowInsecureTokenAttachment: { [weak storage] in
+          storage?.allowsInsecureTokenAttachment ?? false
+        }
       )
       fetcherService.authorizer = authorizer
       if storage.usesEmulator {

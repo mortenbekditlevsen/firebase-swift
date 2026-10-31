@@ -51,17 +51,30 @@ class StorageObserver<T: Sendable> {
    * - Returns: A task handle that can be used to remove the observer at a later date.
    */
     func observe(handle: String) -> Stream {
-        let snapshot = base.snapshot
-        
         let (stream, continuation) = Stream.makeStream()
-        
-        updateHandlerDictionary(handle: handle, with: continuation)
-        
-        defer {
-            fire(snapshot: snapshot)
+        // Only the new observer gets the current state; the others already
+        // have it. A finished task's observer gets the outcome and ends.
+        send(base.snapshot, to: continuation)
+        if !isFinished {
+            updateHandlerDictionary(handle: handle, with: continuation)
         }
-        
         return stream
+    }
+
+    /// Whether the task succeeded, failed or was cancelled. Its state can't
+    /// change after that.
+    var isFinished: Bool {
+        switch base.state {
+        case .success, .failed, .cancelled: true
+        default: false
+        }
+    }
+
+    /// Changes the state without notifying observers, unless the task has
+    /// finished.
+    func setState(_ state: StorageTaskState<T>) {
+        guard !isFinished else { return }
+        base.state = state
     }
 
   /**
@@ -85,6 +98,9 @@ class StorageObserver<T: Sendable> {
     }
 
   func fire(state: StorageTaskState<T>) {
+      // A finished task stays finished: a late progress update, or a fetch
+      // that completes after `cancel()`, mustn't reach observers.
+      guard !isFinished else { return }
       base.state = state
       let snapshot = base.snapshot
       fire(snapshot: snapshot)
@@ -100,16 +116,7 @@ class StorageObserver<T: Sendable> {
     
     func fire(snapshot: StorageTaskSnapshot<T>) {
         for handler in handlers.values {
-            handler.yield(snapshot)
-
-            switch snapshot.status {
-            case .failure:
-                handler.finish(throwing: snapshot.error!)
-            case .success:
-                handler.finish()
-            case .pause, .progress, .resume:
-                ()
-            }
+            send(snapshot, to: handler)
         }
         
         switch snapshot.status {
@@ -120,4 +127,16 @@ class StorageObserver<T: Sendable> {
         }
         
   }
+
+    private func send(_ snapshot: StorageTaskSnapshot<T>, to handler: Handler) {
+        handler.yield(snapshot)
+        switch snapshot.status {
+        case .failure:
+            handler.finish(throwing: snapshot.error!)
+        case .success:
+            handler.finish()
+        case .pause, .progress, .resume:
+            ()
+        }
+    }
 }

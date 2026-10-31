@@ -18,7 +18,10 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+import Logging
 import Synchronization
+
+private let logger = Logger(label: "[FirebaseFunctions]")
 
 /// File specific constants.
 private enum Constants {
@@ -56,12 +59,25 @@ public final class Functions: Sendable {
 
   private let _emulatorOrigin: Mutex<String?>
 
+  private let _allowInsecureTokenAttachment = Mutex(false)
+
   // MARK: - Public APIs
 
   /// The current emulator origin, or `nil` if it is not set.
   public var emulatorOrigin: String? {
       _emulatorOrigin.withLock { $0 }
   }
+
+  #if DEBUG
+    /// Allows authentication and AppCheck tokens to be attached to requests over insecure HTTP
+    /// connections.
+    /// This should only be used for local testing and debugging on physical devices.
+    /// To prevent accidental credential leaks, this property is only available in DEBUG builds.
+    public var allowInsecureTokenAttachment: Bool {
+      get { _allowInsecureTokenAttachment.withLock { $0 } }
+      set { _allowInsecureTokenAttachment.withLock { $0 = newValue } }
+    }
+  #endif
 
   /// Creates a Cloud Functions client using the default or returns a pre-existing instance if it
   /// already exists.
@@ -415,7 +431,7 @@ public final class Functions: Sendable {
               timeout: TimeInterval)
     -> AsyncThrowingStream<JSONStreamResponse, Error> {
     AsyncThrowingStream { continuation in
-      Task {
+      let task = Task {
         let urlRequest: URLRequest
         do {
           let context = try await contextProvider.context(options: options)
@@ -473,6 +489,11 @@ public final class Functions: Sendable {
 
         do {
           for try await line in stream.asyncLines {
+            // SSE comment lines (e.g. the server's `: ping` heartbeat) carry no
+            // data and must be ignored. `asyncLines` already skips blank ones.
+            if line.hasPrefix(":") {
+              continue
+            }
             guard line.hasPrefix("data:") else {
               continuation.finish(
                 throwing: FunctionsError(
@@ -509,6 +530,9 @@ public final class Functions: Sendable {
         }
 
         continuation.finish()
+      }
+      continuation.onTermination = { @Sendable _ in
+        task.cancel()
       }
     }
   }
@@ -573,6 +597,10 @@ public final class Functions: Sendable {
     urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
     urlRequest.httpMethod = "POST"
 
+    guard try shouldAttachTokens(to: url, context: context, logCode: "I-FUN000001") else {
+      return urlRequest
+    }
+
     if let authToken = context.authToken {
       let value = "Bearer \(authToken)"
       urlRequest.setValue(value, forHTTPHeaderField: "Authorization")
@@ -627,7 +655,12 @@ public final class Functions: Sendable {
     request.httpMethod = "POST"
 
     // Set the headers.
-      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    guard try shouldAttachTokens(to: url, context: context, logCode: "I-FUN000002") else {
+      return request
+    }
+
     if let authToken = context.authToken {
       let value = "Bearer \(authToken)"
         request.setValue(value, forHTTPHeaderField: "Authorization")
@@ -700,5 +733,44 @@ public final class Functions: Sendable {
     }
 
     return dataJSON
+  }
+
+  /// Validates whether tokens can safely be attached to the request.
+  /// - Throws: `FunctionsError.unauthenticated` when credentials would be transmitted insecurely
+  /// over HTTP to a non-loopback host.
+  /// - Returns: `true` if tokens should be attached, `false` otherwise.
+  private func shouldAttachTokens(to url: URL,
+                                  context: FunctionsContext,
+                                  logCode: String) throws -> Bool {
+    #if DEBUG
+      let shouldAttachTokens = url.isSecureOrLoopback || allowInsecureTokenAttachment
+    #else
+      let shouldAttachTokens = url.isSecureOrLoopback
+    #endif
+
+    guard shouldAttachTokens else {
+      let hasTokens = context.authToken != nil ||
+        context.fcmToken != nil ||
+        context.appCheckToken != nil ||
+        context.limitedUseAppCheckToken != nil
+
+      if hasTokens && url.scheme?.lowercased() == "http" {
+        let message = "Refusing to send Auth, FCM, and AppCheck tokens over HTTP to non-loopback host."
+        logger.warning("\(logCode): \(message)")
+        throw FunctionsError(.unauthenticated, userInfo: [NSLocalizedDescriptionKey: message])
+      }
+      return false
+    }
+
+    return true
+  }
+}
+
+private extension URL {
+  var isSecureOrLoopback: Bool {
+    let scheme = scheme?.lowercased()
+    let host = host?.lowercased() ?? ""
+    let isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+    return scheme == "https" || isLoopback
   }
 }
