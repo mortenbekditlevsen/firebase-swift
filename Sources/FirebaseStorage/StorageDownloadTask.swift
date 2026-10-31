@@ -59,13 +59,14 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
    */
     public func pause() {
         Task { @StorageActor in
+            guard !observer.isFinished else { return }
             switch observer.base.state {
             case .paused, .pausing:
                 return
             default:
                 ()
             }
-            observer.base.state = .pausing
+            observer.setState(.pausing)
             // Use the resume callback to confirm pause status since it always runs after the last
             // NSURLSession update.
             if let fetcher {
@@ -93,7 +94,11 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
    */
     public func resume() {
         Task { @StorageActor in
-            self.observer.base.state = .resuming
+            switch self.observer.base.state {
+            case .paused, .pausing: ()
+            default: return
+            }
+            self.observer.setState(.resuming)
             self.observer.fire(state: .running)
             await self.enqueueImplementation(resumeWith: self.downloadData)
         }
@@ -133,7 +138,7 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
     @StorageActor
     private func enqueueImplementationAsync(resumeWith resumeData: Data? = nil) async throws -> Data {
 
-        observer.base.state = .queueing
+        observer.setState(.queueing)
 
         var request = observer.base.baseRequest
         let reference = observer.base.reference
@@ -166,7 +171,7 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
                 self.observer.base.progress.completedUnitCount = totalBytesWritten
                 self.observer.base.progress.totalUnitCount = totalBytesExpectedToWrite
                 self.observer.fire(state: .progress)
-                self.observer.base.state = .running
+                self.observer.setState(.running)
             }
         }
       } else {
@@ -180,12 +185,12 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
                     self.observer.base.progress.totalUnitCount = totalLength
                 }
                 self.observer.fire(state: .progress)
-                self.observer.base.state = .running
+                self.observer.setState(.running)
             }
         }
       }
       self.fetcher = fetcher
-        observer.base.state = .running
+        observer.setState(.running)
       do {
           let data = try await fetcher.beginFetch()
           // Fire last progress updates
@@ -195,9 +200,17 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
           observer.succeed(with: data)
           return data
       } catch {
+          switch observer.base.state {
+          case .pausing, .paused:
+              // `pause()` stopped the fetch; that's not a failure.
+              observer.fire(state: .paused)
+              throw error
+          default:
+              ()
+          }
           observer.fire(state: .progress)
           let error = StorageErrorCode.error(
-            withServerError: error as NSError,
+            withServerError: error,
             ref: reference
           )
           observer.fail(with: error)
@@ -208,9 +221,9 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
 
   func cancel(withError error: Error) {
       Task { @StorageActor in
-          observer.base.state = .cancelled(error)
+          // Finish first, so the stopped fetch can't report a failure instead.
+          observer.fire(state: .cancelled(error))
           fetcher?.stopFetching()
-          observer.fail(with: error)
       }
   }
 }

@@ -43,6 +43,7 @@ public final class Storage: Sendable {
     var port: Int = 443
     var usesEmulator: Bool = false
     var configured: Bool = false
+    var allowInsecureTokenAttachment: Bool = false
   }
 
   private let state: Mutex<MutableState>
@@ -127,6 +128,26 @@ public final class Storage: Sendable {
         $0.maxOperationRetryInterval = Storage.computeRetryInterval(fromRetryTime: newValue)
       }
     }
+  }
+
+  #if DEBUG
+    /// Allows authentication and AppCheck tokens to be attached to requests over insecure HTTP
+    /// connections.
+    /// This should only be used for local testing and debugging on physical devices.
+    /// To prevent accidental credential leaks, this property is only available in DEBUG builds.
+    public var allowInsecureTokenAttachment: Bool {
+      get { state.withLock { $0.allowInsecureTokenAttachment } }
+      set { state.withLock { $0.allowInsecureTokenAttachment = newValue } }
+    }
+  #endif
+
+  /// Whether tokens may be sent over HTTP to a host that isn't loopback.
+  var allowsInsecureTokenAttachment: Bool {
+    #if DEBUG
+      state.withLock { $0.allowInsecureTokenAttachment }
+    #else
+      false
+    #endif
   }
 
   /// Specify the maximum upload chunk size. Values less than 256K (262144) will be rounded up to

@@ -204,7 +204,7 @@ public extension Callable where Request: Sendable, Response: Sendable {
     }
 
     return AsyncThrowingStream { continuation in
-      Task {
+      let task = Task {
         do {
           for try await response in callable.stream(encoded) {
             do {
@@ -251,6 +251,9 @@ public extension Callable where Request: Sendable, Response: Sendable {
           continuation.finish(throwing: error)
         }
         continuation.finish()
+      }
+      continuation.onTermination = { @Sendable _ in
+        task.cancel()
       }
     }
   }

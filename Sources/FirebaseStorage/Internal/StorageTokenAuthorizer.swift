@@ -18,6 +18,9 @@ import FoundationNetworking
 #endif
 
 import FirebaseCore
+import Logging
+
+private let logger = Logger(label: "[FirebaseStorage]")
 
 
 struct StorageTokenAuthorizer {
@@ -56,10 +59,25 @@ struct StorageTokenAuthorizer {
             }
         }()
 
-        if let token = try await authToken.get() {
+        let authTokenValue = try await authToken.get()
+        let appCheckTokenValue = await appCheckToken
+
+        // Don't send credentials over cleartext HTTP, except to the local
+        // emulator, unless explicitly allowed for debugging.
+        let scheme = request.url?.scheme?.lowercased()
+        let host = request.url?.host?.lowercased() ?? ""
+        let isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+        if scheme == "http", !isLoopback, !allowInsecureTokenAttachment(),
+           authTokenValue != nil || appCheckTokenValue != nil {
+            let message = "Refusing to send Auth and AppCheck tokens over HTTP to non-loopback host."
+            logger.warning("I-STR000002: \(message)")
+            throw StorageError.unauthenticated(serverError: ["message": message])
+        }
+
+        if let token = authTokenValue {
             request.setValue("Firebase \(token)", forHTTPHeaderField: "Authorization")
         }
-        if let token = await appCheckToken {
+        if let token = appCheckTokenValue {
             request.setValue(token, forHTTPHeaderField: "X-Firebase-AppCheck")
         }
   }
@@ -89,14 +107,17 @@ struct StorageTokenAuthorizer {
   private let googleAppID: String
   private let auth: AuthInterop?
   private let appCheck: AppCheckInterop?
+  private let allowInsecureTokenAttachment: @Sendable () -> Bool
 
   private let serialAuthArgsQueue = DispatchQueue(label: "com.google.firebasestorage.authorizer")
 
   init(googleAppID: String,
        authProvider: AuthInterop?,
-       appCheck: AppCheckInterop?) {
+       appCheck: AppCheckInterop?,
+       allowInsecureTokenAttachment: @escaping @Sendable () -> Bool = { false }) {
     self.googleAppID = googleAppID
     auth = authProvider
     self.appCheck = appCheck
+    self.allowInsecureTokenAttachment = allowInsecureTokenAttachment
   }
 }

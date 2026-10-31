@@ -18,11 +18,11 @@ import Foundation
 
 /// Base bridge type for all expression types.
 /// Eventually this will hold a C++ `shared_ptr<api::Expr>`.
-public class ExprBridge: @unchecked Sendable {
+public class __ExprBridge: @unchecked Sendable {
 }
 
 /// Bridge for field expressions.
-public final class FieldBridge: ExprBridge {
+public final class __FieldBridge: __ExprBridge {
   private let _fieldName: String
 
   public init(name: String) {
@@ -40,29 +40,29 @@ public final class FieldBridge: ExprBridge {
 }
 
 /// Bridge for variable expressions.
-public final class VariableBridge: ExprBridge {
+public final class __VariableBridge: __ExprBridge {
   public init(name: String) {
     super.init()
   }
 }
 
 /// Bridge for constant expressions.
-public final class ConstantBridge: ExprBridge {
+public final class __ConstantBridge: __ExprBridge {
   public init(_ input: Any) {
     super.init()
   }
 }
 
 /// Bridge for function expressions.
-public final class FunctionExprBridge: ExprBridge {
-  public init(name: String, args: [ExprBridge], options: [String: ExprBridge]? = nil) {
+public final class __FunctionExprBridge: __ExprBridge {
+  public init(name: String, args: [__ExprBridge], options: [String: __ExprBridge]? = nil) {
     super.init()
   }
 }
 
 /// Bridge for pipeline expressions.
-public final class PipelineExprBridge: ExprBridge {
-  public init(stages: [StageBridge]) {
+public final class __PipelineExprBridge: __ExprBridge {
+  public init(stages: [__StageBridge]) {
     super.init()
   }
 }
@@ -70,137 +70,169 @@ public final class PipelineExprBridge: ExprBridge {
 // MARK: - Aggregate Function Bridge
 
 /// Bridge for aggregate function expressions.
-public final class AggregateFunctionBridge: @unchecked Sendable {
-  public init(name: String, args: [ExprBridge]) {
+public final class __AggregateFunctionBridge: @unchecked Sendable {
+  public init(name: String, args: [__ExprBridge]) {
   }
 }
 
 // MARK: - Ordering Bridge
 
 /// Bridge for sort orderings.
-public final class OrderingBridge: @unchecked Sendable {
-  public init(expr: ExprBridge, direction: String) {
+public final class __OrderingBridge: @unchecked Sendable {
+  public init(expr: __ExprBridge, direction: String) {
   }
 }
 
 // MARK: - Stage Bridges
 
 /// Base bridge type for all stage types.
-public class StageBridge: @unchecked Sendable {
+public class __StageBridge: @unchecked Sendable {
   public var name: String { "" }
 }
 
-public final class CollectionSourceStageBridge: StageBridge {
+public final class __CollectionSourceStageBridge: __StageBridge {
   public init(ref: CollectionReference, firestore: Firestore, forceIndex: String?) {
   }
   override public var name: String { "collection" }
 }
 
-public final class SubcollectionSourceStageBridge: StageBridge {
+public final class __SubcollectionSourceStageBridge: __StageBridge {
   public init(path: String) {
   }
   override public var name: String { "subcollection" }
 }
 
-public final class DatabaseSourceStageBridge: StageBridge {
+public final class __DatabaseSourceStageBridge: __StageBridge {
   public override init() {
   }
   override public var name: String { "database" }
 }
 
-public final class CollectionGroupSourceStageBridge: StageBridge {
+public final class __CollectionGroupSourceStageBridge: __StageBridge {
   public init(collectionId: String, forceIndex: String?) {
   }
   override public var name: String { "collection_group" }
 }
 
-public final class DocumentsSourceStageBridge: StageBridge {
+public final class __DocumentsSourceStageBridge: __StageBridge {
   public init(documents: [DocumentReference], firestore: Firestore) {
   }
   override public var name: String { "documents" }
 }
 
-public final class WhereStageBridge: StageBridge {
-  public init(expr: ExprBridge) {
+public final class __WhereStageBridge: __StageBridge {
+  public init(expr: __ExprBridge) {
   }
   override public var name: String { "where" }
 }
 
-public final class LimitStageBridge: StageBridge {
+public final class __LimitStageBridge: __StageBridge {
   public init(limit: Int) {
   }
   override public var name: String { "limit" }
 }
 
-public final class OffsetStageBridge: StageBridge {
+public final class __OffsetStageBridge: __StageBridge {
   public init(offset: Int) {
   }
   override public var name: String { "offset" }
 }
 
-public final class AddFieldsStageBridge: StageBridge {
-  public init(fields: [String: ExprBridge]) {
+public final class __AddFieldsStageBridge: __StageBridge {
+  public init(fields: [String: __ExprBridge]) {
   }
   override public var name: String { "add_fields" }
 }
 
-public final class RemoveFieldsStageBridge: StageBridge {
+// The DML and literals stages upstream added in 13.0; stubs like the others.
+public final class __LiteralsSourceStageBridge: __StageBridge {
+  public init(data: [[String: __ExprBridge]]) {
+  }
+  override public var name: String { "literals" }
+}
+
+public final class __DeleteStageBridge: __StageBridge {
+  override public init() {
+  }
+  override public var name: String { "delete" }
+}
+
+public final class __UpdateStageBridge: __StageBridge {
+  public init(fields: [String: __ExprBridge]) {
+  }
+  override public var name: String { "update" }
+}
+
+public final class __InsertStageBridge: __StageBridge {
+  public init(collectionPath: String?, documentIdExpression: __ExprBridge?) {
+  }
+  override public var name: String { "insert" }
+}
+
+public final class __UpsertStageBridge: __StageBridge {
+  public init(additionalFields: [String: __ExprBridge], collectionPath: String?,
+              documentIdExpression: __ExprBridge?) {
+  }
+  override public var name: String { "upsert" }
+}
+
+public final class __RemoveFieldsStageBridge: __StageBridge {
   public init(fields: [String]) {
   }
   override public var name: String { "remove_fields" }
 }
 
-public final class SelectStageBridge: StageBridge {
-  public init(selections: [String: ExprBridge]) {
+public final class __SelectStageBridge: __StageBridge {
+  public init(selections: [String: __ExprBridge]) {
   }
   override public var name: String { "select" }
 }
 
-public final class DefineStageBridge: StageBridge {
-  public init(variables: [String: ExprBridge]) {
+public final class __DefineStageBridge: __StageBridge {
+  public init(variables: [String: __ExprBridge]) {
   }
   override public var name: String { "let" }
 }
 
-public final class DistinctStageBridge: StageBridge {
-  public init(groups: [String: ExprBridge]) {
+public final class __DistinctStageBridge: __StageBridge {
+  public init(groups: [String: __ExprBridge]) {
   }
   override public var name: String { "distinct" }
 }
 
-public final class AggregateStageBridge: StageBridge {
-  public init(accumulators: [String: AggregateFunctionBridge], groups: [String: ExprBridge]) {
+public final class __AggregateStageBridge: __StageBridge {
+  public init(accumulators: [String: __AggregateFunctionBridge], groups: [String: __ExprBridge]) {
   }
   override public var name: String { "aggregate" }
 }
 
-public final class FindNearestStageBridge: StageBridge {
-  public init(field: FieldBridge, vectorValue: VectorValue, distanceMeasure: String,
-              limit: NSNumber?, distanceField: ExprBridge?) {
+public final class __FindNearestStageBridge: __StageBridge {
+  public init(field: __FieldBridge, vectorValue: VectorValue, distanceMeasure: String,
+              limit: NSNumber?, distanceField: __ExprBridge?) {
   }
   override public var name: String { "find_nearest" }
 }
 
-public final class SearchStageBridge: StageBridge {
-  public init(options: [String: ExprBridge], addFields: [String: ExprBridge],
-              select: [String: ExprBridge], sort: [OrderingBridge]) {
+public final class __SearchStageBridge: __StageBridge {
+  public init(options: [String: __ExprBridge], addFields: [String: __ExprBridge],
+              select: [String: __ExprBridge], sort: [__OrderingBridge]) {
   }
   override public var name: String { "search" }
 }
 
-public final class SortStageBridge: StageBridge {
+public final class __SortStageBridge: __StageBridge {
   public init(orderings: [Any]) {
   }
   override public var name: String { "sort" }
 }
 
-public final class ReplaceWithStageBridge: StageBridge {
-  public init(expr: ExprBridge) {
+public final class __ReplaceWithStageBridge: __StageBridge {
+  public init(expr: __ExprBridge) {
   }
   override public var name: String { "replace_with" }
 }
 
-public final class SampleStageBridge: StageBridge {
+public final class __SampleStageBridge: __StageBridge {
   public init(count: Int64) {
   }
   public init(percentage: Double) {
@@ -208,21 +240,21 @@ public final class SampleStageBridge: StageBridge {
   override public var name: String { "sample" }
 }
 
-public final class UnionStageBridge: StageBridge {
-  public init(other: PipelineBridge) {
+public final class __UnionStageBridge: __StageBridge {
+  public init(other: __PipelineBridge) {
   }
   override public var name: String { "union" }
 }
 
-public final class UnnestStageBridge: StageBridge {
-  public init(field: ExprBridge, alias: ExprBridge, indexField: ExprBridge?) {
+public final class __UnnestStageBridge: __StageBridge {
+  public init(field: __ExprBridge, alias: __ExprBridge, indexField: __ExprBridge?) {
   }
   override public var name: String { "unnest" }
 }
 
-public final class RawStageBridge: StageBridge {
+public final class __RawStageBridge: __StageBridge {
   private let _name: String
-  public init(name: String, params: [AnyObject], options: [String: ExprBridge]?) {
+  public init(name: String, params: [AnyObject], options: [String: __ExprBridge]?) {
     _name = name
   }
   override public var name: String { _name }
@@ -231,8 +263,8 @@ public final class RawStageBridge: StageBridge {
 // MARK: - Pipeline Bridges
 
 /// Bridge for pipeline execution.
-public final class PipelineBridge: @unchecked Sendable {
-  public init(stages: [StageBridge], db: Firestore) {
+public final class __PipelineBridge: @unchecked Sendable {
+  public init(stages: [__StageBridge], db: Firestore, atomic: Bool = false) {
   }
 
   public func execute(completion: @escaping (__PipelineSnapshotBridge?, Error?) -> Void) {
@@ -241,15 +273,15 @@ public final class PipelineBridge: @unchecked Sendable {
                             userInfo: [NSLocalizedDescriptionKey: "Not yet implemented"]))
   }
 
-  public static func createStageBridges(from query: Query) -> [StageBridge] {
+  public static func createStageBridges(from query: Query) -> [__StageBridge] {
     // TODO: Implement via C++ conversion
     return []
   }
 }
 
 /// Bridge for realtime pipeline listeners.
-public final class RealtimePipelineBridge: @unchecked Sendable {
-  public init(stages: [StageBridge], db: Firestore) {
+public final class __RealtimePipelineBridge: @unchecked Sendable {
+  public init(stages: [__StageBridge], db: Firestore) {
   }
 
   public func addSnapshotListener(

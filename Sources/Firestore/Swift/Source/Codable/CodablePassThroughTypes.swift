@@ -33,5 +33,8 @@ struct FirestorePassthroughTypes: StructureCodingPassthroughTypeResolver {
       t is FieldValue ||
       t is DocumentReference ||
       t is VectorValue
+    // firebase-swift: upstream 13.0 adds the BSON types (MinKey, MaxKey,
+    // RegexValue, Int32Value, Decimal128Value, BSONObjectId, BSONTimestamp,
+    // Blob), which the Swift bridge doesn't have yet.
   }
 }

@@ -163,6 +163,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
    */
     public func pause() {
         Task { @StorageActor in
+            guard !self.observer.isFinished else { return }
             self.uploadFetcher?.pauseFetching()
             if case .success = self.observer.base.state {
                 ()
@@ -182,14 +183,11 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
                 withServerError: StorageErrorCode.cancelled,
                 ref: self.observer.base.reference
             )
-            self.observer.base.state = .cancelled(error)
+            guard !self.observer.isFinished else { return }
+            self.observer.base.metadata = self.uploadMetadata
+            // Finish first, so the stopped upload can't report a failure instead.
+            self.observer.fire(state: .cancelled(error))
             self.uploadFetcher?.stopFetching()
-            if case .success = state {
-                ()
-            } else {
-                self.observer.base.metadata = self.uploadMetadata
-            }
-            self.observer.fail(with: error)
         }
   }
 
@@ -198,7 +196,8 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
    */
     public func resume() {
         Task { @StorageActor in
-            self.observer.base.state = .resuming
+            guard case .paused = self.observer.base.state else { return }
+            self.observer.setState(.resuming)
             self.uploadFetcher?.resumeFetching()
             if case .success = state {
                 ()

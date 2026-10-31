@@ -1894,9 +1894,27 @@ BridgeFieldValue ConvertProtoValue(
       if (value.which_value_type ==
           google_firestore_v1_Value_integer_value_tag) {
         return BridgeFieldValue::FromInt64(value.integer_value);
-      } else {
+      } else if (value.which_value_type ==
+                 google_firestore_v1_Value_double_value_tag) {
         return BridgeFieldValue::FromDouble(value.double_value);
+      } else if (model::IsInt32Value(value)) {
+        // An Int32Value is the map {"__int__": <integer>}.
+        return BridgeFieldValue::FromInt64(
+            value.map_value.fields[0].value.integer_value);
       }
+      // A Decimal128Value has no Swift counterpart yet; pass its map along.
+      return BridgeFieldValue::FromMap(
+          ConvertProtoMap(value.map_value, firestore, server_ts_behavior));
+
+    // The BSON types are maps with a special key. Until the bridge has Swift
+    // types for them, they reach Swift as those maps rather than as null.
+    case model::TypeOrder::kMinKey:
+    case model::TypeOrder::kBsonTimestamp:
+    case model::TypeOrder::kBsonObjectId:
+    case model::TypeOrder::kRegex:
+    case model::TypeOrder::kMaxKey:
+      return BridgeFieldValue::FromMap(
+          ConvertProtoMap(value.map_value, firestore, server_ts_behavior));
 
     case model::TypeOrder::kString: {
       std::string str = nanopb::MakeString(value.string_value);
@@ -1969,7 +1987,7 @@ BridgeFieldValue ConvertProtoValue(
       return BridgeFieldValue::Null();
     }
 
-    case model::TypeOrder::kMaxValue:
+    case model::TypeOrder::kInternalMaxValue:
       return BridgeFieldValue::Null();
   }
 
