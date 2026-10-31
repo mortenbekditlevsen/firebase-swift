@@ -142,13 +142,7 @@ extension Auth: AuthInterop {
 //    let provider = ComponentType<AuthProvider>.instance(for: AuthProvider.self,
 //                                                        in: app.container)
 //    return provider.auth()
-      #if os(Linux)
-        // No keychain. Files under XDG_DATA_HOME rather than corelibs'
-        // UserDefaults plist in ~/.config, which isn't meant for credentials.
-        let auth = Auth(app: app, keychainStorageProvider: AuthFileStorage.self)
-      #else
-        let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
-      #endif
+      let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
       app.auth = auth
 
       return auth
