@@ -1,6 +1,8 @@
 // swift-tools-version:6.2
 import PackageDescription
 
+// The firebase-ios-sdk release this package corresponds to. Keep in sync with
+// FirebaseVersion() in Sources/FirebaseCore/App.swift; see UPSTREAM.md.
 let firebaseVersion = "12.14.0"
 
 let package = Package(

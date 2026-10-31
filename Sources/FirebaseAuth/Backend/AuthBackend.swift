@@ -91,9 +91,7 @@ public struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
       // GTMUseragent is bundle id followed by a space and
       // then the os version. Fake for now
       let gtmUserAgent = "1.2.3 16.5"
-      let firebaseVersion = "xxyy"
-//    return "FirebaseAuth.iOS/\(FirebaseVersion()) \(GTMFetcherStandardUserAgentString(nil))"
-      return "FirebaseAuth.iOS/\(firebaseVersion) \(gtmUserAgent)"
+      return "FirebaseAuth.iOS/\(FirebaseVersion()) \(gtmUserAgent)"
   }
 
   private static let gBackendImplementation: Mutex<AuthBackendImplementation?> = .init(nil)
@@ -137,8 +135,7 @@ public struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
     request.setValue(contentType, forHTTPHeaderField: "Content-Type")
     let additionalFrameworkMarker = requestConfiguration
       .additionalFrameworkMarker ?? "FirebaseCore-iOS"
-let firebaseVersion = "xxyy" // XXX TODO
-      let clientVersion = "iOS/FirebaseSDK/\(firebaseVersion)/\(additionalFrameworkMarker)"
+      let clientVersion = "iOS/FirebaseSDK/\(FirebaseVersion())/\(additionalFrameworkMarker)"
     request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
     request.setValue(Bundle.main.bundleIdentifier, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
     request.setValue(requestConfiguration.appID, forHTTPHeaderField: "X-Firebase-GMPID")
