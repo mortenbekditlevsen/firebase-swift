@@ -11,70 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+import Foundation
 import Foundation
 
-#if os(iOS)
-  /** @class FIRPhoneMultiFactorAssertion
-   @brief The subclass of base class FIRMultiFactorAssertion, used to assert ownership of a phone
-       second factor.
-       This class is available on iOS only.
-   */
-  @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-  
-  public class MultiFactorResolver {
-    /**
-        @brief The opaque session identifier for the current sign-in flow.
-     */
-    public let session: MultiFactorSession
+/// Completes a sign-in that needs a second factor. Read it from the `secondFactorRequired`
+/// error's `AuthErrors.userInfoMultiFactorResolverKey`.
+public final class MultiFactorResolver: @unchecked Sendable {
+  /// The opaque session identifier for the current sign-in flow.
+  public let session: MultiFactorSession
 
-    /**
-        @brief The list of hints for the second factors needed to complete the sign-in for the current
-            session.
-     */
-    public let hints: [MultiFactorInfo]
+  /// The second factors the user can complete sign-in with.
+  public let hints: [MultiFactorInfo]
 
-    /**
-        @brief The Auth reference for the current FIRMultiResolver.
-     */
-    public let auth: Auth
+  /// The Auth reference for the current MultiFactorResolver.
+  public let auth: Auth
 
-    /// Completes sign-in with a second factor, using a `MultiFactorAssertion` that confirms the
-    /// user completed the second factor challenge.
-    public func resolveSignIn(with assertion: MultiFactorAssertion) async throws -> AuthDataResult {
-      let phoneAssertion = assertion as? PhoneMultiFactorAssertion
-      guard let credential = phoneAssertion?.authCredential,
-            case let .verification(verificationID, code) = credential.credentialKind else {
-        throw AuthErrorUtils.error(code: .internalError,
-                                   message: "A phone assertion needs a verification code.")
-      }
-      let request = FinalizeMFASignInRequest(
+  /// Completes sign-in with a second factor, using a `MultiFactorAssertion` that confirms the
+  /// user completed the second factor challenge: from `PhoneMultiFactorGenerator` or
+  /// `TOTPMultiFactorGenerator.assertionForSignIn(withEnrollmentID:oneTimePassword:)`.
+  public func resolveSignIn(with assertion: MultiFactorAssertion) async throws -> AuthDataResult {
+    let request: FinalizeMFASignInRequest
+    switch assertion {
+    case let phoneAssertion as PhoneMultiFactorAssertion:
+      let (verificationID, code) = try phoneAssertion.verification()
+      request = FinalizeMFASignInRequest(
         mfaPendingCredential: mfaPendingCredential,
         verificationInfo: AuthProtoFinalizeMFAPhoneRequestInfo(sessionInfo: verificationID,
                                                                verificationCode: code),
         requestConfiguration: auth.requestConfiguration
       )
-      let response = try await AuthBackend.post(withRequest: request)
-      guard let idToken = response.idToken, let refreshToken = response.refreshToken else {
-        throw AuthErrorUtils.unexpectedResponse(deserializedResponse: response)
+    case let totpAssertion as TOTPMultiFactorAssertion:
+      guard case let .enrollmentID(enrollmentID) = totpAssertion.secretOrID else {
+        throw AuthErrorUtils.error(code: .internalError,
+                                   message: "TOTP sign-in needs an assertion with an enrollment ID.")
       }
-      let user = try await auth.completeSignIn(withAccessToken: idToken,
-                                               accessTokenExpirationDate: nil,
-                                               refreshToken: refreshToken,
-                                               anonymous: false)
-      try await auth.updateCurrentUser(user)
-      return AuthDataResult(withUser: user, additionalUserInfo: nil)
+      request = FinalizeMFASignInRequest(
+        mfaPendingCredential: mfaPendingCredential,
+        mfaEnrollmentID: enrollmentID,
+        totpVerificationInfo: .init(verificationCode: totpAssertion.oneTimePassword),
+        requestConfiguration: auth.requestConfiguration
+      )
+    default:
+      throw AuthErrorUtils.error(code: .internalError,
+                                 message: "Unsupported second factor: \(assertion.factorID).")
     }
-
-    let mfaPendingCredential: String?
-
-    init(with mfaPendingCredential: String?, hints: [MultiFactorInfo], auth: Auth) {
-      self.mfaPendingCredential = mfaPendingCredential
-      self.hints = hints
-      self.auth = auth
-      session = MultiFactorSession()
-      session.mfaPendingCredential = mfaPendingCredential
+    let response = try await AuthBackend.post(withRequest: request)
+    guard let idToken = response.idToken, let refreshToken = response.refreshToken else {
+      throw AuthErrorUtils.invalidUserTokenError(
+        message: "Invalid user token: accessToken or refreshToken is nil"
+      )
     }
+    let user = try await auth.completeSignIn(withAccessToken: idToken,
+                                             accessTokenExpirationDate: nil,
+                                             refreshToken: refreshToken,
+                                             anonymous: false)
+    try await auth.updateCurrentUser(user)
+    return AuthDataResult(withUser: user, additionalUserInfo: nil)
   }
 
-#endif
+  let mfaPendingCredential: String?
+
+  init(with mfaPendingCredential: String?, hints: [MultiFactorInfo], auth: Auth) {
+    self.mfaPendingCredential = mfaPendingCredential
+    self.hints = hints
+    self.auth = auth
+    session = MultiFactorSession(mfaPendingCredential: mfaPendingCredential)
+  }
+}

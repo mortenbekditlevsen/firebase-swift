@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import Foundation
-#if canImport(UIKit)
+#if os(iOS) || os(tvOS)
 import UIKit
 #endif
 
@@ -576,7 +576,7 @@ class FRepo: FPersistentConnectionDelegate {
 
     // MARK: -
     private func setupNotifications() {
-#if canImport(UIKit)
+#if os(iOS) || os(tvOS)
         FFLog("I-RDB038015", "Registering for background notification.")
         // UIKit posts it on the main thread.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
@@ -589,7 +589,7 @@ class FRepo: FPersistentConnectionDelegate {
 #endif
     }
 
-#if canImport(UIKit)
+#if os(iOS) || os(tvOS)
     /// Keeps the app running in the background until the database actor has worked
     /// through what's queued, so outstanding sets get persisted.
     @MainActor

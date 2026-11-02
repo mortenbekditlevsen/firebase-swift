@@ -37,7 +37,7 @@ same have identical upstream files.
 | Firestore Objective-C API | `Sources/Firestore/Source` | `Firestore/Source` | **13.1.1** | 13.1.0 – main | `b82cdca747fc` (2026-10-30) | 1.000 (±0.018) | exact |
 | Firestore Swift | `Sources/Firestore/Swift` | `Firestore/Swift` | **13.1.1** | 13.1.0 – 13.1.1 | `dc6dfd442b1f` (2026-10-22) | 0.739 (±0.027) | high |
 | FirebaseDataEncoder | `Sources/FirebaseShared/third_party/FirebaseDataEncoder` | `FirebaseSharedSwift/Sources/third_party/FirebaseDataEncoder` | **12.19.2** | 11.0.0 – main | `b82cdca747fc` (2026-10-30) | 0.667 (±0.667) | unchanged upstream |
-| FirebaseAuth | `Sources/FirebaseAuth` | `FirebaseAuth/Sources/Swift` | **11.0.0** | 11.0.0 | `a5c253d1b440` (2024-07-26) | 0.506 (±0.002) | low |
+| FirebaseAuth | `Sources/FirebaseAuth` | `FirebaseAuth/Sources/Swift` | **13.1.1** | main | `b82cdca747fc` (2026-10-30) | 0.444 (±0.002) | medium |
 | FirebaseFunctions | `Sources/FirebaseFunctions` | `FirebaseFunctions/Sources` | **13.1.1** | 13.1.0 – main | `b82cdca747fc` (2026-10-30) | 0.849 (±0.001) | low |
 | FirebaseStorage | `Sources/FirebaseStorage` | `FirebaseStorage/Sources` | **13.1.1** | 12.14.0 – 12.16.0 | `9ab4a7e6e5d6` (2026-07-07) | 0.568 (±0.003) | medium |
 | FirebaseDatabase | `Sources/FirebaseDatabase` | `FirebaseDatabase/Sources` | **13.1.1** | 11.9.0 – 12.6.0 | `087bb95235f6` (2025-11-04) | 0.343 (±0.000) | low |
@@ -62,17 +62,18 @@ from 12.16.0 and have since been synced; the checklists in
 Storage scores low overall because its networking was rewritten:
 `SessionFetcher` replaces GTMSessionFetcher, and has no upstream counterpart.
 
-**FirebaseAuth: core synced to 13.1.1; iOS-only and multi-factor work pending.**
-Upstream Auth became Swift in 11.0.0. The port's core (`Auth`, `User`,
-`SecureTokenService`, `AuthBackend`, providers) was ported from 11.0–11.5 and
-its RPC requests from upstream `main`, so *Synced to* stays at 11.0.0 while
-work remains. Every upstream change since then is triaged in
-[Docs/upstream/FirebaseAuth.md](Docs/upstream/FirebaseAuth.md): the core
-fixes are ported, and the open items are iOS-only code (phone auth, APNs,
-reCAPTCHA, the OAuth web UI, Game Center), multi-factor auth (which is
-iOS-only, phone-only and without TOTP here), and the `AuthProviderID` enum.
-The RPC types were rewritten as `Codable`, so their scores are low and say
-little on their own; `--files --module Auth` gives the per-file view.
+**FirebaseAuth: synced to 13.1.1.** Upstream Auth became Swift in 11.0.0. The
+port's core (`Auth`, `User`, `SecureTokenService`, `AuthBackend`, providers) was
+ported from 11.0–11.5 and its RPC requests from upstream `main`; every upstream
+change since 11.0.0 is triaged in
+[Docs/upstream/FirebaseAuth.md](Docs/upstream/FirebaseAuth.md) and ported or
+marked as not applying. Phone auth, the APNs/notification managers and
+multi-factor auth (phone and TOTP, on every platform) follow 13.1.1. Not
+ported: reCAPTCHA Enterprise (phone auth runs upstream's flow for when it's
+off) and app delegate swizzling (apps forward the APNs token, notifications
+and URLs). The RPC types were rewritten as `Codable` and the managers around
+`Mutex`, so the scores are low and say little on their own;
+`--files --module Auth` gives the per-file view.
 
 **FirebaseDatabase: synced to 13.1.1.** It was ported from about 11.2–11.8.1
 (low confidence: upstream's Objective-C Database rarely changes, so most files

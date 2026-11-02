@@ -46,8 +46,10 @@
         #if targetEnvironment(macCatalyst)
           let webViewController = AuthWebViewController(url: url, delegate: self)
           self.webViewController = webViewController
-          uiDelegate?.present(UINavigationController(rootViewController: webViewController),
-                              animated: true, completion: nil)
+          let navigationController = UINavigationController(rootViewController: webViewController)
+          // Upstream #16274: fill the window on Mac Catalyst.
+          navigationController.modalPresentationStyle = .fullScreen
+          uiDelegate?.present(navigationController, animated: true, completion: nil)
         #else
           let safariViewController = SFSafariViewController(url: url)
           safariViewController.delegate = self

@@ -109,12 +109,10 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
         }
     }
     
-#if os(iOS)
-    /// Multi factor object associated with the user. This property is available on iOS only.
+    /// The user's second factors.
     public var multiFactor: MultiFactor {
         MultiFactor(user: self, enrollments: userdata.mfaEnrollments)
     }
-#endif
     
     /** @fn updateEmail:completion:
      @brief Updates the email address for the user. On success, the cached user profile data is

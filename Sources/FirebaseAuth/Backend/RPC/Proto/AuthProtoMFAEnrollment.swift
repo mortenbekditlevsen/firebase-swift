@@ -16,6 +16,9 @@ import Foundation
 
 public struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
     public var phoneInfo: String?
+
+    /// Whether this is a TOTP enrollment. The backend sends `totpInfo` as an empty object.
+    public var isTOTP: Bool = false
     
     public var mfaEnrollmentID: String?
     
@@ -25,6 +28,7 @@ public struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
     
     enum CodingKeys: String, CodingKey {
         case phoneInfo
+        case totpInfo
         case mfaEnrollmentID = "mfaEnrollmentId"
         case displayName
         case enrolledAt
@@ -42,6 +46,7 @@ public struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.phoneInfo = try container.decodeIfPresent(String.self, forKey: .phoneInfo)
+        self.isTOTP = container.contains(.totpInfo)
         self.mfaEnrollmentID = try container.decodeIfPresent(String.self, forKey: .mfaEnrollmentID)
         self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         if let enrolledAtString = try container.decodeIfPresent(String.self, forKey: .enrolledAt) {
@@ -54,6 +59,9 @@ public struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(phoneInfo, forKey: .phoneInfo)
+        if isTOTP {
+            try container.encode([String: String](), forKey: .totpInfo)
+        }
         try container.encodeIfPresent(mfaEnrollmentID, forKey: .mfaEnrollmentID)
         try container.encodeIfPresent(displayName, forKey: .displayName)
         try container.encodeIfPresent(enrolledAt.map { Self.dateFormatter().string(from: $0) },

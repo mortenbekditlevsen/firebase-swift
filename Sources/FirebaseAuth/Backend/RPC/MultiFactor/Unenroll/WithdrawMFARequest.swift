@@ -33,7 +33,8 @@ struct WithdrawMFARequest: IdentityToolkitRequest, AuthRPCRequest {
    */
 
     public var useStaging: Bool { false }
-    public var useIdentityPlatform: Bool { false }
+    // A v2 (Identity Platform) endpoint; the port sent it to v1, which 404s.
+    public var useIdentityPlatform: Bool { true }
     public var endpoint: String { kWithdrawMFAEndPoint }
     public var requestConfiguration: AuthRequestConfiguration
 

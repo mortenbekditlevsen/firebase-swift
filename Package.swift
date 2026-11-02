@@ -17,10 +17,11 @@ let package = Package(
     name: "firebase-swift",
     platforms: [
         .iOS(.v18),
-        .tvOS(.v13),
+        // The OS versions that have Synchronization's Mutex.
+        .tvOS(.v18),
         .macOS(.v15),
-        .macCatalyst(.v13),
-        .watchOS(.v7),
+        .macCatalyst(.v18),
+        .watchOS(.v11),
     ],
     products: [
         .library(name: "FirebaseCore", targets: ["FirebaseCore"]),

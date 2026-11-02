@@ -28,6 +28,7 @@ private let kTenantIDKey = "tenantId"
 
   private(set) var idToken: String?
   private(set) var enrollmentInfo: AuthProtoStartMFAPhoneRequestInfo?
+  private(set) var totpEnrollmentInfo: AuthProtoStartMFATOTPEnrollmentRequestInfo?
 
   /** @var response
       @brief The corresponding response for this request
@@ -45,10 +46,19 @@ private let kTenantIDKey = "tenantId"
       self.enrollmentInfo = enrollmentInfo
       self.requestConfiguration = requestConfiguration
   }
+
+  init(idToken: String?,
+       totpEnrollmentInfo: AuthProtoStartMFATOTPEnrollmentRequestInfo,
+       requestConfiguration: AuthRequestConfiguration) {
+      self.idToken = idToken
+      self.totpEnrollmentInfo = totpEnrollmentInfo
+      self.requestConfiguration = requestConfiguration
+  }
      
      enum CodingKeys: CodingKey {
          case idToken
          case phoneEnrollmentInfo
+         case totpEnrollmentInfo
          case tenantId
          
      }
@@ -57,6 +67,7 @@ private let kTenantIDKey = "tenantId"
          var container = encoder.container(keyedBy: CodingKeys.self)
          try container.encodeIfPresent(idToken.self, forKey: .idToken)
          try container.encodeIfPresent(enrollmentInfo, forKey: .phoneEnrollmentInfo)
+         try container.encodeIfPresent(totpEnrollmentInfo, forKey: .totpEnrollmentInfo)
          try container.encodeIfPresent(tenantID, forKey: .tenantId)
      }
 }

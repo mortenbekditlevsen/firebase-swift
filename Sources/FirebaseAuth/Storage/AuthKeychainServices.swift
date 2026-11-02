@@ -160,7 +160,8 @@ final class AuthKeychainServices: AuthStorage {
           level: .warning,
           service: "[FirebaseAuth]",
           code: "I-AUT000005",
-          message: "Keychain query returned multiple results, all but the first will be ignored: \(items)"
+          // Upstream #16892: without the items, which hold credentials.
+          message: "Keychain query returned multiple results, all but the first will be ignored."
         )
       }
 

@@ -19,6 +19,8 @@ import Foundation
 #endif
 #if os(iOS) || os(tvOS)
 import UIKit
+#elseif os(watchOS)
+import WatchKit
 #endif
 
 class FOutstandingQuery {

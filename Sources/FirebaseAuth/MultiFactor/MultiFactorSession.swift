@@ -11,27 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+import Foundation
 import Foundation
 
-#if os(iOS)
-  /** @class FIRMultiFactorSession
-      @brief Opaque object that identifies the current session to enroll a second factor or to
-          complete sign in when previously enrolled.
-          This class is available on iOS only.
-   */
-  @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-   public class MultiFactorSession {
-    var idToken: String?
+/// Identifies a second factor enrollment, or the sign-in that needs a second factor.
+public final class MultiFactorSession: @unchecked Sendable {
+  /// For enrollment: the user's ID token.
+  let idToken: String?
 
-    var mfaPendingCredential: String?
+  /// For sign-in: the credential from the first factor.
+  let mfaPendingCredential: String?
 
-    var multiFactorInfo: MultiFactorInfo?
+  /// For enrollment: the user enrolling.
+  weak var user: User?
 
-    convenience init(idToken: String?) {
-      self.init()
-      self.idToken = idToken
-    }
+  /// For sign-in: the factor being verified, set by `PhoneAuthProvider`.
+  var multiFactorInfo: MultiFactorInfo? {
+    get { lock.withLock { _multiFactorInfo } }
+    set { lock.withLock { _multiFactorInfo = newValue } }
   }
 
-#endif
+  private let lock = NSLock()
+  private var _multiFactorInfo: MultiFactorInfo?
+
+  init(enrolling user: User, idToken: String) {
+    self.idToken = idToken
+    self.user = user
+    mfaPendingCredential = nil
+  }
+
+  init(mfaPendingCredential: String?) {
+    idToken = nil
+    self.mfaPendingCredential = mfaPendingCredential
+  }
+}

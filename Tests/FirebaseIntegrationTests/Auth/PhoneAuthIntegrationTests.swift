@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Phone auth is iOS-only. Run these in the iOS Simulator with
-// scripts/test-ios-phone-auth.sh, which starts the Auth emulator.
+// scripts/test-ios.sh, which starts the Auth emulator.
 #if os(iOS)
   @testable import FirebaseAuth
   import Foundation
@@ -59,24 +59,6 @@
                                                                 multiFactorSession: session)
       return try await provider.credential(withVerificationID: verificationID,
                                            verificationCode: code(for: verificationID))
-    }
-
-    /// Marks the user's email as verified through the emulator's admin API, as enrolling a
-    /// second factor requires.
-    private func verifyEmail(of user: User) async throws {
-      let address = try #require(Emulators.auth)
-      let url = try #require(URL(string: "http://\(address.host):\(address.port)" +
-          "/identitytoolkit.googleapis.com/v1/projects/\(Emulators.projectID)/accounts:update"))
-      var request = URLRequest(url: url)
-      request.httpMethod = "POST"
-      request.setValue("Bearer owner", forHTTPHeaderField: "Authorization")
-      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-      request.httpBody = try JSONSerialization.data(withJSONObject: [
-        "localId": user.uid, "emailVerified": true,
-      ])
-      let (_, response) = try await URLSession.shared.data(for: request)
-      #expect((response as? HTTPURLResponse)?.statusCode == 200)
-      _ = try await user.getIDToken(forcingRefresh: true)
     }
 
     @Test func signsInWithAPhoneNumber() async throws {
@@ -149,7 +131,7 @@
       let email = "mfa-\(UUID().uuidString.lowercased())@example.com"
       let password = "correct-horse-battery-staple"
       let user = try await auth.createUser(withEmail: email, password: password).user
-      try await verifyEmail(of: user)
+      try await AuthEmulatorAdmin.verifyEmail(of: user)
 
       let phoneNumber = newPhoneNumber()
       let session = try await user.multiFactor.session()
@@ -159,7 +141,7 @@
         with: PhoneMultiFactorGenerator.assertion(with: enrollment),
         displayName: "Phone"
       )
-      let enrolled = try #require(auth.currentUser?.multiFactor.enrolledFactors?.first
+      let enrolled = try #require(auth.currentUser?.multiFactor.enrolledFactors.first
         as? PhoneMultiFactorInfo)
       #expect(enrolled.phoneNumber == phoneNumber)
       #expect(enrolled.displayName == "Phone")

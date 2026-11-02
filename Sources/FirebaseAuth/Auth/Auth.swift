@@ -1305,6 +1305,28 @@ extension Auth: AuthInterop {
       state.storedUserManager = AuthStoredUserManager(serviceName: keychainServiceName)
     }
 
+    #if os(iOS)
+      // App extensions can't use UIApplication, and so can't use phone auth.
+      if !Bundle.main.bundlePath.hasSuffix(".appex") {
+        let application = AuthSharedApplication()
+        let appCredentialManager = AuthAppCredentialManager(withKeychain: state.keychainServices)
+        state.tokenManager = AuthAPNSTokenManager(withApplication: application)
+        state.appCredentialManager = appCredentialManager
+        state.notificationManager = AuthNotificationManager(
+          withApplication: application,
+          appCredentialManager: appCredentialManager
+        )
+      }
+    #endif
+
+    _loadStoredUser(state: &state)
+  }
+
+  /// Makes the saved user the current one.
+  ///
+  /// When an app is prewarmed before the device is first unlocked, the keychain can't be read
+  /// yet. Then this tries again once protected data becomes available, as upstream does.
+  private func _loadStoredUser(state: inout State) {
     do {
       if let storedUserAccessGroup = state.storedUserManager.getStoredUserAccessGroup() {
         try _internalUseUserAccessGroup(storedUserAccessGroup, state: &state)
@@ -1321,32 +1343,47 @@ extension Auth: AuthInterop {
         }
       }
     } catch {
-      #if os(iOS) || os(tvOS) || targetEnvironment(macCatalyst)
-        // TODO: re-port the keychain pre-warming observer; the previous WIP referenced
-        // an undefined `strongSelf` and never compiled. Tracking issue: phase 6.
+      #if os(iOS) || os(tvOS)
+        if (error as NSError).code == AuthErrorCode.keychainError.rawValue {
+          _addProtectedDataDidBecomeAvailableObserver(state: &state)
+        }
       #endif
       AuthLog.logError(code: "I-AUT000001",
                        message: "Error loading saved user when starting up: \(error)")
     }
-
-    #if os(iOS)
-      // App extensions can't use UIApplication, and so can't use phone auth.
-      if !Bundle.main.bundlePath.hasSuffix(".appex"), state.tokenManager == nil {
-        let application = AuthSharedApplication()
-        let appCredentialManager = AuthAppCredentialManager(withKeychain: state.keychainServices)
-        state.tokenManager = AuthAPNSTokenManager(withApplication: application)
-        state.appCredentialManager = appCredentialManager
-        state.notificationManager = AuthNotificationManager(
-          withApplication: application,
-          appCredentialManager: appCredentialManager
-        )
-      }
-    #endif
   }
 
+  #if os(iOS) || os(tvOS)
+    private func _addProtectedDataDidBecomeAvailableObserver(state: inout State) {
+      guard state.protectedDataDidBecomeAvailableObserver == nil else { return }
+      state.protectedDataDidBecomeAvailableObserver = NotificationCenter.default.addObserver(
+        forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+        object: nil,
+        queue: nil
+      ) { [weak self] _ in
+        guard let self else { return }
+        let observer = self._state.withLock { state in
+          let observer = state.protectedDataDidBecomeAvailableObserver
+          state.protectedDataDidBecomeAvailableObserver = nil
+          // Unless someone signed in meanwhile.
+          if state.currentUser == nil {
+            self._loadStoredUser(state: &state)
+          }
+          return observer
+        }
+        if let observer {
+          NotificationCenter.default.removeObserver(observer)
+        }
+      }
+    }
+  #endif
+
   deinit {
-    // TODO: re-enable observer removal once the iOS observer wiring is re-ported.
-    // The previous WIP referenced an undefined `defaultCenter` symbol and never compiled.
+    #if os(iOS) || os(tvOS)
+      if let observer = _state.withLock({ $0.protectedDataDidBecomeAvailableObserver }) {
+        NotificationCenter.default.removeObserver(observer)
+      }
+    #endif
   }
 
   private func _getUser(state: inout State) throws -> User? {
@@ -1906,7 +1943,10 @@ extension Auth: AuthInterop {
       var notificationManager: AuthNotificationManager?
       var applicationDidBecomeActiveObserver: AnyObject?
       var applicationDidEnterBackgroundObserver: AnyObject?
-      var protectedDataDidBecomeAvailableObserver: AnyObject?
+    #endif
+    #if os(iOS) || os(tvOS)
+      /// Retries loading the saved user once the keychain can be read.
+      var protectedDataDidBecomeAvailableObserver: (any NSObjectProtocol)?
     #endif
 
     init(requestConfiguration: AuthRequestConfiguration) {
