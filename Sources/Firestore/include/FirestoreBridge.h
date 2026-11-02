@@ -27,27 +27,30 @@
 
 // C-style callback typedefs for Swift interop.
 // Swift C++ interop cannot pass C++ types through @convention(c) function
-// pointers. We use void* for the snapshot (caller must cast) and const char*
-// for the error string.
+// pointers. We use void* for the snapshot (caller must cast), and report
+// errors as a `firebase::firestore::Error` code (0 means OK) plus a message.
 
 /// Callback for document snapshot results.
-/// snapshot: opaque pointer to a heap-allocated DocumentSnapshotBridge (caller owns).
-/// error: null-terminated C string, empty string "" means no error.
+/// snapshot: opaque pointer to a heap-allocated DocumentSnapshotBridge (caller
+/// owns), or null on error.
 typedef void (*DocumentSnapshotCallback)(
     void* context,
     void* snapshot,
-    const char* error);
+    int32_t error_code,
+    const char* error_message);
 
 /// Callback for query snapshot results.
 typedef void (*QuerySnapshotCallback)(
     void* context,
     void* snapshot,
-    const char* error);
+    int32_t error_code,
+    const char* error_message);
 
 /// Callback for error-only results.
 typedef void (*ErrorCallback)(
     void* context,
-    const char* error);
+    int32_t error_code,
+    const char* error_message);
 
 /// Asks Swift for an Auth or App Check token. Swift must pass `request` to
 /// the matching `Complete…TokenRequest` function exactly once, from any thread.
@@ -88,6 +91,7 @@ class DocumentSnapshotBridge;
 class QuerySnapshotBridge;
 class ListenerRegistrationBridge;
 class BridgeFieldValue;
+class FilterBridge;
 
 // Type aliases for template specializations (required by Swift C++ interop).
 using StringVector = std::vector<std::string>;
@@ -97,11 +101,44 @@ using BridgeFieldValueVector = std::vector<BridgeFieldValue>;
 using BridgeFieldValueMapEntry = std::pair<std::string, BridgeFieldValue>;
 using BridgeFieldValueMap = std::vector<BridgeFieldValueMapEntry>;
 
+/// A field path as its segments, e.g. {"a", "b.c"}. Swift splits dotted
+/// strings itself, so a segment may contain dots.
+using FieldPathSegments = StringVector;
+using FieldPathVector = std::vector<FieldPathSegments>;
+/// The data of an `updateData` call: field paths to new values.
+using BridgeUpdateEntry = std::pair<FieldPathSegments, BridgeFieldValue>;
+using BridgeUpdateData = std::vector<BridgeUpdateEntry>;
+
+/// How `setData` treats fields that aren't in the new data.
+enum class SetOption : int32_t {
+  Overwrite = 0,
+  /// Keep fields that aren't in the new data.
+  Merge,
+  /// Only write the fields in `merge_fields`.
+  MergeFields,
+};
+
+/// Query filter operators, as in `core::FieldFilter::Operator`.
+enum class FilterOperator : int32_t {
+  LessThan = 0,
+  LessThanOrEqual,
+  Equal,
+  NotEqual,
+  GreaterThanOrEqual,
+  GreaterThan,
+  ArrayContains,
+  In,
+  ArrayContainsAny,
+  NotIn,
+};
+
 // ---------------------------------------------------------------------------
 // BridgeFieldValue — a Swift-constructable value type for document data
 // ---------------------------------------------------------------------------
 /// Represents a single Firestore value that Swift can construct and pass
 /// through the C++ bridge. Uses a tagged-union approach with simple types.
+/// Values are validated when they're parsed for a write or query, with the
+/// same rules and messages as upstream's FSTUserDataReader.
 class BridgeFieldValue {
  public:
   enum class Tag : int32_t {
@@ -123,7 +160,12 @@ class BridgeFieldValue {
     SentinelServerTimestamp,
     SentinelArrayUnion,    // elements stored in array_value_
     SentinelArrayRemove,   // elements stored in array_value_
-    SentinelIncrement,     // operand in int64_value_ or double_value_
+    SentinelIncrement,     // operand in array_value_[0]
+    SentinelMinimum,       // operand in array_value_[0]
+    SentinelMaximum,       // operand in array_value_[0]
+
+    /// A Swift value Firestore can't store; the string is its type name.
+    Unsupported,
   };
 
   // Default constructor creates a Null value.
@@ -153,10 +195,16 @@ class BridgeFieldValue {
       const BridgeFieldValueVector& elements) noexcept;
   static BridgeFieldValue FromMap(
       const BridgeFieldValueMap& entries) noexcept;
+  /// A reference to `document`, which may belong to another database (that is
+  /// rejected when the value is written).
   static BridgeFieldValue FromReference(
+      const DocumentReferenceBridge& document) noexcept;
+  /// A reference read from a document, as its path in the same database.
+  static BridgeFieldValue FromDocumentPath(
       const std::string& document_path) noexcept;
   static BridgeFieldValue FromVector(
       const DoubleVector& doubles) noexcept;
+  static BridgeFieldValue Unsupported(const std::string& type_name) noexcept;
 
   // Sentinel factories
   static BridgeFieldValue Delete() noexcept;
@@ -165,8 +213,9 @@ class BridgeFieldValue {
       const BridgeFieldValueVector& elements) noexcept;
   static BridgeFieldValue ArrayRemove(
       const BridgeFieldValueVector& elements) noexcept;
-  static BridgeFieldValue IncrementInt(int64_t operand) noexcept;
-  static BridgeFieldValue IncrementDouble(double operand) noexcept;
+  static BridgeFieldValue Increment(const BridgeFieldValue& operand) noexcept;
+  static BridgeFieldValue Minimum(const BridgeFieldValue& operand) noexcept;
+  static BridgeFieldValue Maximum(const BridgeFieldValue& operand) noexcept;
 
   // Accessors
   Tag tag() const noexcept { return tag_; }
@@ -193,6 +242,8 @@ class BridgeFieldValue {
   }
 
  private:
+  friend class UserDataParser;
+
   Tag tag_ = Tag::Null;
   bool bool_value_ = false;
   int64_t int64_value_ = 0;
@@ -200,6 +251,9 @@ class BridgeFieldValue {
   double double_value_ = 0.0;
   double double2_value_ = 0.0;
   std::string string_value_;
+  // The database of a Reference.
+  std::string project_id_;
+  std::string database_id_;
   BridgeFieldValueVector array_value_;
   BridgeFieldValueMap map_value_;
   DoubleVector vector_value_;
@@ -232,21 +286,19 @@ class DocumentSnapshotBridge {
   /// Creates a DocumentReferenceBridge for this snapshot's document.
   DocumentReferenceBridge create_reference() const noexcept;
 
-  /// Returns the document data as a BridgeFieldValueMap.
-  /// Returns empty map if document doesn't exist.
-  BridgeFieldValueMap data() const noexcept;
+  /// Returns the document data. Empty if the document doesn't exist.
+  /// server_timestamp_behavior: 0 = none (null), 1 = estimate (local write
+  /// time), 2 = previous.
+  BridgeFieldValueMap data(int32_t server_timestamp_behavior) const noexcept;
 
-  /// Returns document data with server timestamp behavior.
-  /// behavior: 0 = none (null), 1 = estimate (local write time), 2 = previous
-  BridgeFieldValueMap data_with_server_timestamps(int32_t behavior) const noexcept;
+  /// Reads the field at `field_path` into `value`. Returns false if the
+  /// document or field doesn't exist.
+  bool GetField(const FieldPathSegments& field_path,
+                int32_t server_timestamp_behavior,
+                BridgeFieldValue& value) const noexcept;
 
-  /// Gets a single field value by dot-separated path.
-  /// Returns a Null BridgeFieldValue if the field doesn't exist.
-  BridgeFieldValue get_field(const std::string& field_path) const noexcept;
-
-  /// Gets a single field value with server timestamp behavior.
-  BridgeFieldValue get_field_with_server_timestamps(
-      const std::string& field_path, int32_t behavior) const noexcept;
+  bool IsEqual(const DocumentSnapshotBridge& other) const noexcept;
+  size_t Hash() const noexcept;
 
  private:
   friend class DocumentReferenceBridge;
@@ -280,14 +332,11 @@ class ListenerRegistrationBridge {
  private:
   friend class DocumentReferenceBridge;
   friend class QueryBridge;
+  friend class FirestoreBridge;
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };
 
-// ---------------------------------------------------------------------------
-// QuerySnapshotBridge
-// ---------------------------------------------------------------------------
-/// Wraps api::QuerySnapshot.
 // ---------------------------------------------------------------------------
 // DocumentChangeBridge
 // ---------------------------------------------------------------------------
@@ -322,6 +371,10 @@ class DocumentChangeBridge {
 
 using DocumentChangeBridgeVector = std::vector<DocumentChangeBridge>;
 
+// ---------------------------------------------------------------------------
+// QuerySnapshotBridge
+// ---------------------------------------------------------------------------
+/// Wraps api::QuerySnapshot.
 class QuerySnapshotBridge {
  public:
   QuerySnapshotBridge() noexcept;
@@ -358,6 +411,9 @@ class QuerySnapshotBridge {
 // DocumentReferenceBridge
 // ---------------------------------------------------------------------------
 /// Wraps api::DocumentReference. Exposes read and write operations to Swift.
+///
+/// Writes take an optional callback (null: fire-and-forget), called once the
+/// backend acknowledges the write. Invalid data aborts, as upstream.
 class DocumentReferenceBridge {
  public:
   DocumentReferenceBridge() noexcept;
@@ -387,103 +443,35 @@ class DocumentReferenceBridge {
   CollectionReferenceBridge Collection(
       const std::string& collection_path) const noexcept;
 
-  /// Reads the document from the given source.
-  /// Calls `callback(snapshot, error_message)`.
-  /// If error_message is empty, the read succeeded.
-  void GetDocument(
-      api::Source source,
-      std::function<void(DocumentSnapshotBridge, std::string)> callback
-  ) const noexcept;
+  /// Writes the document. `merge_fields` is only used with
+  /// `SetOption::MergeFields`.
+  void SetData(const BridgeFieldValueMap& data,
+               SetOption option,
+               const FieldPathVector& merge_fields,
+               void* context,
+               ErrorCallback callback) noexcept;
+
+  /// Updates fields of an existing document.
+  void UpdateData(const BridgeUpdateData& data,
+                  void* context,
+                  ErrorCallback callback) noexcept;
 
   /// Deletes this document.
-  /// Calls `callback(error_message)` — empty string on success.
-  void DeleteDocument(
-      std::function<void(std::string)> callback
-  ) const noexcept;
+  void DeleteDocument(void* context, ErrorCallback callback) const noexcept;
 
-  // --- Write operations ---
-  // These accept BridgeFieldValueMap and do the conversion internally.
-  // They return an error string (empty on success, synchronous parsing
-  // errors reported immediately; async write errors via callback).
+  /// Reads the document from the given source.
+  void GetDocument(api::Source source,
+                   void* context,
+                   DocumentSnapshotCallback callback) const noexcept;
 
-  /// Set document data (overwrite).
-  /// Returns error string for parse errors; empty string means parse OK
-  /// and the write has been submitted (completion comes via callback).
-  std::string SetData(
-      const BridgeFieldValueMap& data,
-      std::function<void(std::string)> callback) noexcept;
-
-  /// Set document data with merge.
-  std::string SetDataMerge(
-      const BridgeFieldValueMap& data,
-      std::function<void(std::string)> callback) noexcept;
-
-  /// Set document data with explicit merge field list.
-  std::string SetDataMergeFields(
-      const BridgeFieldValueMap& data,
-      const StringVector& merge_fields,
-      std::function<void(std::string)> callback) noexcept;
-
-  /// Update document fields.
-  std::string UpdateData(
-      const BridgeFieldValueMap& data,
-      std::function<void(std::string)> callback) noexcept;
-
-  // --- Fire-and-forget write overloads (callable from Swift) ---
-
-  /// Set document data (overwrite), fire-and-forget.
-  std::string SetData(const BridgeFieldValueMap& data) noexcept;
-
-  /// Set document data with merge, fire-and-forget.
-  std::string SetDataMerge(const BridgeFieldValueMap& data) noexcept;
-
-  /// Set document data with explicit merge fields, fire-and-forget.
-  std::string SetDataMergeFields(
-      const BridgeFieldValueMap& data,
-      const StringVector& merge_fields) noexcept;
-
-  /// Update document fields, fire-and-forget.
-  std::string UpdateData(const BridgeFieldValueMap& data) noexcept;
-
-  /// Delete this document, fire-and-forget.
-  void DeleteDocumentNoCallback() const noexcept;
-
-  // --- C-callback-based async overloads (callable from Swift) ---
-
-  /// Reads the document. Calls callback with context, snapshot, error.
-  void GetDocumentC(
-      api::Source source,
-      void* context,
-      DocumentSnapshotCallback callback) const noexcept;
-
-  /// Adds a snapshot listener. Returns a ListenerRegistrationBridge.
+  /// Adds a snapshot listener. `listen_source`: 0 = default, 1 = cache.
+  /// `release_context` is called once the listener is gone, after `Remove()`.
   ListenerRegistrationBridge AddSnapshotListener(
       bool include_metadata_changes,
+      int32_t listen_source,
       void* context,
+      ContextReleaseCallback release_context,
       DocumentSnapshotCallback callback) const noexcept;
-
-  /// Deletes this document with C callback.
-  void DeleteDocumentC(
-      void* context,
-      ErrorCallback callback) const noexcept;
-
-  /// Set document data with C callback.
-  std::string SetDataC(
-      const BridgeFieldValueMap& data,
-      void* context,
-      ErrorCallback callback) noexcept;
-
-  /// Set document data with merge, C callback.
-  std::string SetDataMergeC(
-      const BridgeFieldValueMap& data,
-      void* context,
-      ErrorCallback callback) noexcept;
-
-  /// Update document fields with C callback.
-  std::string UpdateDataC(
-      const BridgeFieldValueMap& data,
-      void* context,
-      ErrorCallback callback) noexcept;
 
  private:
   friend class FirestoreBridge;
@@ -491,15 +479,45 @@ class DocumentReferenceBridge {
   friend class DocumentSnapshotBridge;
   friend class WriteBatchBridge;
   friend class TransactionBridge;
-  friend class UserDataReaderBridge;
+  friend class BridgeFieldValue;
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };
 
 // ---------------------------------------------------------------------------
+// FilterBridge
+// ---------------------------------------------------------------------------
+/// A query filter as Swift built it. Values are parsed when the filter is
+/// added to a query, which is where upstream validates them too.
+class FilterBridge {
+ public:
+  FilterBridge() noexcept;
+  ~FilterBridge() noexcept;
+
+  FilterBridge(const FilterBridge&) noexcept;
+  FilterBridge& operator=(const FilterBridge&) noexcept;
+  FilterBridge(FilterBridge&&) noexcept;
+  FilterBridge& operator=(FilterBridge&&) noexcept;
+
+  static FilterBridge Field(const FieldPathSegments& field_path,
+                            FilterOperator op,
+                            const BridgeFieldValue& value) noexcept;
+  static FilterBridge And(const std::vector<FilterBridge>& filters) noexcept;
+  static FilterBridge Or(const std::vector<FilterBridge>& filters) noexcept;
+
+ private:
+  friend class QueryBridge;
+  struct Impl;
+  std::shared_ptr<const Impl> impl_;
+};
+
+using FilterBridgeVector = std::vector<FilterBridge>;
+
+// ---------------------------------------------------------------------------
 // QueryBridge
 // ---------------------------------------------------------------------------
-/// Wraps api::Query. Exposes query modifiers and read operations.
+/// Wraps api::Query. Exposes query modifiers and read operations. Invalid
+/// queries abort with upstream's messages.
 class QueryBridge {
  public:
   QueryBridge() noexcept;
@@ -510,66 +528,40 @@ class QueryBridge {
   QueryBridge(QueryBridge&&) noexcept;
   QueryBridge& operator=(QueryBridge&&) noexcept;
 
-  /// Execute the query and get results.
-  void GetDocuments(
-      api::Source source,
-      std::function<void(QuerySnapshotBridge, std::string)> callback
-  ) const noexcept;
+  bool IsEqual(const QueryBridge& other) const noexcept;
+  size_t Hash() const noexcept;
 
   // Query modifiers — each returns a new QueryBridge.
-  QueryBridge OrderBy(const std::string& field, bool descending) const noexcept;
+  QueryBridge Where(const FilterBridge& filter) const noexcept;
+  QueryBridge OrderBy(const FieldPathSegments& field_path,
+                      bool descending) const noexcept;
   QueryBridge LimitToFirst(int32_t limit) const noexcept;
   QueryBridge LimitToLast(int32_t limit) const noexcept;
 
-  // --- Query cursor operations ---
-  /// Start at a document snapshot (inclusive).
-  QueryBridge StartAtDocument(
-      const DocumentSnapshotBridge& snapshot) const noexcept;
-  /// Start after a document snapshot (exclusive).
-  QueryBridge StartAfterDocument(
-      const DocumentSnapshotBridge& snapshot) const noexcept;
-  /// End at a document snapshot (inclusive).
-  QueryBridge EndAtDocument(
-      const DocumentSnapshotBridge& snapshot) const noexcept;
-  /// End before a document snapshot (exclusive).
-  QueryBridge EndBeforeDocument(
-      const DocumentSnapshotBridge& snapshot) const noexcept;
+  /// Starts at (`inclusive`) or after the given values of the order-by fields.
+  QueryBridge StartAt(const BridgeFieldValueVector& values,
+                      bool inclusive) const noexcept;
+  /// Ends at (`inclusive`) or before the given values of the order-by fields.
+  QueryBridge EndAt(const BridgeFieldValueVector& values,
+                    bool inclusive) const noexcept;
+  QueryBridge StartAtDocument(const DocumentSnapshotBridge& snapshot,
+                              bool inclusive) const noexcept;
+  QueryBridge EndAtDocument(const DocumentSnapshotBridge& snapshot,
+                            bool inclusive) const noexcept;
 
-  // --- C-callback-based async overloads (callable from Swift) ---
+  /// Executes the query.
+  void GetDocuments(api::Source source,
+                    void* context,
+                    QuerySnapshotCallback callback) const noexcept;
 
-  /// Execute the query with C callback.
-  void GetDocumentsC(
-      api::Source source,
-      void* context,
-      QuerySnapshotCallback callback) const noexcept;
-
-  /// Adds a snapshot listener. Returns a ListenerRegistrationBridge.
+  /// Adds a snapshot listener. `listen_source`: 0 = default, 1 = cache.
+  /// `release_context` is called once the listener is gone, after `Remove()`.
   ListenerRegistrationBridge AddSnapshotListener(
       bool include_metadata_changes,
+      int32_t listen_source,
       void* context,
+      ContextReleaseCallback release_context,
       QuerySnapshotCallback callback) const noexcept;
-
-  // --- Query filter operations ---
-  QueryBridge WhereEqualTo(const std::string& field,
-                           const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereNotEqualTo(const std::string& field,
-                              const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereLessThan(const std::string& field,
-                            const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereGreaterThan(const std::string& field,
-                               const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereLessThanOrEqual(const std::string& field,
-                                   const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereGreaterThanOrEqual(const std::string& field,
-                                      const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereArrayContains(const std::string& field,
-                                 const BridgeFieldValue& value) const noexcept;
-  QueryBridge WhereIn(const std::string& field,
-                      const BridgeFieldValueVector& values) const noexcept;
-  QueryBridge WhereNotIn(const std::string& field,
-                         const BridgeFieldValueVector& values) const noexcept;
-  QueryBridge WhereArrayContainsAny(const std::string& field,
-                                    const BridgeFieldValueVector& values) const noexcept;
 
  protected:
   friend class FirestoreBridge;
@@ -598,6 +590,10 @@ class CollectionReferenceBridge : public QueryBridge {
 
   /// The full path of this collection.
   std::string path() const noexcept;
+
+  /// Writes the parent document to `parent` and returns true, or returns
+  /// false for a root collection.
+  bool GetParent(DocumentReferenceBridge& parent) const noexcept;
 
   /// Get a document reference within this collection (auto-generated ID).
   DocumentReferenceBridge Document() const noexcept;
@@ -631,25 +627,15 @@ class WriteBatchBridge {
   WriteBatchBridge(WriteBatchBridge&&) noexcept;
   WriteBatchBridge& operator=(WriteBatchBridge&&) noexcept;
 
-  /// Set document data (overwrite).
-  std::string SetData(
-      const DocumentReferenceBridge& doc,
-      const BridgeFieldValueMap& data) noexcept;
-
-  /// Set document data with merge.
-  std::string SetDataMerge(
-      const DocumentReferenceBridge& doc,
-      const BridgeFieldValueMap& data) noexcept;
-
-  /// Update document fields.
-  std::string UpdateData(
-      const DocumentReferenceBridge& doc,
-      const BridgeFieldValueMap& data) noexcept;
-
-  /// Delete a document.
+  void SetData(const DocumentReferenceBridge& doc,
+               const BridgeFieldValueMap& data,
+               SetOption option,
+               const FieldPathVector& merge_fields) noexcept;
+  void UpdateData(const DocumentReferenceBridge& doc,
+                  const BridgeUpdateData& data) noexcept;
   void DeleteData(const DocumentReferenceBridge& doc) noexcept;
 
-  /// Commit all batched writes. Calls callback with error string (empty = success).
+  /// Commits all batched writes. `callback` may be null.
   void Commit(void* context, ErrorCallback callback) noexcept;
 
  private:
@@ -667,27 +653,18 @@ class TransactionBridge {
   TransactionBridge() noexcept;
   ~TransactionBridge() noexcept;
 
-  /// Get a document within this transaction (synchronous, blocking).
-  DocumentSnapshotBridge GetDocument(
-      const DocumentReferenceBridge& doc,
-      std::string& out_error) const noexcept;
+  /// Reads a document within this transaction (synchronous, blocking). On
+  /// failure, sets `error_code` (non-zero) and `error_message`.
+  DocumentSnapshotBridge GetDocument(const DocumentReferenceBridge& doc,
+                                     int32_t& error_code,
+                                     std::string& error_message) const noexcept;
 
-  /// Set document data (overwrite).
-  std::string SetData(
-      const DocumentReferenceBridge& doc,
-      const BridgeFieldValueMap& data) noexcept;
-
-  /// Set document data with merge.
-  std::string SetDataMerge(
-      const DocumentReferenceBridge& doc,
-      const BridgeFieldValueMap& data) noexcept;
-
-  /// Update document fields.
-  std::string UpdateData(
-      const DocumentReferenceBridge& doc,
-      const BridgeFieldValueMap& data) noexcept;
-
-  /// Delete a document.
+  void SetData(const DocumentReferenceBridge& doc,
+               const BridgeFieldValueMap& data,
+               SetOption option,
+               const FieldPathVector& merge_fields) noexcept;
+  void UpdateData(const DocumentReferenceBridge& doc,
+                  const BridgeUpdateData& data) noexcept;
   void DeleteData(const DocumentReferenceBridge& doc) noexcept;
 
  private:
@@ -698,18 +675,14 @@ class TransactionBridge {
 
 /// C-style callback for transaction update blocks.
 /// The transaction_ptr is an opaque pointer to a TransactionBridge on the heap.
-/// The update block should call methods on it, then call the completion(error)
-/// to signal success ("") or failure.
+/// The update block should call methods on it, then call
+/// completion(completion_context, code, message): code 0 to commit, anything
+/// else to abort the transaction without retrying.
 typedef void (*TransactionUpdateCallback)(
     void* context,
     void* transaction_ptr,
     ErrorCallback completion,
     void* completion_context);
-
-/// C-style callback for transaction results.
-typedef void (*TransactionResultCallback)(
-    void* context,
-    const char* error);
 
 // ---------------------------------------------------------------------------
 // FirestoreBridge
@@ -752,9 +725,6 @@ class FirestoreBridge {
   /// empty when signed out.
   void SetAuthUser(const std::string& uid) const noexcept;
 
-  /// Whether this bridge holds a valid Firestore instance.
-  bool is_valid() const noexcept;
-
   /// Get a collection reference by path.
   CollectionReferenceBridge GetCollection(
       const std::string& collection_path) const noexcept;
@@ -766,17 +736,24 @@ class FirestoreBridge {
   /// Create a new write batch.
   WriteBatchBridge GetBatch() const noexcept;
 
-  /// Run a transaction.
+  /// Runs a transaction. `result_callback` gets the outcome once.
   void RunTransaction(
       void* context,
       TransactionUpdateCallback update_callback,
       void* result_context,
-      TransactionResultCallback result_callback,
-      int max_attempts) const noexcept;
+      ErrorCallback result_callback,
+      int32_t max_attempts) const noexcept;
 
   /// Get a collection group query.
   QueryBridge GetCollectionGroup(
       const std::string& collection_id) const noexcept;
+
+  /// Calls `callback` (with code 0) whenever all active listeners are in sync.
+  /// `release_context` is called once the listener is gone, after `Remove()`.
+  ListenerRegistrationBridge AddSnapshotsInSyncListener(
+      void* context,
+      ContextReleaseCallback release_context,
+      ErrorCallback callback) const noexcept;
 
   /// Terminates the Firestore instance.
   void Terminate(void* context, ErrorCallback callback) const noexcept;
@@ -819,8 +796,8 @@ class FirestoreBridge {
   /// Sets the cache size in bytes.
   void set_settings_cache_size_bytes(int64_t bytes) noexcept;
 
-  /// Applies the current settings to the Firestore instance.
-  void apply_settings() noexcept;
+  /// The project ID.
+  std::string project_id() const noexcept;
 
   /// The database ID string.
   std::string database_id() const noexcept;

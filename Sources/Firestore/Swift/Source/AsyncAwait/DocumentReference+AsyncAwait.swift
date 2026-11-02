@@ -43,8 +43,18 @@ public extension DocumentReference {
     }
   }
 
+  /// Writes only `mergeFields` (`String`s or `FieldPath`s) from `documentData`.
+  func setData(_ documentData: [String: Any], mergeFields: [Any]) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      setData(documentData, mergeFields: mergeFields) { error in
+        continuation.resume(with: error.map { .failure($0) } ?? .success(()))
+      }
+    }
+  }
+
   /// Updates fields of an existing document. Fails if the document doesn't exist.
-  func updateData(_ fields: [String: Any]) async throws {
+  /// Keys are dot-separated `String`s or `FieldPath`s.
+  func updateData(_ fields: [AnyHashable: Any]) async throws {
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       updateData(fields) { error in
         continuation.resume(with: error.map { .failure($0) } ?? .success(()))

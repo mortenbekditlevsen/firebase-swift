@@ -44,6 +44,10 @@ typealias CppBridgeFieldValueMapEntry = firebase.firestore.swift_bridge
   .BridgeFieldValueMapEntry
 typealias CppBridgeFieldValueVector = firebase.firestore.swift_bridge
   .BridgeFieldValueVector
+typealias CppBridgeUpdateData = firebase.firestore.swift_bridge.BridgeUpdateData
+typealias CppBridgeUpdateEntry = firebase.firestore.swift_bridge.BridgeUpdateEntry
+typealias CppFieldPathVector = firebase.firestore.swift_bridge.FieldPathVector
+typealias CppSetOption = firebase.firestore.swift_bridge.SetOption
 typealias CppDoubleVector = firebase.firestore.swift_bridge.DoubleVector
 typealias CppStringVector = firebase.firestore.swift_bridge.StringVector
 typealias CppWriteBatchBridge = firebase.firestore.swift_bridge.WriteBatchBridge
@@ -73,89 +77,111 @@ enum FieldValueSentinel {
   case serverTimestamp
   case arrayUnion([Any])
   case arrayRemove([Any])
-  case incrementInt(Int64)
-  case incrementDouble(Double)
+  case increment(Any)
+  case minimum(Any)
+  case maximum(Any)
 }
 
-/// Convert a Swift `Any` value to a C++ `BridgeFieldValue`.
-func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
-  // Handle FieldValue sentinels
-  if let fv = value as? FieldValue {
-    return fv.toBridgeFieldValue()
-  }
+/// The value inside an `Optional` boxed in `Any`, or nil for `.none`, so a
+/// nil in `[String: Any]` is stored as null, as it is upstream.
+private func unwrappingOptional(_ value: Any) -> Any? {
+  let mirror = Mirror(reflecting: value)
+  guard mirror.displayStyle == .optional else { return value }
+  return mirror.children.first.flatMap { unwrappingOptional($0.value) }
+}
 
-  // Handle nil / NSNull
-  if value is NSNull {
+/// Converts an `NSNumber` by its Objective-C type, as upstream does.
+private func toBridgeFieldValue(_ number: NSNumber) -> CppBridgeFieldValue {
+  switch String(cString: number.objCType).first {
+  case "c", "B", "C":
+    return CppBridgeFieldValue.FromBool(number.boolValue)
+  case "f", "d":
+    return CppBridgeFieldValue.FromDouble(number.doubleValue)
+  case "L", "Q":
+    let value = number.uint64Value
+    if value > UInt64(Int64.max) {
+      invalidArgument("NSNumber (\(value)) is too large")
+    }
+    return CppBridgeFieldValue.FromInt64(Int64(value))
+  default:
+    return CppBridgeFieldValue.FromInt64(number.int64Value)
+  }
+}
+
+/// Converts a Swift value to a C++ `BridgeFieldValue`. Values Firestore can't
+/// store are passed as `Unsupported`, which fails with upstream's message when
+/// the data is parsed.
+func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
+  guard let value = unwrappingOptional(value) else {
     return CppBridgeFieldValue.Null()
   }
 
-  // Handle Bool (must check before NSNumber since Bool bridges to NSNumber)
-  if let b = value as? Bool {
-    return CppBridgeFieldValue.FromBool(b)
-  }
-
-  // Handle numeric types via NSNumber
-  if let n = value as? NSNumber {
-    let objCType = String(cString: n.objCType)
-    // 'f' = float, 'd' = double
-    if objCType == "f" || objCType == "d" {
-      return CppBridgeFieldValue.FromDouble(n.doubleValue)
-    }
-    return CppBridgeFieldValue.FromInt64(n.int64Value)
-  }
-
-  // Handle String
-  if let s = value as? String {
-    return CppBridgeFieldValue.FromString(std.string(s))
-  }
-
-  // Handle Data (blob)
-  if let data = value as? Data {
+  switch value {
+  case let fieldValue as FieldValue:
+    return fieldValue.toBridgeFieldValue()
+  case is NSNull:
+    return CppBridgeFieldValue.Null()
+  // A real NSNumber (from JSON, say), not a Swift number bridged to one.
+  case let number as NSNumber where type(of: value) is NSNumber.Type:
+    return toBridgeFieldValue(number)
+  case let bool as Bool:
+    return CppBridgeFieldValue.FromBool(bool)
+  case let int as Int:
+    return CppBridgeFieldValue.FromInt64(Int64(int))
+  case let int as Int64:
+    return CppBridgeFieldValue.FromInt64(int)
+  case let int as Int32:
+    return CppBridgeFieldValue.FromInt64(Int64(int))
+  case let int as Int16:
+    return CppBridgeFieldValue.FromInt64(Int64(int))
+  case let int as Int8:
+    return CppBridgeFieldValue.FromInt64(Int64(int))
+  case let uint as UInt:
+    return toBridgeFieldValue(NSNumber(value: uint))
+  case let uint as UInt64:
+    return toBridgeFieldValue(NSNumber(value: uint))
+  case let uint as UInt32:
+    return CppBridgeFieldValue.FromInt64(Int64(uint))
+  case let uint as UInt16:
+    return CppBridgeFieldValue.FromInt64(Int64(uint))
+  case let uint as UInt8:
+    return CppBridgeFieldValue.FromInt64(Int64(uint))
+  case let double as Double:
+    return CppBridgeFieldValue.FromDouble(double)
+  case let float as Float:
+    return CppBridgeFieldValue.FromDouble(Double(float))
+  case let string as String:
+    return CppBridgeFieldValue.FromString(std.string(string))
+  case let data as Data:
     return data.withUnsafeBytes { buffer in
       CppBridgeFieldValue.FromBlob(buffer.bindMemory(to: UInt8.self).baseAddress, buffer.count)
     }
-  }
-
-  // Handle Timestamp
-  if let ts = value as? Timestamp {
-    return CppBridgeFieldValue.FromTimestamp(ts.seconds, ts.nanoseconds)
-  }
-
-  // Handle GeoPoint
-  if let geo = value as? GeoPoint {
-    return CppBridgeFieldValue.FromGeoPoint(geo.latitude, geo.longitude)
-  }
-
-  // Handle VectorValue
-  if let vec = value as? VectorValue {
+  case let timestamp as Timestamp:
+    return CppBridgeFieldValue.FromTimestamp(timestamp.seconds, timestamp.nanoseconds)
+  case let date as Date:
+    let timestamp = Timestamp(date: date)
+    return CppBridgeFieldValue.FromTimestamp(timestamp.seconds, timestamp.nanoseconds)
+  case let geoPoint as GeoPoint:
+    return CppBridgeFieldValue.FromGeoPoint(geoPoint.latitude, geoPoint.longitude)
+  case let vector as VectorValue:
     var doubles = CppDoubleVector()
-    for d in vec.array {
+    for d in vector.array {
       doubles.push_back(d)
     }
     return CppBridgeFieldValue.FromVector(doubles)
-  }
-
-  // Handle DocumentReference
-  if let ref = value as? DocumentReference {
-    return CppBridgeFieldValue.FromReference(std.string(ref.path))
-  }
-
-  // Handle Array
-  if let arr = value as? [Any] {
-    var cppArr = CppBridgeFieldValueVector()
-    for element in arr {
-      cppArr.push_back(toBridgeFieldValue(element))
+  case let reference as DocumentReference:
+    return CppBridgeFieldValue.FromReference(reference.cppBridge)
+  case let array as [Any]:
+    var cppArray = CppBridgeFieldValueVector()
+    for element in array {
+      cppArray.push_back(toBridgeFieldValue(element))
     }
-    return CppBridgeFieldValue.FromArray(cppArr)
+    return CppBridgeFieldValue.FromArray(cppArray)
+  case let dictionary as [String: Any]:
+    return CppBridgeFieldValue.FromMap(toBridgeFieldValueMap(dictionary))
+  default:
+    return CppBridgeFieldValue.Unsupported(std.string(String(describing: type(of: value))))
   }
-
-  // Handle Dictionary
-  if let dict = value as? [String: Any] {
-    return CppBridgeFieldValue.FromMap(toBridgeFieldValueMap(dict))
-  }
-
-  // Fallback: treat as null
-  return CppBridgeFieldValue.Null()
 }
 
 /// Convert a Swift dictionary to a C++ `BridgeFieldValueMap`.
@@ -167,20 +193,45 @@ func toBridgeFieldValueMap(_ dict: [String: Any]) -> CppBridgeFieldValueMap {
   return map
 }
 
-/// Convert a C++ `BridgeFieldValue` back to a Swift `Any`.
-/// If a `Firestore` instance is provided, Reference values will be resolved
-/// to `DocumentReference` objects; otherwise they return path strings.
-func fromBridgeFieldValue(_ value: CppBridgeFieldValue,
-                          firestore: Firestore? = nil) -> Any {
+/// The data of an `updateData` call, whose keys are dot-separated strings or
+/// `FieldPath`s.
+func toBridgeUpdateData(_ fields: [AnyHashable: Any]) -> CppBridgeUpdateData {
+  var data = CppBridgeUpdateData()
+  for (key, value) in fields {
+    let path = FieldPath.from(
+      key.base,
+      invalidMessage: "Dictionary keys in updateData: must be NSStrings or FIRFieldPaths."
+    )
+    data.push_back(CppBridgeUpdateEntry(first: path.cppSegments, second: toBridgeFieldValue(value)))
+  }
+  return data
+}
+
+/// The `mergeFields` of a `setData` call: dot-separated strings or `FieldPath`s.
+func toCppFieldPaths(mergeFields: [Any]) -> CppFieldPathVector {
+  var paths = CppFieldPathVector()
+  for field in mergeFields {
+    let path = FieldPath.from(
+      field,
+      invalidMessage: "All elements in mergeFields: must be NSStrings or FIRFieldPaths."
+    )
+    paths.push_back(path.cppSegments)
+  }
+  return paths
+}
+
+/// Convert a C++ `BridgeFieldValue` back to a Swift `Any`. Numbers are
+/// `NSNumber`s, as upstream, so they cast to any numeric type.
+func fromBridgeFieldValue(_ value: CppBridgeFieldValue, firestore: Firestore) -> Any {
   switch value.tag() {
   case .Null:
     return NSNull()
   case .Boolean:
     return value.bool_value()
   case .Integer:
-    return value.int64_value()
+    return NSNumber(value: value.int64_value())
   case .Double:
-    return value.double_value()
+    return NSNumber(value: value.double_value())
   case .String:
     return Swift.String(value.string_value())
   case .Blob:
@@ -205,11 +256,7 @@ func fromBridgeFieldValue(_ value: CppBridgeFieldValue,
   case .Map:
     return fromBridgeFieldValueMap(value.map_value(), firestore: firestore)
   case .Reference:
-    let path = Swift.String(value.string_value())
-    if let firestore = firestore {
-      return firestore.document(path)
-    }
-    return path
+    return firestore.document(Swift.String(value.string_value()))
   case .Vector:
     let doubles = value.vector_value()
     var arr: [Double] = []
@@ -224,7 +271,7 @@ func fromBridgeFieldValue(_ value: CppBridgeFieldValue,
 
 /// Convert a C++ `BridgeFieldValueMap` to a Swift dictionary.
 func fromBridgeFieldValueMap(_ map: CppBridgeFieldValueMap,
-                             firestore: Firestore? = nil) -> [String: Any] {
+                             firestore: Firestore) -> [String: Any] {
   var result: [String: Any] = [:]
   for i in 0 ..< map.size() {
     let entry = map[i]
@@ -236,7 +283,7 @@ func fromBridgeFieldValueMap(_ map: CppBridgeFieldValueMap,
 
 /// Convert a C++ `BridgeFieldValueVector` to a Swift array.
 func fromBridgeFieldValueVector(_ vec: CppBridgeFieldValueVector,
-                                firestore: Firestore? = nil) -> [Any] {
+                                firestore: Firestore) -> [Any] {
   var result: [Any] = []
   for i in 0 ..< vec.size() {
     result.append(fromBridgeFieldValue(vec[i], firestore: firestore))
@@ -246,141 +293,149 @@ func fromBridgeFieldValueVector(_ vec: CppBridgeFieldValueVector,
 
 // MARK: - C Callback Bridging Helpers
 
-/// Wraps a Swift closure into a C-compatible void* context + function pointer pair.
-/// The context is a retained `Unmanaged` reference to a box holding the closure.
-/// The callback function casts the context back and invokes the closure.
+// Swift closures cross into C++ as a retained box (`void* context`) plus a C
+// trampoline that unboxes it. One-shot callbacks release the box when they
+// run; listener boxes are released by C++ (`releaseCallbackBox`) once the
+// listener is gone.
 
-private final class DocumentSnapshotCallbackBox {
-  let handler: (DocumentSnapshot?, Error?) -> Void
-  init(_ handler: @escaping (DocumentSnapshot?, Error?) -> Void) {
+private final class CallbackBox<Handler>: @unchecked Sendable {
+  let handler: Handler
+  init(_ handler: Handler) {
     self.handler = handler
   }
 }
 
-private final class QuerySnapshotCallbackBox {
-  let handler: (QuerySnapshot?, Error?) -> Void
-  init(_ handler: @escaping (QuerySnapshot?, Error?) -> Void) {
-    self.handler = handler
-  }
+private typealias DocumentSnapshotHandler = (CppDocumentSnapshotBridge?, Error?) -> Void
+private typealias QuerySnapshotHandler = (CppQuerySnapshotBridge?, Error?) -> Void
+private typealias ErrorHandler = (Error?) -> Void
+
+private func retainedContext<Handler>(_ handler: Handler) -> UnsafeMutableRawPointer {
+  Unmanaged.passRetained(CallbackBox(handler)).toOpaque()
 }
 
-private final class ErrorCallbackBox {
-  let handler: (Error?) -> Void
-  init(_ handler: @escaping (Error?) -> Void) {
-    self.handler = handler
-  }
+private func releaseCallbackBox(context: UnsafeMutableRawPointer?) {
+  guard let context else { return }
+  Unmanaged<AnyObject>.fromOpaque(context).release()
 }
 
-/// C-compatible callback for document snapshot results (one-shot).
-/// snapshot: heap-allocated DocumentSnapshotBridge* (caller takes ownership).
-/// error: C string, empty means no error.
+/// Takes ownership of a heap-allocated bridge object that C++ passed to Swift.
+private func takeBridge<Bridge>(_ pointer: UnsafeMutableRawPointer?, as _: Bridge.Type) -> Bridge? {
+  guard let pointer else { return nil }
+  let bridge = pointer.assumingMemoryBound(to: Bridge.self)
+  defer {
+    bridge.deinitialize(count: 1)
+    bridge.deallocate()
+  }
+  return bridge.pointee
+}
+
+/// One-shot document snapshot callback.
 private func documentSnapshotCallbackTrampoline(
   context: UnsafeMutableRawPointer?,
   snapshot: UnsafeMutableRawPointer?,
-  error: UnsafePointer<CChar>?
+  code: Int32,
+  message: UnsafePointer<CChar>?
 ) {
-  guard let context = context else { return }
-  let box = Unmanaged<DocumentSnapshotCallbackBox>.fromOpaque(context)
+  guard let context else { return }
+  let box = Unmanaged<CallbackBox<DocumentSnapshotHandler>>.fromOpaque(context)
     .takeRetainedValue()
-  let errorStr = error.map { String(cString: $0) } ?? ""
-  if errorStr.isEmpty, let snapshot = snapshot {
-    let bridge = snapshot.assumingMemoryBound(to: CppDocumentSnapshotBridge.self)
-    let swiftSnapshot = DocumentSnapshot(cppBridge: bridge.pointee)
-    bridge.deinitialize(count: 1)
-    bridge.deallocate()
-    box.handler(swiftSnapshot, nil)
-  } else {
-    box.handler(nil, NSError(domain: "FirebaseFirestore", code: -1,
-                             userInfo: [NSLocalizedDescriptionKey: errorStr]))
-  }
+  box.handler(takeBridge(snapshot, as: CppDocumentSnapshotBridge.self),
+              firestoreError(code: code, message: message))
 }
 
-/// C-compatible callback for query snapshot results (one-shot).
+/// One-shot query snapshot callback.
 private func querySnapshotCallbackTrampoline(
   context: UnsafeMutableRawPointer?,
   snapshot: UnsafeMutableRawPointer?,
-  error: UnsafePointer<CChar>?
+  code: Int32,
+  message: UnsafePointer<CChar>?
 ) {
-  guard let context = context else { return }
-  let box = Unmanaged<QuerySnapshotCallbackBox>.fromOpaque(context)
+  guard let context else { return }
+  let box = Unmanaged<CallbackBox<QuerySnapshotHandler>>.fromOpaque(context)
     .takeRetainedValue()
-  let errorStr = error.map { String(cString: $0) } ?? ""
-  if errorStr.isEmpty, let snapshot = snapshot {
-    let bridge = snapshot.assumingMemoryBound(to: CppQuerySnapshotBridge.self)
-    let swiftSnapshot = QuerySnapshot(cppBridge: bridge.pointee)
-    bridge.deinitialize(count: 1)
-    bridge.deallocate()
-    box.handler(swiftSnapshot, nil)
-  } else {
-    box.handler(nil, NSError(domain: "FirebaseFirestore", code: -1,
-                             userInfo: [NSLocalizedDescriptionKey: errorStr]))
-  }
+  box.handler(takeBridge(snapshot, as: CppQuerySnapshotBridge.self),
+              firestoreError(code: code, message: message))
 }
 
-/// C-compatible callback for error-only results (one-shot).
+/// One-shot callback for error-only results.
 private func errorCallbackTrampoline(
   context: UnsafeMutableRawPointer?,
-  error: UnsafePointer<CChar>?
+  code: Int32,
+  message: UnsafePointer<CChar>?
 ) {
-  guard let context = context else { return }
-  let box = Unmanaged<ErrorCallbackBox>.fromOpaque(context)
-    .takeRetainedValue()
-  let errorStr = error.map { String(cString: $0) } ?? ""
-  if errorStr.isEmpty {
-    box.handler(nil)
-  } else {
-    box.handler(NSError(domain: "FirebaseFirestore", code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: errorStr]))
-  }
+  guard let context else { return }
+  let box = Unmanaged<CallbackBox<ErrorHandler>>.fromOpaque(context).takeRetainedValue()
+  box.handler(firestoreError(code: code, message: message))
 }
 
-/// Variant for document snapshot listeners (persistent, NOT released per call).
+/// Document snapshot listener; C++ releases the box.
 private func documentSnapshotListenerTrampoline(
   context: UnsafeMutableRawPointer?,
   snapshot: UnsafeMutableRawPointer?,
-  error: UnsafePointer<CChar>?
+  code: Int32,
+  message: UnsafePointer<CChar>?
 ) {
-  guard let context = context else { return }
-  let box = Unmanaged<DocumentSnapshotCallbackBox>.fromOpaque(context)
+  guard let context else { return }
+  let box = Unmanaged<CallbackBox<DocumentSnapshotHandler>>.fromOpaque(context)
     .takeUnretainedValue()
-  let errorStr = error.map { String(cString: $0) } ?? ""
-  if errorStr.isEmpty, let snapshot = snapshot {
-    let bridge = snapshot.assumingMemoryBound(to: CppDocumentSnapshotBridge.self)
-    let swiftSnapshot = DocumentSnapshot(cppBridge: bridge.pointee)
-    bridge.deinitialize(count: 1)
-    bridge.deallocate()
-    box.handler(swiftSnapshot, nil)
-  } else {
-    box.handler(nil, NSError(domain: "FirebaseFirestore", code: -1,
-                             userInfo: [NSLocalizedDescriptionKey: errorStr]))
-  }
+  box.handler(takeBridge(snapshot, as: CppDocumentSnapshotBridge.self),
+              firestoreError(code: code, message: message))
 }
 
-/// Variant for query snapshot listeners (persistent).
+/// Query snapshot listener; C++ releases the box.
 private func querySnapshotListenerTrampoline(
   context: UnsafeMutableRawPointer?,
   snapshot: UnsafeMutableRawPointer?,
-  error: UnsafePointer<CChar>?
+  code: Int32,
+  message: UnsafePointer<CChar>?
 ) {
-  guard let context = context else { return }
-  let box = Unmanaged<QuerySnapshotCallbackBox>.fromOpaque(context)
+  guard let context else { return }
+  let box = Unmanaged<CallbackBox<QuerySnapshotHandler>>.fromOpaque(context)
     .takeUnretainedValue()
-  let errorStr = error.map { String(cString: $0) } ?? ""
-  if errorStr.isEmpty, let snapshot = snapshot {
-    let bridge = snapshot.assumingMemoryBound(to: CppQuerySnapshotBridge.self)
-    let swiftSnapshot = QuerySnapshot(cppBridge: bridge.pointee)
-    bridge.deinitialize(count: 1)
-    bridge.deallocate()
-    box.handler(swiftSnapshot, nil)
-  } else {
-    box.handler(nil, NSError(domain: "FirebaseFirestore", code: -1,
-                             userInfo: [NSLocalizedDescriptionKey: errorStr]))
+  box.handler(takeBridge(snapshot, as: CppQuerySnapshotBridge.self),
+              firestoreError(code: code, message: message))
+}
+
+/// Snapshots-in-sync listener; C++ releases the box.
+private func eventListenerTrampoline(
+  context: UnsafeMutableRawPointer?,
+  code: Int32,
+  message: UnsafePointer<CChar>?
+) {
+  guard let context else { return }
+  let box = Unmanaged<CallbackBox<() -> Void>>.fromOpaque(context).takeUnretainedValue()
+  box.handler()
+}
+
+/// The context and callback for a write: nil for fire-and-forget.
+private func writeCallback(_ completion: ((Error?) -> Void)?)
+  -> (UnsafeMutableRawPointer?, ErrorCallback?) {
+  guard let completion else { return (nil, nil) }
+  return (retainedContext(completion as ErrorHandler), errorCallbackTrampoline)
+}
+
+/// Runs a bridge operation that reports through an `ErrorCallback`.
+private func withErrorCallback(
+  _ operation: (UnsafeMutableRawPointer, ErrorCallback) -> Void
+) async throws {
+  try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+    let handler: ErrorHandler = { error in
+      if let error {
+        continuation.resume(throwing: error)
+      } else {
+        continuation.resume()
+      }
+    }
+    operation(retainedContext(handler), errorCallbackTrampoline)
   }
 }
 
-// MARK: - Core Firestore Types
+private func validate(_ document: DocumentReference, belongsTo firestore: Firestore) {
+  if document.firestore !== firestore {
+    invalidArgument("Provided document reference is from a different Firestore instance.")
+  }
+}
 
-/// The main Firestore database instance.
 // MARK: - Credentials
 
 /// Supplies Auth and App Check tokens to the C++ credentials providers. Each
@@ -450,8 +505,14 @@ private func releaseCredentialsSource(context: UnsafeMutableRawPointer?) {
   Unmanaged<CredentialsSource>.fromOpaque(context).release()
 }
 
+// MARK: - Firestore
+
+/// A Firestore database.
 public final class Firestore: @unchecked Sendable {
-  var cppBridge: CppFirestoreBridge?
+  var cppBridge: CppFirestoreBridge
+
+  /// The app this database belongs to.
+  public let app: FirebaseApp
 
   /// Observes Auth's internal state notification to keep the C++ credentials
   /// provider's current user up to date.
@@ -466,25 +527,31 @@ public final class Firestore: @unchecked Sendable {
   /// Cache of Firestore instances keyed by "appName/databaseId".
   private nonisolated(unsafe) static let _instances = Mutex<[String: Firestore]>([:])
 
-  init() {
-    cppBridge = nil
-  }
-
-  init(cppBridge: CppFirestoreBridge) {
+  private init(app: FirebaseApp, cppBridge: CppFirestoreBridge) {
+    self.app = app
     self.cppBridge = cppBridge
   }
 
-  /// Returns the default Firestore instance for the default FirebaseApp.
-  public static func firestore() -> Firestore {
+  private static var defaultApp: FirebaseApp {
     guard let app = FirebaseApp.app() else {
       fatalError(
         "FirebaseApp has not been configured. Call FirebaseApp.configure() before using Firestore."
       )
     }
-    return firestore(app: app)
+    return app
   }
 
-  /// Returns a Firestore instance for the given app and database.
+  /// Returns the default database of the default `FirebaseApp`.
+  public static func firestore() -> Firestore {
+    firestore(app: defaultApp)
+  }
+
+  /// Returns the named database of the default `FirebaseApp`.
+  public static func firestore(database: String) -> Firestore {
+    firestore(app: defaultApp, database: database)
+  }
+
+  /// Returns a database of `app`.
   public static func firestore(app: FirebaseApp, database: String = "(default)") -> Firestore {
     let key = "\(app.name)/\(database)"
     return _instances.withLock { instances in
@@ -510,7 +577,7 @@ public final class Firestore: @unchecked Sendable {
         appCheckCallback,
         releaseCredentialsSource
       )
-      let instance = Firestore(cppBridge: bridge)
+      let instance = Firestore(app: app, cppBridge: bridge)
       if let auth {
         // swift-corelibs-foundation never matches an `object:` filter that is a
         // pure Swift class, so filter by identity in the block instead.
@@ -522,7 +589,7 @@ public final class Firestore: @unchecked Sendable {
           guard let auth, (notification.object as AnyObject?) === auth else { return }
           let uid = notification.userInfo?[FIRAuthStateDidChangeInternalNotificationUIDKey]
             as? String
-          instance?.cppBridge?.SetAuthUser(std.string(uid ?? ""))
+          instance?.cppBridge.SetAuthUser(std.string(uid ?? ""))
         }
         // The user may have changed between reading the initial UID and
         // registering the observer.
@@ -534,15 +601,16 @@ public final class Firestore: @unchecked Sendable {
   }
 
   public func collection(_ collectionPath: String) -> CollectionReference {
-    guard let bridge = cppBridge else { return CollectionReference() }
-    let cppRef = bridge.GetCollection(std.string(collectionPath))
-    return CollectionReference(cppBridge: cppRef, firestore: self)
+    CollectionReference(cppBridge: cppBridge.GetCollection(std.string(collectionPath)),
+                        firestore: self)
   }
 
   public func document(_ documentPath: String) -> DocumentReference {
-    guard let bridge = cppBridge else { return DocumentReference() }
-    let cppRef = bridge.GetDocument(std.string(documentPath))
-    return DocumentReference(cppBridge: cppRef)
+    DocumentReference(cppBridge: cppBridge.GetDocument(std.string(documentPath)), firestore: self)
+  }
+
+  public func collectionGroup(_ collectionID: String) -> Query {
+    Query(cppBridge: cppBridge.GetCollectionGroup(std.string(collectionID)), firestore: self)
   }
 
   public func loadBundle(_ bundleData: Data,
@@ -553,12 +621,6 @@ public final class Firestore: @unchecked Sendable {
   public func loadBundle(_ bundleStream: InputStream,
                          completion: @escaping (LoadBundleTaskProgress?, Error?) -> Void) {
     // TODO: Implement via C++ interop
-  }
-
-  public func collectionGroup(_ collectionID: String) -> Query {
-    guard let bridge = cppBridge else { return Query(cppBridge: CppQueryBridge(), firestore: self) }
-    let cppQuery = bridge.GetCollectionGroup(std.string(collectionID))
-    return Query(cppBridge: cppQuery, firestore: self)
   }
 
   /// Connects to the emulated Firestore at `host:port` instead of the real
@@ -575,118 +637,53 @@ public final class Firestore: @unchecked Sendable {
   public var settings: FirestoreSettings {
     get {
       let s = FirestoreSettings()
-      if let bridge = cppBridge {
-        s.host = String(bridge.settings_host())
-        s.isPersistenceEnabled = bridge.settings_persistence_enabled()
-        s.isSSLEnabled = bridge.settings_ssl_enabled()
-        s.cacheSizeBytes = Int(bridge.settings_cache_size_bytes())
-      }
+      s.host = String(cppBridge.settings_host())
+      s.isPersistenceEnabled = cppBridge.settings_persistence_enabled()
+      s.isSSLEnabled = cppBridge.settings_ssl_enabled()
+      s.cacheSizeBytes = Int(cppBridge.settings_cache_size_bytes())
       return s
     }
     set {
-      guard let bridge = cppBridge else { return }
-      var mutBridge = bridge
-      mutBridge.set_settings_host(std.string(newValue.host))
-      mutBridge.set_settings_persistence_enabled(newValue.isPersistenceEnabled)
-      mutBridge.set_settings_ssl_enabled(newValue.isSSLEnabled)
-      mutBridge.set_settings_cache_size_bytes(Int64(newValue.cacheSizeBytes))
-      cppBridge = mutBridge
+      var bridge = cppBridge
+      bridge.set_settings_host(std.string(newValue.host))
+      bridge.set_settings_persistence_enabled(newValue.isPersistenceEnabled)
+      bridge.set_settings_ssl_enabled(newValue.isSSLEnabled)
+      bridge.set_settings_cache_size_bytes(Int64(newValue.cacheSizeBytes))
     }
   }
 
   public func terminate() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      guard let bridge = cppBridge else {
-        continuation.resume()
-        return
-      }
-      let box = ErrorCallbackBox { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.Terminate(context, errorCallbackTrampoline)
-    }
+    try await withErrorCallback { cppBridge.Terminate($0, $1) }
   }
 
   public func clearPersistence() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      guard let bridge = cppBridge else {
-        continuation.resume()
-        return
-      }
-      let box = ErrorCallbackBox { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.ClearPersistence(context, errorCallbackTrampoline)
-    }
+    try await withErrorCallback { cppBridge.ClearPersistence($0, $1) }
   }
 
   public func waitForPendingWrites() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      guard let bridge = cppBridge else {
-        continuation.resume()
-        return
-      }
-      let box = ErrorCallbackBox { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.WaitForPendingWrites(context, errorCallbackTrampoline)
-    }
+    try await withErrorCallback { cppBridge.WaitForPendingWrites($0, $1) }
   }
 
   public func enableNetwork() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      guard let bridge = cppBridge else {
-        continuation.resume()
-        return
-      }
-      let box = ErrorCallbackBox { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.EnableNetwork(context, errorCallbackTrampoline)
-    }
+    try await withErrorCallback { cppBridge.EnableNetwork($0, $1) }
   }
 
   public func disableNetwork() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      guard let bridge = cppBridge else {
-        continuation.resume()
-        return
-      }
-      let box = ErrorCallbackBox { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.DisableNetwork(context, errorCallbackTrampoline)
-    }
+    try await withErrorCallback { cppBridge.DisableNetwork($0, $1) }
+  }
+
+  /// Calls `listener` whenever all active snapshot listeners are in sync with
+  /// each other, i.e. after a change has been delivered to all of them.
+  public func addSnapshotsInSyncListener(_ listener: @escaping () -> Void)
+    -> any ListenerRegistration {
+    let registration = cppBridge.AddSnapshotsInSyncListener(
+      retainedContext(listener), releaseCallbackBox, eventListenerTrampoline
+    )
+    return BridgeListenerRegistration(cppBridge: registration)
   }
 
   public func batch() -> WriteBatch {
-    guard let bridge = cppBridge else { return WriteBatch() }
-    return WriteBatch(cppBridge: bridge.GetBatch())
+    WriteBatch(cppBridge: cppBridge.GetBatch(), firestore: self)
   }
 
   #if canImport(Darwin)
@@ -694,7 +691,15 @@ public final class Firestore: @unchecked Sendable {
     /// the error pointer aborts the transaction with that error.
     public func runTransaction(_ updateBlock: @escaping (Transaction, NSErrorPointer) -> Any?,
                                completion: @escaping (Any?, Error?) -> Void) {
-      runTransaction({ transaction in
+      runTransaction(with: nil, block: updateBlock, completion: completion)
+    }
+
+    /// Like `runTransaction(_:completion:)`, with options such as the number of
+    /// attempts.
+    public func runTransaction(with options: TransactionOptions?,
+                               block updateBlock: @escaping (Transaction, NSErrorPointer) -> Any?,
+                               completion: @escaping (Any?, Error?) -> Void) {
+      runTransaction(with: options, block: { (transaction: Transaction) throws -> Any? in
         var error: NSError?
         let result = updateBlock(transaction, &error)
         if let error { throw error }
@@ -708,31 +713,37 @@ public final class Firestore: @unchecked Sendable {
   /// transaction, and the thrown error is passed to `completion`.
   public func runTransaction(_ updateBlock: @escaping (Transaction) throws -> Any?,
                              completion: @escaping (Any?, Error?) -> Void) {
-    guard let bridge = cppBridge else {
-      completion(nil, NSError(domain: "FirebaseFirestore", code: -1,
-                              userInfo: [NSLocalizedDescriptionKey: "Firestore not initialized"]))
-      return
-    }
+    runTransaction(with: nil, block: updateBlock, completion: completion)
+  }
 
-    // Box to hold the update block and its result for the C callback.
+  /// Like `runTransaction(_:completion:)`, with options such as the number of
+  /// attempts.
+  public func runTransaction(with options: TransactionOptions?,
+                             block updateBlock: @escaping (Transaction) throws -> Any?,
+                             completion: @escaping (Any?, Error?) -> Void) {
+    // Holds the update block and its result for the C callbacks.
     final class TransactionContext {
+      let firestore: Firestore
       let updateBlock: (Transaction) throws -> Any?
       let completion: (Any?, Error?) -> Void
       var result: Any?
       /// The error thrown by the last attempt of `updateBlock`, if any.
       var updateError: Error?
 
-      init(updateBlock: @escaping (Transaction) throws -> Any?,
+      init(firestore: Firestore,
+           updateBlock: @escaping (Transaction) throws -> Any?,
            completion: @escaping (Any?, Error?) -> Void) {
+        self.firestore = firestore
         self.updateBlock = updateBlock
         self.completion = completion
       }
     }
 
-    let ctx = TransactionContext(updateBlock: updateBlock, completion: completion)
+    let ctx = TransactionContext(firestore: self, updateBlock: updateBlock,
+                                 completion: completion)
     let ctxPtr = Unmanaged.passRetained(ctx).toOpaque()
 
-    // The update callback invoked by C++ for each transaction attempt.
+    // Called by C++ for each attempt, off the Firestore worker queue.
     let updateCB:
       @convention(c) (
         UnsafeMutableRawPointer?,     // context
@@ -740,62 +751,73 @@ public final class Firestore: @unchecked Sendable {
         ErrorCallback?,               // completion callback
         UnsafeMutableRawPointer?      // completion context
       ) -> Void = { context, transactionPtr, completionCB, completionCtx in
-      guard let context = context, let transactionPtr = transactionPtr else { return }
+      guard let context, let cppTransaction = takeBridge(transactionPtr,
+                                                          as: CppTransactionBridge.self)
+      else { return }
       let txCtx = Unmanaged<TransactionContext>.fromOpaque(context).takeUnretainedValue()
+      let transaction = Transaction(cppBridge: cppTransaction, firestore: txCtx.firestore)
 
-      let cppTxn = transactionPtr.assumingMemoryBound(to: CppTransactionBridge.self)
-      let transaction = Transaction(cppBridge: cppTxn.pointee)
-
-      var error: Error?
       do {
         txCtx.result = try txCtx.updateBlock(transaction)
         txCtx.updateError = nil
-      } catch let thrown {
-        error = thrown
-        txCtx.updateError = thrown
-      }
-
-      // Clean up the heap-allocated TransactionBridge.
-      cppTxn.deinitialize(count: 1)
-      cppTxn.deallocate()
-
-      if let error = error {
-        let msg = error.localizedDescription
-        msg.withCString { cStr in
-          completionCB?(completionCtx, cStr)
-        }
-      } else {
-        completionCB?(completionCtx, "")
+        completionCB?(completionCtx, 0, "")
+      } catch {
+        txCtx.updateError = error
+        // Any non-zero code aborts without retrying; the caller gets `error`.
+        let nsError = error as NSError
+        let code = nsError.domain == FirestoreErrorDomain && nsError.code != 0
+          ? Int32(nsError.code) : Int32(FirestoreErrorCode.Code.unknown.rawValue)
+        error.localizedDescription.withCString { completionCB?(completionCtx, code, $0) }
       }
     }
 
-    // The result callback invoked when the transaction completes.
+    // Called by C++ once, with the outcome.
     let resultCB:
-      @convention(c) (
-        UnsafeMutableRawPointer?,     // context
-        UnsafePointer<CChar>?         // error
-      ) -> Void = { context, error in
-      guard let context = context else { return }
-      let txCtx = Unmanaged<TransactionContext>.fromOpaque(context).takeRetainedValue()
-      let errorStr = error.map { String(cString: $0) } ?? ""
-      if errorStr.isEmpty {
-        txCtx.completion(txCtx.result, nil)
-      } else if let updateError = txCtx.updateError {
-        // Report the caller's own error rather than its string form.
-        txCtx.completion(nil, updateError)
-      } else {
-        txCtx.completion(nil, NSError(domain: "FirebaseFirestore", code: -1,
-                                      userInfo: [NSLocalizedDescriptionKey: errorStr]))
+      @convention(c) (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void = {
+        context, code, message in
+        guard let context else { return }
+        let txCtx = Unmanaged<TransactionContext>.fromOpaque(context).takeRetainedValue()
+        if let error = firestoreError(code: code, message: message) {
+          // Report the caller's own error rather than its string form.
+          txCtx.completion(nil, txCtx.updateError ?? error)
+        } else {
+          txCtx.completion(txCtx.result, nil)
+        }
       }
-    }
 
-    bridge.RunTransaction(ctxPtr, updateCB, ctxPtr, resultCB, 5)
+    cppBridge.RunTransaction(ctxPtr, updateCB, ctxPtr, resultCB,
+                             Int32(options?.maxAttempts ?? TransactionOptions.defaultMaxAttempts))
   }
 }
 
+/// Options for `Firestore.runTransaction(with:block:completion:)`.
+public final class TransactionOptions: Sendable {
+  static let defaultMaxAttempts = 5
+
+  private let _maxAttempts = Mutex(TransactionOptions.defaultMaxAttempts)
+
+  public init() {}
+
+  /// How many times to run the update block before failing. Default: 5.
+  public var maxAttempts: Int {
+    get { _maxAttempts.withLock { $0 } }
+    set {
+      if newValue <= 0 || newValue > Int(Int32.max) {
+        invalidArgument("Invalid maxAttempts: \(newValue)")
+      }
+      _maxAttempts.withLock { $0 = newValue }
+    }
+  }
+}
+
+// MARK: - References
+
 /// A reference to a Firestore document.
 public final class DocumentReference: Hashable, @unchecked Sendable {
-  var cppBridge: CppDocumentReferenceBridge
+  let cppBridge: CppDocumentReferenceBridge
+
+  /// The database this document belongs to.
+  public let firestore: Firestore
 
   public static func == (lhs: DocumentReference, rhs: DocumentReference) -> Bool {
     lhs.cppBridge.IsEqual(rhs.cppBridge)
@@ -805,12 +827,9 @@ public final class DocumentReference: Hashable, @unchecked Sendable {
     hasher.combine(cppBridge.Hash())
   }
 
-  init() {
-    cppBridge = CppDocumentReferenceBridge()
-  }
-
-  init(cppBridge: CppDocumentReferenceBridge) {
+  init(cppBridge: CppDocumentReferenceBridge, firestore: Firestore) {
     self.cppBridge = cppBridge
+    self.firestore = firestore
   }
 
   public var path: String {
@@ -822,188 +841,143 @@ public final class DocumentReference: Hashable, @unchecked Sendable {
   }
 
   public var parent: CollectionReference {
-    CollectionReference(cppBridge: cppBridge.parent())
+    CollectionReference(cppBridge: cppBridge.parent(), firestore: firestore)
   }
 
   /// A subcollection of this document. `collectionPath` is relative to the
   /// document, e.g. `"messages"`.
   public func collection(_ collectionPath: String) -> CollectionReference {
-    CollectionReference(cppBridge: cppBridge.Collection(std.string(collectionPath)))
+    CollectionReference(cppBridge: cppBridge.Collection(std.string(collectionPath)),
+                        firestore: firestore)
   }
 
-  public func setData(_ documentData: [String: Any],
+  private func setData(_ documentData: [String: Any], option: CppSetOption,
+                       mergeFields: CppFieldPathVector, completion: ((Error?) -> Void)?) {
+    var bridge = cppBridge
+    let (context, callback) = writeCallback(completion)
+    bridge.SetData(toBridgeFieldValueMap(documentData), option, mergeFields, context, callback)
+  }
+
+  /// Overwrites the document, creating it if it doesn't exist.
+  public func setData(_ documentData: [String: Any], completion: ((Error?) -> Void)? = nil) {
+    setData(documentData, option: .Overwrite, mergeFields: CppFieldPathVector(),
+            completion: completion)
+  }
+
+  /// Writes the document; with `merge`, fields not in `documentData` are kept.
+  public func setData(_ documentData: [String: Any], merge: Bool,
                       completion: ((Error?) -> Void)? = nil) {
-    let map = toBridgeFieldValueMap(documentData)
-    if let completion = completion {
-      let box = ErrorCallbackBox(completion)
-      let context = Unmanaged.passRetained(box).toOpaque()
-      let parseError = String(cppBridge.SetDataC(map, context, errorCallbackTrampoline))
-      if !parseError.isEmpty {
-        // Parse error — release the retained box and report immediately
-        _ = Unmanaged<ErrorCallbackBox>.fromOpaque(context).takeRetainedValue()
-        completion(NSError(domain: "FirebaseFirestore", code: -1,
-                           userInfo: [NSLocalizedDescriptionKey: parseError]))
-      }
-    } else {
-      _ = cppBridge.SetData(map)
-    }
+    setData(documentData, option: merge ? .Merge : .Overwrite,
+            mergeFields: CppFieldPathVector(), completion: completion)
   }
 
-  public func setData(_ documentData: [String: Any],
-                      merge: Bool,
+  /// Writes only `mergeFields` (`String`s or `FieldPath`s) from `documentData`.
+  public func setData(_ documentData: [String: Any], mergeFields: [Any],
                       completion: ((Error?) -> Void)? = nil) {
-    let map = toBridgeFieldValueMap(documentData)
-    if let completion = completion {
-      let box = ErrorCallbackBox(completion)
-      let context = Unmanaged.passRetained(box).toOpaque()
-      let parseError: String
-      if merge {
-        parseError = String(cppBridge.SetDataMergeC(map, context, errorCallbackTrampoline))
-      } else {
-        parseError = String(cppBridge.SetDataC(map, context, errorCallbackTrampoline))
-      }
-      if !parseError.isEmpty {
-        _ = Unmanaged<ErrorCallbackBox>.fromOpaque(context).takeRetainedValue()
-        completion(NSError(domain: "FirebaseFirestore", code: -1,
-                           userInfo: [NSLocalizedDescriptionKey: parseError]))
-      }
-    } else {
-      if merge {
-        _ = cppBridge.SetDataMerge(map)
-      } else {
-        _ = cppBridge.SetData(map)
-      }
-    }
+    setData(documentData, option: .MergeFields,
+            mergeFields: toCppFieldPaths(mergeFields: mergeFields), completion: completion)
   }
 
-  public func setData(_ documentData: [String: Any],
-                      mergeFields: [Any],
-                      completion: ((Error?) -> Void)? = nil) {
-    let map = toBridgeFieldValueMap(documentData)
-    var fields = CppStringVector()
-    for field in mergeFields {
-      if let s = field as? String {
-        fields.push_back(std.string(s))
-      } else if let fp = field as? FieldPath {
-        fields.push_back(std.string(fp.dotSeparatedString))
-      }
-    }
-    if let completion = completion {
-      // SetDataMergeFields doesn't have a C-callback variant yet, use fire-and-forget
-      let error = String(cppBridge.SetDataMergeFields(map, fields))
-      if error.isEmpty {
-        completion(nil)
-      } else {
-        completion(NSError(domain: "FirebaseFirestore", code: -1,
-                           userInfo: [NSLocalizedDescriptionKey: error]))
-      }
-    } else {
-      _ = cppBridge.SetDataMergeFields(map, fields)
-    }
-  }
-
-  public func updateData(_ fields: [String: Any],
-                         completion: ((Error?) -> Void)? = nil) {
-    let map = toBridgeFieldValueMap(fields)
-    if let completion = completion {
-      let box = ErrorCallbackBox(completion)
-      let context = Unmanaged.passRetained(box).toOpaque()
-      let parseError = String(cppBridge.UpdateDataC(map, context, errorCallbackTrampoline))
-      if !parseError.isEmpty {
-        _ = Unmanaged<ErrorCallbackBox>.fromOpaque(context).takeRetainedValue()
-        completion(NSError(domain: "FirebaseFirestore", code: -1,
-                           userInfo: [NSLocalizedDescriptionKey: parseError]))
-      }
-    } else {
-      _ = cppBridge.UpdateData(map)
-    }
+  /// Updates fields of an existing document. Keys are dot-separated `String`s
+  /// or `FieldPath`s.
+  public func updateData(_ fields: [AnyHashable: Any], completion: ((Error?) -> Void)? = nil) {
+    var bridge = cppBridge
+    let (context, callback) = writeCallback(completion)
+    bridge.UpdateData(toBridgeUpdateData(fields), context, callback)
   }
 
   public func delete(completion: ((Error?) -> Void)? = nil) {
-    if let completion = completion {
-      let box = ErrorCallbackBox(completion)
-      let context = Unmanaged.passRetained(box).toOpaque()
-      cppBridge.DeleteDocumentC(context, errorCallbackTrampoline)
-    } else {
-      cppBridge.DeleteDocumentNoCallback()
-    }
+    let (context, callback) = writeCallback(completion)
+    cppBridge.DeleteDocument(context, callback)
   }
 
   public func getDocument(source: FirestoreSource = .default,
                           completion: @escaping (DocumentSnapshot?, Error?) -> Void) {
-    let firestore = self.parent.firestore
-    let wrappedCompletion: (DocumentSnapshot?, Error?) -> Void = { snapshot, error in
-      snapshot?._firestore = firestore
-      completion(snapshot, error)
+    let firestore = firestore
+    let handler: DocumentSnapshotHandler = { snapshot, error in
+      completion(snapshot.map { DocumentSnapshot(cppBridge: $0, firestore: firestore) }, error)
     }
-    let box = DocumentSnapshotCallbackBox(wrappedCompletion)
-    let context = Unmanaged.passRetained(box).toOpaque()
-    cppBridge.GetDocumentC(source.cppSource, context, documentSnapshotCallbackTrampoline)
+    cppBridge.GetDocument(source.cppSource, retainedContext(handler),
+                          documentSnapshotCallbackTrampoline)
   }
 
   public func getDocument(source: FirestoreSource = .default) async throws -> DocumentSnapshot {
     try await withCheckedThrowingContinuation { continuation in
       getDocument(source: source) { snapshot, error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else if let snapshot = snapshot {
+        if let snapshot {
           continuation.resume(returning: snapshot)
         } else {
-          continuation.resume(throwing: NSError(
-            domain: "FirebaseFirestore", code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "Unknown error"]))
+          continuation.resume(throwing: error ?? FirestoreErrorCode(.unknown))
         }
       }
     }
   }
 
-  public func addSnapshotListener(includeMetadataChanges: Bool = false,
+  public func addSnapshotListener(_ listener: @escaping (DocumentSnapshot?, Error?) -> Void)
+    -> any ListenerRegistration {
+    addSnapshotListener(options: SnapshotListenOptions(), listener: listener)
+  }
+
+  public func addSnapshotListener(includeMetadataChanges: Bool,
                                   listener: @escaping (DocumentSnapshot?, Error?) -> Void)
     -> any ListenerRegistration {
-    let firestore = self.parent.firestore
-    let wrappedListener: (DocumentSnapshot?, Error?) -> Void = { snapshot, error in
-      snapshot?._firestore = firestore
-      listener(snapshot, error)
+    addSnapshotListener(
+      options: SnapshotListenOptions().withIncludeMetadataChanges(includeMetadataChanges),
+      listener: listener
+    )
+  }
+
+  public func addSnapshotListener(options: SnapshotListenOptions,
+                                  listener: @escaping (DocumentSnapshot?, Error?) -> Void)
+    -> any ListenerRegistration {
+    let firestore = firestore
+    let handler: DocumentSnapshotHandler = { snapshot, error in
+      listener(snapshot.map { DocumentSnapshot(cppBridge: $0, firestore: firestore) }, error)
     }
-    let box = DocumentSnapshotCallbackBox(wrappedListener)
-    let context = Unmanaged.passUnretained(box).toOpaque()
     let registration = cppBridge.AddSnapshotListener(
-      includeMetadataChanges, context, documentSnapshotListenerTrampoline)
-    return BridgeListenerRegistration(cppBridge: registration, retainedContext: box)
+      options.includeMetadataChanges, Int32(options.source.rawValue),
+      retainedContext(handler), releaseCallbackBox, documentSnapshotListenerTrampoline
+    )
+    return BridgeListenerRegistration(cppBridge: registration)
   }
 }
 
 /// A reference to a Firestore collection.
 public final class CollectionReference: Query, @unchecked Sendable {
-  private var _collectionBridge: CppCollectionReferenceBridge?
+  private let collectionBridge: CppCollectionReferenceBridge
 
-  init() {
-    _collectionBridge = nil
-    super.init(cppBridge: CppQueryBridge(), firestore: nil)
-  }
-
-  init(cppBridge: CppCollectionReferenceBridge, firestore: Firestore? = nil) {
-    _collectionBridge = cppBridge
-    // Use as_query() to get the QueryBridge base from the CollectionReferenceBridge.
+  init(cppBridge: CppCollectionReferenceBridge, firestore: Firestore) {
+    collectionBridge = cppBridge
     // Swift C++ interop doesn't expose C++ base class members directly.
     super.init(cppBridge: cppBridge.as_query(), firestore: firestore)
   }
 
   public var collectionID: String {
-    guard let bridge = _collectionBridge else { return "" }
-    return String(bridge.collection_id())
+    String(collectionBridge.collection_id())
   }
 
+  /// The collection's path, e.g. `"users/alice/posts"`.
+  public var path: String {
+    String(collectionBridge.path())
+  }
+
+  /// The document containing this collection, or nil for a root collection.
+  public var parent: DocumentReference? {
+    var parent = CppDocumentReferenceBridge()
+    guard collectionBridge.GetParent(&parent) else { return nil }
+    return DocumentReference(cppBridge: parent, firestore: firestore)
+  }
+
+  /// A reference to a new document with an automatically generated ID.
   public func document() -> DocumentReference {
-    guard let bridge = _collectionBridge else { return DocumentReference() }
-    return DocumentReference(cppBridge: bridge.Document())
+    DocumentReference(cppBridge: collectionBridge.Document(), firestore: firestore)
   }
 
   public func document(_ path: String) -> DocumentReference {
-    guard let bridge = _collectionBridge else { return DocumentReference() }
-    return DocumentReference(cppBridge: bridge.Document(std.string(path)))
+    DocumentReference(cppBridge: collectionBridge.Document(std.string(path)), firestore: firestore)
   }
 
+  @discardableResult
   public func addDocument(data: [String: Any],
                           completion: ((Error?) -> Void)? = nil) -> DocumentReference {
     let docRef = document()
@@ -1012,214 +986,333 @@ public final class CollectionReference: Query, @unchecked Sendable {
   }
 }
 
-/// A Firestore query.
-public class Query: @unchecked Sendable {
-  var cppQueryBridge: CppQueryBridge
-  private weak var _firestore: Firestore?
+// MARK: - Queries
 
-  init(cppBridge: CppQueryBridge, firestore: Firestore? = nil) {
+/// A Firestore query.
+public class Query: Hashable, @unchecked Sendable {
+  let cppQueryBridge: CppQueryBridge
+
+  /// The database this query belongs to.
+  public let firestore: Firestore
+
+  init(cppBridge: CppQueryBridge, firestore: Firestore) {
     cppQueryBridge = cppBridge
-    _firestore = firestore
+    self.firestore = firestore
   }
 
-  public var firestore: Firestore { _firestore ?? Firestore() }
+  public static func == (lhs: Query, rhs: Query) -> Bool {
+    lhs.cppQueryBridge.IsEqual(rhs.cppQueryBridge)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(cppQueryBridge.Hash())
+  }
+
+  private func query(_ cppBridge: CppQueryBridge) -> Query {
+    Query(cppBridge: cppBridge, firestore: firestore)
+  }
 
   public func getDocuments(source: FirestoreSource = .default,
                            completion: @escaping (QuerySnapshot?, Error?) -> Void) {
-    let firestore = self._firestore
-    let wrappedCompletion: (QuerySnapshot?, Error?) -> Void = { snapshot, error in
-      snapshot?._firestore = firestore
-      completion(snapshot, error)
+    let handler: QuerySnapshotHandler = { [self] snapshot, error in
+      completion(snapshot.map { QuerySnapshot(cppBridge: $0, query: self) }, error)
     }
-    let box = QuerySnapshotCallbackBox(wrappedCompletion)
-    let context = Unmanaged.passRetained(box).toOpaque()
-    cppQueryBridge.GetDocumentsC(source.cppSource, context, querySnapshotCallbackTrampoline)
+    cppQueryBridge.GetDocuments(source.cppSource, retainedContext(handler),
+                                querySnapshotCallbackTrampoline)
   }
 
   public func getDocuments(source: FirestoreSource = .default) async throws -> QuerySnapshot {
     try await withCheckedThrowingContinuation { continuation in
       getDocuments(source: source) { snapshot, error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else if let snapshot = snapshot {
+        if let snapshot {
           continuation.resume(returning: snapshot)
         } else {
-          continuation.resume(throwing: NSError(
-            domain: "FirebaseFirestore", code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "Unknown error"]))
+          continuation.resume(throwing: error ?? FirestoreErrorCode(.unknown))
         }
       }
     }
   }
 
-  public func addSnapshotListener(includeMetadataChanges: Bool = false,
-                                  listener: @escaping (QuerySnapshot?, Error?) -> Void)
-    -> any ListenerRegistration {
-    let firestore = self._firestore
-    let wrappedListener: (QuerySnapshot?, Error?) -> Void = { snapshot, error in
-      snapshot?._firestore = firestore
-      listener(snapshot, error)
-    }
-    let box = QuerySnapshotCallbackBox(wrappedListener)
-    let context = Unmanaged.passUnretained(box).toOpaque()
-    let registration = cppQueryBridge.AddSnapshotListener(
-      includeMetadataChanges, context, querySnapshotListenerTrampoline)
-    return BridgeListenerRegistration(cppBridge: registration, retainedContext: box)
-  }
-
   public func addSnapshotListener(_ listener: @escaping (QuerySnapshot?, Error?) -> Void)
     -> any ListenerRegistration {
-    return addSnapshotListener(includeMetadataChanges: false, listener: listener)
+    addSnapshotListener(options: SnapshotListenOptions(), listener: listener)
   }
 
-  // MARK: - Query modifiers
+  public func addSnapshotListener(includeMetadataChanges: Bool,
+                                  listener: @escaping (QuerySnapshot?, Error?) -> Void)
+    -> any ListenerRegistration {
+    addSnapshotListener(
+      options: SnapshotListenOptions().withIncludeMetadataChanges(includeMetadataChanges),
+      listener: listener
+    )
+  }
+
+  public func addSnapshotListener(options: SnapshotListenOptions,
+                                  listener: @escaping (QuerySnapshot?, Error?) -> Void)
+    -> any ListenerRegistration {
+    let handler: QuerySnapshotHandler = { [self] snapshot, error in
+      listener(snapshot.map { QuerySnapshot(cppBridge: $0, query: self) }, error)
+    }
+    let registration = cppQueryBridge.AddSnapshotListener(
+      options.includeMetadataChanges, Int32(options.source.rawValue),
+      retainedContext(handler), releaseCallbackBox, querySnapshotListenerTrampoline
+    )
+    return BridgeListenerRegistration(cppBridge: registration)
+  }
+
+  // MARK: Filters
+
+  /// A query with `filter` added, which may combine others with
+  /// `Filter.andFilter(_:)` and `Filter.orFilter(_:)`.
+  public func whereFilter(_ filter: Filter) -> Query {
+    query(cppQueryBridge.Where(filter.cppBridge))
+  }
 
   public func whereField(_ field: String, isEqualTo value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereEqualTo(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, isNotEqualTo value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereNotEqualTo(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, isLessThan value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereLessThan(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, isGreaterThan value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereGreaterThan(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, isLessThanOrEqualTo value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereLessThanOrEqual(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, isGreaterThanOrEqualTo value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereGreaterThanOrEqual(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, in values: [Any]) -> Query {
-    var cppValues = CppBridgeFieldValueVector()
-    for v in values { cppValues.push_back(toBridgeFieldValue(v)) }
-    return Query(cppBridge: cppQueryBridge.WhereIn(std.string(field), cppValues), firestore: _firestore)
-  }
-  public func whereField(_ field: String, notIn values: [Any]) -> Query {
-    var cppValues = CppBridgeFieldValueVector()
-    for v in values { cppValues.push_back(toBridgeFieldValue(v)) }
-    return Query(cppBridge: cppQueryBridge.WhereNotIn(std.string(field), cppValues), firestore: _firestore)
-  }
-  public func whereField(_ field: String, arrayContains value: Any) -> Query {
-    Query(cppBridge: cppQueryBridge.WhereArrayContains(std.string(field), toBridgeFieldValue(value)), firestore: _firestore)
-  }
-  public func whereField(_ field: String, arrayContainsAny values: [Any]) -> Query {
-    var cppValues = CppBridgeFieldValueVector()
-    for v in values { cppValues.push_back(toBridgeFieldValue(v)) }
-    return Query(cppBridge: cppQueryBridge.WhereArrayContainsAny(std.string(field), cppValues), firestore: _firestore)
+    whereFilter(.whereField(field, isEqualTo: value))
   }
 
+  public func whereField(_ path: FieldPath, isEqualTo value: Any) -> Query {
+    whereFilter(.whereField(path, isEqualTo: value))
+  }
+
+  public func whereField(_ field: String, isNotEqualTo value: Any) -> Query {
+    whereFilter(.whereField(field, isNotEqualTo: value))
+  }
+
+  public func whereField(_ path: FieldPath, isNotEqualTo value: Any) -> Query {
+    whereFilter(.whereField(path, isNotEqualTo: value))
+  }
+
+  public func whereField(_ field: String, isLessThan value: Any) -> Query {
+    whereFilter(.whereField(field, isLessThan: value))
+  }
+
+  public func whereField(_ path: FieldPath, isLessThan value: Any) -> Query {
+    whereFilter(.whereField(path, isLessThan: value))
+  }
+
+  public func whereField(_ field: String, isLessThanOrEqualTo value: Any) -> Query {
+    whereFilter(.whereField(field, isLessThanOrEqualTo: value))
+  }
+
+  public func whereField(_ path: FieldPath, isLessThanOrEqualTo value: Any) -> Query {
+    whereFilter(.whereField(path, isLessThanOrEqualTo: value))
+  }
+
+  public func whereField(_ field: String, isGreaterThan value: Any) -> Query {
+    whereFilter(.whereField(field, isGreaterThan: value))
+  }
+
+  public func whereField(_ path: FieldPath, isGreaterThan value: Any) -> Query {
+    whereFilter(.whereField(path, isGreaterThan: value))
+  }
+
+  public func whereField(_ field: String, isGreaterThanOrEqualTo value: Any) -> Query {
+    whereFilter(.whereField(field, isGreaterOrEqualTo: value))
+  }
+
+  public func whereField(_ path: FieldPath, isGreaterThanOrEqualTo value: Any) -> Query {
+    whereFilter(.whereField(path, isGreaterOrEqualTo: value))
+  }
+
+  public func whereField(_ field: String, arrayContains value: Any) -> Query {
+    whereFilter(.whereField(field, arrayContains: value))
+  }
+
+  public func whereField(_ path: FieldPath, arrayContains value: Any) -> Query {
+    whereFilter(.whereField(path, arrayContains: value))
+  }
+
+  public func whereField(_ field: String, arrayContainsAny values: [Any]) -> Query {
+    whereFilter(.whereField(field, arrayContainsAny: values))
+  }
+
+  public func whereField(_ path: FieldPath, arrayContainsAny values: [Any]) -> Query {
+    whereFilter(.whereField(path, arrayContainsAny: values))
+  }
+
+  public func whereField(_ field: String, in values: [Any]) -> Query {
+    whereFilter(.whereField(field, in: values))
+  }
+
+  public func whereField(_ path: FieldPath, in values: [Any]) -> Query {
+    whereFilter(.whereField(path, in: values))
+  }
+
+  public func whereField(_ field: String, notIn values: [Any]) -> Query {
+    whereFilter(.whereField(field, notIn: values))
+  }
+
+  public func whereField(_ path: FieldPath, notIn values: [Any]) -> Query {
+    whereFilter(.whereField(path, notIn: values))
+  }
+
+  // MARK: Order and limits
+
   public func order(by field: String, descending: Bool = false) -> Query {
-    let newBridge = cppQueryBridge.OrderBy(std.string(field), descending)
-    return Query(cppBridge: newBridge, firestore: _firestore)
+    order(by: FieldPath(dotSeparated: field), descending: descending)
+  }
+
+  public func order(by path: FieldPath, descending: Bool = false) -> Query {
+    query(cppQueryBridge.OrderBy(path.cppSegments, descending))
   }
 
   public func limit(to limit: Int) -> Query {
-    let newBridge = cppQueryBridge.LimitToFirst(Int32(limit))
-    return Query(cppBridge: newBridge, firestore: _firestore)
+    query(cppQueryBridge.LimitToFirst(Int32(clamping: limit)))
   }
 
   public func limit(toLast limit: Int) -> Query {
-    let newBridge = cppQueryBridge.LimitToLast(Int32(limit))
-    return Query(cppBridge: newBridge, firestore: _firestore)
+    query(cppQueryBridge.LimitToLast(Int32(clamping: limit)))
+  }
+
+  // MARK: Cursors
+
+  private static func cppValues(_ values: [Any]) -> CppBridgeFieldValueVector {
+    var vector = CppBridgeFieldValueVector()
+    for value in values {
+      vector.push_back(toBridgeFieldValue(value))
+    }
+    return vector
+  }
+
+  /// Starts at the document with these values of the order-by fields.
+  public func start(at fieldValues: [Any]) -> Query {
+    query(cppQueryBridge.StartAt(Self.cppValues(fieldValues), true))
+  }
+
+  /// Starts after the document with these values of the order-by fields.
+  public func start(after fieldValues: [Any]) -> Query {
+    query(cppQueryBridge.StartAt(Self.cppValues(fieldValues), false))
+  }
+
+  /// Ends at the document with these values of the order-by fields.
+  public func end(at fieldValues: [Any]) -> Query {
+    query(cppQueryBridge.EndAt(Self.cppValues(fieldValues), true))
+  }
+
+  /// Ends before the document with these values of the order-by fields.
+  public func end(before fieldValues: [Any]) -> Query {
+    query(cppQueryBridge.EndAt(Self.cppValues(fieldValues), false))
   }
 
   public func start(atDocument document: DocumentSnapshot) -> Query {
-    Query(cppBridge: cppQueryBridge.StartAtDocument(document.cppBridge), firestore: _firestore)
+    query(cppQueryBridge.StartAtDocument(document.cppBridge, true))
   }
+
   public func start(afterDocument document: DocumentSnapshot) -> Query {
-    Query(cppBridge: cppQueryBridge.StartAfterDocument(document.cppBridge), firestore: _firestore)
+    query(cppQueryBridge.StartAtDocument(document.cppBridge, false))
   }
+
   public func end(atDocument document: DocumentSnapshot) -> Query {
-    Query(cppBridge: cppQueryBridge.EndAtDocument(document.cppBridge), firestore: _firestore)
+    query(cppQueryBridge.EndAtDocument(document.cppBridge, true))
   }
+
   public func end(beforeDocument document: DocumentSnapshot) -> Query {
-    Query(cppBridge: cppQueryBridge.EndBeforeDocument(document.cppBridge), firestore: _firestore)
+    query(cppQueryBridge.EndAtDocument(document.cppBridge, false))
   }
 }
 
-/// A snapshot of a document.
-public final class DocumentSnapshot: @unchecked Sendable {
-  fileprivate var cppBridge: CppDocumentSnapshotBridge
-  fileprivate weak var _firestore: Firestore?
+// MARK: - Snapshots
 
-  init() {
-    cppBridge = CppDocumentSnapshotBridge()
+/// A snapshot of a document, which may not exist.
+public class DocumentSnapshot: Hashable, @unchecked Sendable {
+  let cppBridge: CppDocumentSnapshotBridge
+  let firestore: Firestore
+
+  required init(cppBridge: CppDocumentSnapshotBridge, firestore: Firestore) {
+    self.cppBridge = cppBridge
+    self.firestore = firestore
   }
 
-  init(cppBridge: CppDocumentSnapshotBridge, firestore: Firestore? = nil) {
-    self.cppBridge = cppBridge
-    self._firestore = firestore
+  public static func == (lhs: DocumentSnapshot, rhs: DocumentSnapshot) -> Bool {
+    lhs.cppBridge.IsEqual(rhs.cppBridge)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(cppBridge.Hash())
   }
 
   public var exists: Bool {
     cppBridge.exists()
   }
 
-  public var data: [String: Any]? {
-    guard cppBridge.exists() else { return nil }
-    let cppMap = cppBridge.data()
-    if cppMap.size() == 0 && !cppBridge.exists() {
-      return nil
-    }
-    return fromBridgeFieldValueMap(cppMap, firestore: _firestore)
-  }
-
   public var reference: DocumentReference {
-    DocumentReference(cppBridge: cppBridge.create_reference())
+    DocumentReference(cppBridge: cppBridge.create_reference(), firestore: firestore)
   }
 
   public var documentID: String {
     String(cppBridge.document_id())
   }
 
+  public var metadata: SnapshotMetadata {
+    SnapshotMetadata(cppMetadata: cppBridge.metadata())
+  }
+
+  /// The document's fields, or nil if it doesn't exist. Server timestamps that
+  /// haven't been set yet are null.
+  public func data() -> [String: Any]? {
+    data(with: .none)
+  }
+
   public func data(with serverTimestampBehavior: ServerTimestampBehavior) -> [String: Any]? {
-    guard cppBridge.exists() else { return nil }
-    let cppMap = cppBridge.data_with_server_timestamps(Int32(serverTimestampBehavior.rawValue))
-    return fromBridgeFieldValueMap(cppMap, firestore: _firestore)
+    guard exists else { return nil }
+    return fromBridgeFieldValueMap(
+      cppBridge.data(Int32(serverTimestampBehavior.rawValue)), firestore: firestore
+    )
   }
 
-  public func get(_ field: String) -> Any? {
-    guard cppBridge.exists() else { return nil }
-    let value = cppBridge.get_field(std.string(field))
-    if value.tag() == .Null {
-      return nil
-    }
-    return fromBridgeFieldValue(value, firestore: _firestore)
+  /// The value of `field`, a dot-separated `String` or a `FieldPath`, or nil
+  /// if the document or field doesn't exist.
+  public func get(_ field: Any) -> Any? {
+    get(field, serverTimestampBehavior: .none)
   }
 
-  public func get(_ field: String,
-                  serverTimestampBehavior: ServerTimestampBehavior) -> Any? {
-    guard cppBridge.exists() else { return nil }
-    let value = cppBridge.get_field_with_server_timestamps(
-      std.string(field), Int32(serverTimestampBehavior.rawValue))
-    if value.tag() == .Null {
-      return nil
-    }
-    return fromBridgeFieldValue(value, firestore: _firestore)
+  public func get(_ field: Any, serverTimestampBehavior: ServerTimestampBehavior) -> Any? {
+    let path = FieldPath.from(field,
+                              invalidMessage: "Subscript key must be an NSString or FIRFieldPath.")
+    var value = CppBridgeFieldValue()
+    guard cppBridge.GetField(path.cppSegments, Int32(serverTimestampBehavior.rawValue), &value)
+    else { return nil }
+    return fromBridgeFieldValue(value, firestore: firestore)
+  }
+
+  public subscript(key: Any) -> Any? {
+    self.get(key)
+  }
+}
+
+/// A snapshot of a document in a query result, which always exists.
+public final class QueryDocumentSnapshot: DocumentSnapshot, @unchecked Sendable {
+  override public func data() -> [String: Any] {
+    data(with: .none)
+  }
+
+  override public func data(with serverTimestampBehavior: ServerTimestampBehavior)
+    -> [String: Any] {
+    fromBridgeFieldValueMap(
+      cppBridge.data(Int32(serverTimestampBehavior.rawValue)), firestore: firestore
+    )
   }
 }
 
 /// A snapshot of a query result.
 public final class QuerySnapshot: @unchecked Sendable {
-  private var cppBridge: CppQuerySnapshotBridge
-  fileprivate weak var _firestore: Firestore?
+  private let cppBridge: CppQuerySnapshotBridge
 
-  init() {
-    cppBridge = CppQuerySnapshotBridge()
-  }
+  /// The query this is a result of.
+  public let query: Query
 
-  init(cppBridge: CppQuerySnapshotBridge) {
+  init(cppBridge: CppQuerySnapshotBridge, query: Query) {
     self.cppBridge = cppBridge
+    self.query = query
   }
 
-  public var documents: [DocumentSnapshot] {
+  public var documents: [QueryDocumentSnapshot] {
     let cppDocs = cppBridge.documents()
-    var result: [DocumentSnapshot] = []
+    var result: [QueryDocumentSnapshot] = []
     for i in 0 ..< cppDocs.size() {
-      result.append(DocumentSnapshot(cppBridge: cppDocs[i], firestore: _firestore))
+      result.append(QueryDocumentSnapshot(cppBridge: cppDocs[i], firestore: query.firestore))
     }
     return result
   }
@@ -1240,7 +1333,7 @@ public final class QuerySnapshot: @unchecked Sendable {
     let cppChanges = cppBridge.document_changes(includeMetadataChanges)
     var result: [DocumentChange] = []
     for i in 0 ..< cppChanges.size() {
-      result.append(DocumentChange(cppBridge: cppChanges[i], firestore: _firestore))
+      result.append(DocumentChange(cppBridge: cppChanges[i], firestore: query.firestore))
     }
     return result
   }
@@ -1252,12 +1345,12 @@ public final class QuerySnapshot: @unchecked Sendable {
 
 /// A change to a document in a query result.
 public final class DocumentChange: @unchecked Sendable {
-  private var cppBridge: CppDocumentChangeBridge
-  private weak var _firestore: Firestore?
+  private let cppBridge: CppDocumentChangeBridge
+  private let firestore: Firestore
 
-  init(cppBridge: CppDocumentChangeBridge, firestore: Firestore? = nil) {
+  init(cppBridge: CppDocumentChangeBridge, firestore: Firestore) {
     self.cppBridge = cppBridge
-    self._firestore = firestore
+    self.firestore = firestore
   }
 
   public var type: DocumentChangeType {
@@ -1269,8 +1362,8 @@ public final class DocumentChange: @unchecked Sendable {
     }
   }
 
-  public var document: DocumentSnapshot {
-    DocumentSnapshot(cppBridge: cppBridge.document(), firestore: _firestore)
+  public var document: QueryDocumentSnapshot {
+    QueryDocumentSnapshot(cppBridge: cppBridge.document(), firestore: firestore)
   }
 
   public var oldIndex: UInt {
@@ -1291,178 +1384,128 @@ public enum DocumentChangeType: Int, Sendable {
   case removed = 2
 }
 
-/// A batch of write operations.
+// MARK: - Writes
+
+/// A batch of writes, applied atomically by `commit()`.
 public final class WriteBatch: @unchecked Sendable {
-  private var cppBridge: CppWriteBatchBridge?
+  private var cppBridge: CppWriteBatchBridge
+  private let firestore: Firestore
 
-  init() {
-    cppBridge = nil
-  }
-
-  init(cppBridge: CppWriteBatchBridge) {
+  init(cppBridge: CppWriteBatchBridge, firestore: Firestore) {
     self.cppBridge = cppBridge
+    self.firestore = firestore
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference) -> WriteBatch {
-    guard var bridge = cppBridge else { return self }
-    let map = toBridgeFieldValueMap(data)
-    _ = bridge.SetData(doc.cppBridge, map)
-    cppBridge = bridge
-    return self
+    setData(data, forDocument: doc, merge: false)
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       merge: Bool) -> WriteBatch {
-    guard var bridge = cppBridge else { return self }
-    let map = toBridgeFieldValueMap(data)
-    if merge {
-      _ = bridge.SetDataMerge(doc.cppBridge, map)
-    } else {
-      _ = bridge.SetData(doc.cppBridge, map)
-    }
-    cppBridge = bridge
+    validate(doc, belongsTo: firestore)
+    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), merge ? .Merge : .Overwrite,
+                      CppFieldPathVector())
     return self
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       mergeFields: [Any]) -> WriteBatch {
-    // mergeFields variant not yet in C++ bridge — fall back to merge
-    return setData(data, forDocument: doc, merge: true)
+    validate(doc, belongsTo: firestore)
+    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), .MergeFields,
+                      toCppFieldPaths(mergeFields: mergeFields))
+    return self
   }
 
   @discardableResult
-  public func updateData(_ fields: [String: Any],
+  public func updateData(_ fields: [AnyHashable: Any],
                          forDocument doc: DocumentReference) -> WriteBatch {
-    guard var bridge = cppBridge else { return self }
-    let map = toBridgeFieldValueMap(fields)
-    _ = bridge.UpdateData(doc.cppBridge, map)
-    cppBridge = bridge
+    validate(doc, belongsTo: firestore)
+    cppBridge.UpdateData(doc.cppBridge, toBridgeUpdateData(fields))
     return self
   }
 
   @discardableResult
   public func deleteDocument(_ doc: DocumentReference) -> WriteBatch {
-    guard var bridge = cppBridge else { return self }
-    bridge.DeleteData(doc.cppBridge)
-    cppBridge = bridge
+    validate(doc, belongsTo: firestore)
+    cppBridge.DeleteData(doc.cppBridge)
     return self
   }
 
   public func commit(completion: ((Error?) -> Void)? = nil) {
-    guard var bridge = cppBridge else {
-      completion?(nil)
-      return
-    }
-    if let completion = completion {
-      let box = ErrorCallbackBox(completion)
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.Commit(context, errorCallbackTrampoline)
-      cppBridge = bridge
-    } else {
-      // Fire-and-forget: commit with no-op callback
-      let box = ErrorCallbackBox { _ in }
-      let context = Unmanaged.passRetained(box).toOpaque()
-      bridge.Commit(context, errorCallbackTrampoline)
-      cppBridge = bridge
-    }
+    let (context, callback) = writeCallback(completion)
+    cppBridge.Commit(context, callback)
   }
 
   public func commit() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      commit { error in
-        if let error = error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-    }
+    try await withErrorCallback { cppBridge.Commit($0, $1) }
   }
 }
 
-/// A Firestore transaction.
+/// A transaction, passed to the update block of `Firestore.runTransaction`.
+/// All reads must come before any writes.
 public final class Transaction: @unchecked Sendable {
   private var cppBridge: CppTransactionBridge
+  private let firestore: Firestore
 
-  init(cppBridge: CppTransactionBridge) {
+  init(cppBridge: CppTransactionBridge, firestore: Firestore) {
     self.cppBridge = cppBridge
+    self.firestore = firestore
   }
 
   @discardableResult
   public func setData(_ data: [String: Any],
                       forDocument doc: DocumentReference) -> Transaction {
-    let map = toBridgeFieldValueMap(data)
-    _ = cppBridge.SetData(doc.cppBridge, map)
-    return self
+    setData(data, forDocument: doc, merge: false)
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       merge: Bool) -> Transaction {
-    let map = toBridgeFieldValueMap(data)
-    if merge {
-      _ = cppBridge.SetDataMerge(doc.cppBridge, map)
-    } else {
-      _ = cppBridge.SetData(doc.cppBridge, map)
-    }
+    validate(doc, belongsTo: firestore)
+    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), merge ? .Merge : .Overwrite,
+                      CppFieldPathVector())
     return self
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       mergeFields: [Any]) -> Transaction {
-    // mergeFields variant not yet in C++ bridge — fall back to merge
-    return setData(data, forDocument: doc, merge: true)
+    validate(doc, belongsTo: firestore)
+    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), .MergeFields,
+                      toCppFieldPaths(mergeFields: mergeFields))
+    return self
   }
 
   @discardableResult
-  public func updateData(_ fields: [String: Any],
+  public func updateData(_ fields: [AnyHashable: Any],
                          forDocument doc: DocumentReference) -> Transaction {
-    let map = toBridgeFieldValueMap(fields)
-    _ = cppBridge.UpdateData(doc.cppBridge, map)
+    validate(doc, belongsTo: firestore)
+    cppBridge.UpdateData(doc.cppBridge, toBridgeUpdateData(fields))
     return self
   }
 
   @discardableResult
   public func deleteDocument(_ doc: DocumentReference) -> Transaction {
+    validate(doc, belongsTo: firestore)
     cppBridge.DeleteData(doc.cppBridge)
     return self
   }
 
+  /// Reads a document as part of the transaction. Blocks until it's read.
   public func getDocument(_ doc: DocumentReference) throws -> DocumentSnapshot {
-    var errorStr = std.string()
-    let snapshot = cppBridge.GetDocument(doc.cppBridge, &errorStr)
-    let error = String(errorStr)
-    if !error.isEmpty {
-      throw NSError(domain: "FirebaseFirestore", code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: error])
+    validate(doc, belongsTo: firestore)
+    var code: Int32 = 0
+    var message = std.string()
+    let snapshot = cppBridge.GetDocument(doc.cppBridge, &code, &message)
+    if code != 0 {
+      throw FirestoreErrorCode(FirestoreErrorCode.Code(rawValue: Int(code)) ?? .unknown,
+                               userInfo: [NSLocalizedDescriptionKey: String(message)])
     }
-    return DocumentSnapshot(cppBridge: snapshot)
+    return DocumentSnapshot(cppBridge: snapshot, firestore: firestore)
   }
-}
-
-/// A path to a field in a Firestore document.
-public final class FieldPath: @unchecked Sendable {
-  let fieldNames: [String]
-
-  public init(_ fieldNames: [String]) {
-    self.fieldNames = fieldNames
-  }
-
-  public init(_ fieldName: String) {
-    self.fieldNames = [fieldName]
-  }
-
-  /// Returns the dot-separated string representation of this field path.
-  var dotSeparatedString: String {
-    fieldNames.joined(separator: ".")
-  }
-
-  /// The special sentinel FieldPath to refer to the document ID.
-  public static func documentID() -> FieldPath { FieldPath(["__name__"]) }
 }
 
 /// Sentinel values for field operations.
@@ -1481,22 +1524,23 @@ public final class FieldValue: Hashable, @unchecked Sendable {
     case .serverTimestamp: "FieldValue.serverTimestamp()"
     case .arrayUnion: "FieldValue.arrayUnion()"
     case .arrayRemove: "FieldValue.arrayRemove()"
-    case .incrementInt, .incrementDouble: "FieldValue.increment()"
+    case .increment: "FieldValue.increment()"
+    case .minimum: "FieldValue.minimum()"
+    case .maximum: "FieldValue.maximum()"
     }
   }
 
   /// Matches upstream `isEqual:`: sentinels of the same kind are equal, and
-  /// array transforms also compare their elements.
+  /// array and numeric transforms also compare their operands.
   public static func == (lhs: FieldValue, rhs: FieldValue) -> Bool {
     switch (lhs.sentinel, rhs.sentinel) {
     case (.delete_, .delete_), (.serverTimestamp, .serverTimestamp):
       return true
     case let (.arrayUnion(a), .arrayUnion(b)), let (.arrayRemove(a), .arrayRemove(b)):
       return NSArray(array: a).isEqual(to: b)
-    case let (.incrementInt(a), .incrementInt(b)):
-      return a == b
-    case let (.incrementDouble(a), .incrementDouble(b)):
-      return a == b
+    case let (.increment(a), .increment(b)), let (.minimum(a), .minimum(b)),
+         let (.maximum(a), .maximum(b)):
+      return (a as? NSNumber) == (b as? NSNumber)
     default:
       return false
     }
@@ -1518,12 +1562,15 @@ public final class FieldValue: Hashable, @unchecked Sendable {
     case let .arrayRemove(elements):
       hasher.combine(3)
       hasher.combine(elements.count)
-    case let .incrementInt(value):
+    case let .increment(operand):
       hasher.combine(4)
-      hasher.combine(value)
-    case let .incrementDouble(value):
+      hasher.combine(operand as? NSNumber)
+    case let .minimum(operand):
       hasher.combine(5)
-      hasher.combine(value)
+      hasher.combine(operand as? NSNumber)
+    case let .maximum(operand):
+      hasher.combine(6)
+      hasher.combine(operand as? NSNumber)
     }
   }
 
@@ -1544,11 +1591,29 @@ public final class FieldValue: Hashable, @unchecked Sendable {
   }
 
   public static func increment(_ n: Int64) -> FieldValue {
-    FieldValue(.incrementInt(n))
+    FieldValue(.increment(n))
   }
 
   public static func increment(_ n: Double) -> FieldValue {
-    FieldValue(.incrementDouble(n))
+    FieldValue(.increment(n))
+  }
+
+  /// Sets the field to the smaller of its current value and `n`.
+  public static func minimum(_ n: Int64) -> FieldValue {
+    FieldValue(.minimum(n))
+  }
+
+  public static func minimum(_ n: Double) -> FieldValue {
+    FieldValue(.minimum(n))
+  }
+
+  /// Sets the field to the larger of its current value and `n`.
+  public static func maximum(_ n: Int64) -> FieldValue {
+    FieldValue(.maximum(n))
+  }
+
+  public static func maximum(_ n: Double) -> FieldValue {
+    FieldValue(.maximum(n))
   }
 
   /// Creates a VectorValue from an array of NSNumbers.
@@ -1559,27 +1624,28 @@ public final class FieldValue: Hashable, @unchecked Sendable {
 
   /// Convert this sentinel to a C++ BridgeFieldValue.
   func toBridgeFieldValue() -> CppBridgeFieldValue {
+    func elements(_ values: [Any]) -> CppBridgeFieldValueVector {
+      var vector = CppBridgeFieldValueVector()
+      for value in values {
+        vector.push_back(FirebaseFirestore.toBridgeFieldValue(value))
+      }
+      return vector
+    }
     switch sentinel {
     case .delete_:
       return CppBridgeFieldValue.Delete()
     case .serverTimestamp:
       return CppBridgeFieldValue.ServerTimestamp()
-    case .arrayUnion(let elements):
-      var cppArr = CppBridgeFieldValueVector()
-      for e in elements {
-        cppArr.push_back(FirebaseFirestore.toBridgeFieldValue(e))
-      }
-      return CppBridgeFieldValue.ArrayUnion(cppArr)
-    case .arrayRemove(let elements):
-      var cppArr = CppBridgeFieldValueVector()
-      for e in elements {
-        cppArr.push_back(FirebaseFirestore.toBridgeFieldValue(e))
-      }
-      return CppBridgeFieldValue.ArrayRemove(cppArr)
-    case .incrementInt(let n):
-      return CppBridgeFieldValue.IncrementInt(n)
-    case .incrementDouble(let n):
-      return CppBridgeFieldValue.IncrementDouble(n)
+    case let .arrayUnion(values):
+      return CppBridgeFieldValue.ArrayUnion(elements(values))
+    case let .arrayRemove(values):
+      return CppBridgeFieldValue.ArrayRemove(elements(values))
+    case let .increment(operand):
+      return CppBridgeFieldValue.Increment(FirebaseFirestore.toBridgeFieldValue(operand))
+    case let .minimum(operand):
+      return CppBridgeFieldValue.Minimum(FirebaseFirestore.toBridgeFieldValue(operand))
+    case let .maximum(operand):
+      return CppBridgeFieldValue.Maximum(FirebaseFirestore.toBridgeFieldValue(operand))
     }
   }
 }
@@ -1611,59 +1677,40 @@ public final class FirestoreSettings: @unchecked Sendable {
 
 /// Metadata about a snapshot.
 public final class SnapshotMetadata: @unchecked Sendable {
-  private var cppMetadata: CppSnapshotMetadata?
-
-  init() {
-    cppMetadata = nil
-  }
+  private let cppMetadata: CppSnapshotMetadata
 
   init(cppMetadata: CppSnapshotMetadata) {
     self.cppMetadata = cppMetadata
   }
 
   public var isFromCache: Bool {
-    cppMetadata?.from_cache() ?? false
+    cppMetadata.from_cache()
   }
 
   public var hasPendingWrites: Bool {
-    cppMetadata?.pending_writes() ?? false
+    cppMetadata.pending_writes()
   }
 }
 
 /// A registration for a snapshot listener.
 public protocol ListenerRegistration: Sendable {
+  /// Stops the listener. Until then it stays active, even if the registration
+  /// itself is released, as upstream.
   func remove()
 }
 
-/// Internal no-op listener registration for placeholder implementations.
-struct NoOpListenerRegistration: ListenerRegistration {
-  func remove() {}
-}
+/// Listener registration backed by the C++ bridge. C++ owns the listener's
+/// callback and releases it once the listener is gone.
+final class BridgeListenerRegistration: ListenerRegistration {
+  private let cppBridge: Mutex<CppListenerRegistrationBridge?>
 
-/// Listener registration backed by the C++ bridge.
-/// Holds a retained reference to the callback box and releases it on removal.
-final class BridgeListenerRegistration: ListenerRegistration, @unchecked Sendable {
-  private var cppBridge: CppListenerRegistrationBridge
-  private var retainedContext: AnyObject?
-  private var removed = false
-
-  init(cppBridge: CppListenerRegistrationBridge, retainedContext: AnyObject?) {
-    self.cppBridge = cppBridge
-    self.retainedContext = retainedContext
+  init(cppBridge: CppListenerRegistrationBridge) {
+    self.cppBridge = Mutex(cppBridge)
   }
 
   func remove() {
-    guard !removed else { return }
-    removed = true
-    cppBridge.Remove()
-    // Release the retained callback box by dropping our strong reference.
-    retainedContext = nil
-  }
-
-  deinit {
-    if !removed {
-      cppBridge.Remove()
-    }
+    guard var bridge = cppBridge.withLock({ $0.take() }) else { return }
+    bridge.Remove()
   }
 }
 
@@ -1683,14 +1730,35 @@ public enum FirestoreSource: Int, Sendable {
 
 /// The source for snapshot listeners.
 public enum ListenSource: Int, Sendable {
+  /// The server and the local cache, as other listeners.
   case `default` = 0
+  /// Only the local cache: no network traffic, and no server-side results.
   case cache = 1
 }
 
-/// Snapshot listen options.
-public final class SnapshotListenOptions: @unchecked Sendable {
-  public var includeMetadataChanges: Bool = false
-  public var source: ListenSource = .default
+/// Options for `addSnapshotListener(options:listener:)`.
+public final class SnapshotListenOptions: Sendable {
+  public let includeMetadataChanges: Bool
+  public let source: ListenSource
+
+  public convenience init() {
+    self.init(includeMetadataChanges: false, source: .default)
+  }
+
+  private init(includeMetadataChanges: Bool, source: ListenSource) {
+    self.includeMetadataChanges = includeMetadataChanges
+    self.source = source
+  }
+
+  /// A copy that also delivers snapshots for metadata-only changes.
+  public func withIncludeMetadataChanges(_ includeMetadataChanges: Bool) -> SnapshotListenOptions {
+    SnapshotListenOptions(includeMetadataChanges: includeMetadataChanges, source: source)
+  }
+
+  /// A copy that listens to `source`.
+  public func withSource(_ source: ListenSource) -> SnapshotListenOptions {
+    SnapshotListenOptions(includeMetadataChanges: includeMetadataChanges, source: source)
+  }
 }
 
 /// Progress of bundle loading.

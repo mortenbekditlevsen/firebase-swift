@@ -33,7 +33,10 @@
 #include "Firestore/core/src/api/source.h"
 #include "Firestore/core/src/api/write_batch.h"
 #include "Firestore/core/src/core/event_listener.h"
+#include "Firestore/core/src/api/listen_source.h"
 #include "Firestore/core/src/core/bound.h"
+#include "Firestore/core/src/core/composite_filter.h"
+#include "Firestore/core/src/core/filter.h"
 #include "Firestore/core/src/core/field_filter.h"
 #include "Firestore/core/src/core/listen_options.h"
 #include "Firestore/core/src/core/order_by.h"
@@ -57,6 +60,8 @@
 #include "Firestore/core/src/nanopb/nanopb_util.h"
 #include "Firestore/core/src/remote/firebase_metadata_provider_noop.h"
 #include "Firestore/core/src/util/async_queue.h"
+#include "Firestore/core/src/util/empty.h"
+#include "Firestore/core/src/util/exception.h"
 #include "Firestore/core/src/util/executor.h"
 #include "Firestore/core/src/util/hard_assert.h"
 #include "Firestore/core/src/util/log.h"
@@ -95,6 +100,8 @@ using model::FieldMask;
 using model::FieldPath;
 using model::FieldTransform;
 using model::NumericIncrementTransform;
+using model::NumericMaximumTransform;
+using model::NumericMinimumTransform;
 using model::ObjectValue;
 using model::ResourcePath;
 using model::ServerTimestampTransform;
@@ -102,6 +109,57 @@ using model::TransformOperation;
 using nanopb::Message;
 using util::Status;
 using util::StatusOr;
+using util::ThrowInvalidArgument;
+
+namespace {
+
+int32_t ErrorCode(const Status& status) {
+  return static_cast<int32_t>(status.code());
+}
+
+/// Calls `callback` (if any) with the outcome of an operation.
+void Report(ErrorCallback callback, void* context, const Status& status) {
+  if (!callback) return;
+  if (status.ok()) {
+    callback(context, 0, "");
+  } else {
+    callback(context, ErrorCode(status), status.error_message().c_str());
+  }
+}
+
+std::function<void(Status)> Reporter(void* context, ErrorCallback callback) {
+  return [context, callback](Status status) {
+    Report(callback, context, status);
+  };
+}
+
+/// Hands a snapshot (or the error) to a snapshot callback, which owns the
+/// heap-allocated bridge.
+template <typename Bridge, typename Snapshot, typename Callback>
+void ReportSnapshot(Callback callback, void* context, StatusOr<Snapshot> result,
+                    std::function<Bridge*(Snapshot)> make_bridge) {
+  if (result.ok()) {
+    callback(context, make_bridge(std::move(result).ValueOrDie()), 0, "");
+  } else {
+    callback(context, nullptr, ErrorCode(result.status()),
+             result.status().error_message().c_str());
+  }
+}
+
+/// Owns a listener's context, releasing it when the last copy of the listener
+/// is destroyed.
+std::shared_ptr<void> OwnContext(void* context, ContextReleaseCallback release) {
+  return std::shared_ptr<void>(context, [release](void* context) {
+    if (release && context) release(context);
+  });
+}
+
+api::ListenSource MakeListenSource(int32_t listen_source) {
+  return listen_source == 1 ? api::ListenSource::Cache
+                            : api::ListenSource::Default;
+}
+
+}  // namespace
 
 // ===========================================================================
 // DocumentSnapshotBridge::Impl
@@ -145,6 +203,16 @@ DocumentReferenceBridge DocumentSnapshotBridge::create_reference()
   result.impl_ = std::make_shared<DocumentReferenceBridge::Impl>(
       impl_->snapshot_.CreateReference());
   return result;
+}
+
+bool DocumentSnapshotBridge::IsEqual(
+    const DocumentSnapshotBridge& other) const noexcept {
+  if (!impl_ || !other.impl_) return impl_ == other.impl_;
+  return impl_->snapshot_ == other.impl_->snapshot_;
+}
+
+size_t DocumentSnapshotBridge::Hash() const noexcept {
+  return impl_ ? impl_->snapshot_.Hash() : 0;
 }
 
 // ===========================================================================
@@ -281,124 +349,55 @@ CollectionReferenceBridge DocumentReferenceBridge::Collection(
 
 void DocumentReferenceBridge::GetDocument(
     Source source,
-    std::function<void(DocumentSnapshotBridge, std::string)> callback
-) const noexcept {
-  if (!impl_) {
-    callback(DocumentSnapshotBridge{}, "DocumentReference is not initialized");
-    return;
-  }
-
-  auto listener = EventListener<DocumentSnapshot>::Create(
-      [callback = std::move(callback)](StatusOr<DocumentSnapshot> maybe_snapshot) {
-        if (maybe_snapshot.ok()) {
-          DocumentSnapshotBridge bridge;
-          bridge.impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
-              std::move(maybe_snapshot).ValueOrDie());
-          callback(std::move(bridge), "");
-        } else {
-          callback(DocumentSnapshotBridge{},
-                   maybe_snapshot.status().error_message());
-        }
-      });
-
-  impl_->ref_.GetDocument(source, std::move(listener));
-}
-
-void DocumentReferenceBridge::DeleteDocument(
-    std::function<void(std::string)> callback) const noexcept {
-  if (!impl_) {
-    callback("DocumentReference is not initialized");
-    return;
-  }
-
-  impl_->ref_.DeleteDocument([callback = std::move(callback)](Status status) {
-    if (status.ok()) {
-      callback("");
-    } else {
-      callback(status.error_message());
-    }
-  });
-}
-
-// ===========================================================================
-// DocumentReferenceBridge — C-callback async methods
-// ===========================================================================
-
-void DocumentReferenceBridge::GetDocumentC(
-    Source source,
     void* context,
     DocumentSnapshotCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, nullptr, "DocumentReference is not initialized");
-    return;
-  }
-
   auto listener = EventListener<DocumentSnapshot>::Create(
       [context, callback](StatusOr<DocumentSnapshot> maybe_snapshot) {
-        if (maybe_snapshot.ok()) {
-          auto* bridge = new DocumentSnapshotBridge();
-          bridge->impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
-              std::move(maybe_snapshot).ValueOrDie());
-          callback(context, static_cast<void*>(bridge), "");
-        } else {
-          callback(context, nullptr,
-                   maybe_snapshot.status().error_message().c_str());
-        }
+        ReportSnapshot<DocumentSnapshotBridge, DocumentSnapshot>(
+            callback, context, std::move(maybe_snapshot),
+            [](DocumentSnapshot snapshot) {
+              auto* bridge = new DocumentSnapshotBridge();
+              bridge->impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
+                  std::move(snapshot));
+              return bridge;
+            });
       });
-
   impl_->ref_.GetDocument(source, std::move(listener));
 }
 
 ListenerRegistrationBridge DocumentReferenceBridge::AddSnapshotListener(
     bool include_metadata_changes,
+    int32_t listen_source,
     void* context,
+    ContextReleaseCallback release_context,
     DocumentSnapshotCallback callback) const noexcept {
-  ListenerRegistrationBridge result;
-  if (!impl_) return result;
-
-  auto options = core::ListenOptions::FromIncludeMetadataChanges(
-      include_metadata_changes);
-
+  auto options = core::ListenOptions::FromOptions(
+      include_metadata_changes, MakeListenSource(listen_source));
   auto listener = EventListener<DocumentSnapshot>::Create(
-      [context, callback](StatusOr<DocumentSnapshot> maybe_snapshot) {
-        if (maybe_snapshot.ok()) {
-          auto* bridge = new DocumentSnapshotBridge();
-          bridge->impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
-              std::move(maybe_snapshot).ValueOrDie());
-          callback(context, static_cast<void*>(bridge), "");
-        } else {
-          std::string msg = maybe_snapshot.status().error_message();
-          callback(context, nullptr, msg.c_str());
-        }
+      [owned = OwnContext(context, release_context),
+       callback](StatusOr<DocumentSnapshot> maybe_snapshot) {
+        ReportSnapshot<DocumentSnapshotBridge, DocumentSnapshot>(
+            callback, owned.get(), std::move(maybe_snapshot),
+            [](DocumentSnapshot snapshot) {
+              auto* bridge = new DocumentSnapshotBridge();
+              bridge->impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
+                  std::move(snapshot));
+              return bridge;
+            });
       });
 
-  auto registration = impl_->ref_.AddSnapshotListener(
-      options, std::move(listener));
+  ListenerRegistrationBridge result;
   result.impl_ = std::make_shared<ListenerRegistrationBridge::Impl>(
-      std::move(registration));
+      impl_->ref_.AddSnapshotListener(std::move(options), std::move(listener)));
   return result;
 }
 
-void DocumentReferenceBridge::DeleteDocumentC(
-    void* context,
-    ErrorCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, "DocumentReference is not initialized");
-    return;
-  }
-
-  impl_->ref_.DeleteDocument([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+void DocumentReferenceBridge::DeleteDocument(
+    void* context, ErrorCallback callback) const noexcept {
+  impl_->ref_.DeleteDocument(Reporter(context, callback));
 }
 
-// NOTE: SetDataC, SetDataMergeC, UpdateDataC are defined further below,
-// after the ConvertMap/ConvertValue anonymous namespace.
+// SetData and UpdateData are defined further below, after UserDataParser.
 
 // ===========================================================================
 // QueryBridge::Impl
@@ -415,41 +414,20 @@ QueryBridge& QueryBridge::operator=(const QueryBridge&) noexcept = default;
 QueryBridge::QueryBridge(QueryBridge&&) noexcept = default;
 QueryBridge& QueryBridge::operator=(QueryBridge&&) noexcept = default;
 
-void QueryBridge::GetDocuments(
-    Source source,
-    std::function<void(QuerySnapshotBridge, std::string)> callback
-) const noexcept {
-  if (!impl_) {
-    callback(QuerySnapshotBridge{}, "Query is not initialized");
-    return;
-  }
-
-  auto listener = EventListener<QuerySnapshot>::Create(
-      [callback = std::move(callback)](StatusOr<QuerySnapshot> maybe_snapshot) {
-        if (maybe_snapshot.ok()) {
-          QuerySnapshotBridge bridge;
-          bridge.impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
-              std::move(maybe_snapshot).ValueOrDie());
-          callback(std::move(bridge), "");
-        } else {
-          callback(QuerySnapshotBridge{},
-                   maybe_snapshot.status().error_message());
-        }
-      });
-
-  // Use a const_cast because GetDocuments on the C++ side is non-const
-  // but logically it doesn't modify the query.
-  const_cast<Query&>(impl_->query_).GetDocuments(source, std::move(listener));
+bool QueryBridge::IsEqual(const QueryBridge& other) const noexcept {
+  if (!impl_ || !other.impl_) return impl_ == other.impl_;
+  return impl_->query_ == other.impl_->query_;
 }
 
-QueryBridge QueryBridge::OrderBy(const std::string& field,
+size_t QueryBridge::Hash() const noexcept {
+  return impl_ ? impl_->query_.Hash() : 0;
+}
+
+QueryBridge QueryBridge::OrderBy(const FieldPathSegments& field_path,
                                  bool descending) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto field_path = model::FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
   QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.OrderBy(std::move(field_path).ValueOrDie(), descending));
+  result.impl_ = std::make_shared<Impl>(impl_->query_.OrderBy(
+      FieldPath(field_path.begin(), field_path.end()), descending));
   return result;
 }
 
@@ -468,152 +446,57 @@ QueryBridge QueryBridge::LimitToLast(int32_t limit) const noexcept {
 }
 
 // ===========================================================================
-// QueryBridge — Cursor methods
+// QueryBridge — reads and listeners
 // ===========================================================================
 
-namespace {
-
-// Helper to create a Bound from a DocumentSnapshot.
-// Mirrors the ObjC++ FIRQuery boundFromSnapshot:isInclusive: logic.
-Bound BoundFromSnapshot(const api::DocumentSnapshot& snapshot,
-                        bool is_inclusive,
-                        const core::Query& query) {
-  if (!snapshot.exists()) {
-    // Invalid — return an empty bound. In production this would throw.
-    return Bound::FromValue(nanopb::SharedMessage<google_firestore_v1_ArrayValue>{{}},
-                            is_inclusive);
-  }
-
-  const auto& document = *snapshot.internal_document();
-  const auto& database_id = snapshot.firestore()->database_id();
-  const auto& order_bys = query.normalized_order_bys();
-
-  nanopb::SharedMessage<google_firestore_v1_ArrayValue> components{{}};
-  components->values_count = static_cast<pb_size_t>(order_bys.size());
-  components->values = nanopb::MakeArray<google_firestore_v1_Value>(
-      components->values_count);
-
-  for (size_t i = 0; i < order_bys.size(); ++i) {
-    if (order_bys[i].field() == FieldPath::KeyFieldPath()) {
-      components->values[i] =
-          *model::RefValue(database_id, document->key()).release();
-    } else {
-      auto value = document->field(order_bys[i].field());
-      if (value) {
-        components->values[i] = *model::DeepClone(*value).release();
-      }
-    }
-  }
-  return Bound::FromValue(std::move(components), is_inclusive);
-}
-
-}  // namespace
-
-QueryBridge QueryBridge::StartAtDocument(
-    const DocumentSnapshotBridge& snapshot) const noexcept {
-  if (!impl_ || !snapshot.impl_) return QueryBridge{};
-  auto bound = BoundFromSnapshot(
-      snapshot.impl_->snapshot_, /*is_inclusive=*/true, impl_->query_.query());
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.StartAt(std::move(bound)));
-  return result;
-}
-
-QueryBridge QueryBridge::StartAfterDocument(
-    const DocumentSnapshotBridge& snapshot) const noexcept {
-  if (!impl_ || !snapshot.impl_) return QueryBridge{};
-  auto bound = BoundFromSnapshot(
-      snapshot.impl_->snapshot_, /*is_inclusive=*/false, impl_->query_.query());
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.StartAt(std::move(bound)));
-  return result;
-}
-
-QueryBridge QueryBridge::EndAtDocument(
-    const DocumentSnapshotBridge& snapshot) const noexcept {
-  if (!impl_ || !snapshot.impl_) return QueryBridge{};
-  auto bound = BoundFromSnapshot(
-      snapshot.impl_->snapshot_, /*is_inclusive=*/true, impl_->query_.query());
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.EndAt(std::move(bound)));
-  return result;
-}
-
-QueryBridge QueryBridge::EndBeforeDocument(
-    const DocumentSnapshotBridge& snapshot) const noexcept {
-  if (!impl_ || !snapshot.impl_) return QueryBridge{};
-  auto bound = BoundFromSnapshot(
-      snapshot.impl_->snapshot_, /*is_inclusive=*/false, impl_->query_.query());
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.EndAt(std::move(bound)));
-  return result;
-}
-
-// ===========================================================================
-// QueryBridge — C-callback async methods
-// ===========================================================================
-
-void QueryBridge::GetDocumentsC(
+void QueryBridge::GetDocuments(
     Source source,
     void* context,
     QuerySnapshotCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, nullptr, "Query is not initialized");
-    return;
-  }
-
   auto listener = EventListener<QuerySnapshot>::Create(
       [context, callback](StatusOr<QuerySnapshot> maybe_snapshot) {
-        if (maybe_snapshot.ok()) {
-          auto* bridge = new QuerySnapshotBridge();
-          bridge->impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
-              std::move(maybe_snapshot).ValueOrDie());
-          callback(context, static_cast<void*>(bridge), "");
-        } else {
-          std::string msg = maybe_snapshot.status().error_message();
-          callback(context, nullptr, msg.c_str());
-        }
+        ReportSnapshot<QuerySnapshotBridge, QuerySnapshot>(
+            callback, context, std::move(maybe_snapshot),
+            [](QuerySnapshot snapshot) {
+              auto* bridge = new QuerySnapshotBridge();
+              bridge->impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
+                  std::move(snapshot));
+              return bridge;
+            });
       });
-
+  // GetDocuments is non-const on the C++ side, but doesn't modify the query.
   const_cast<Query&>(impl_->query_).GetDocuments(source, std::move(listener));
 }
 
 ListenerRegistrationBridge QueryBridge::AddSnapshotListener(
     bool include_metadata_changes,
+    int32_t listen_source,
     void* context,
+    ContextReleaseCallback release_context,
     QuerySnapshotCallback callback) const noexcept {
-  ListenerRegistrationBridge result;
-  if (!impl_) return result;
-
-  auto options = core::ListenOptions::FromIncludeMetadataChanges(
-      include_metadata_changes);
-
+  auto options = core::ListenOptions::FromOptions(
+      include_metadata_changes, MakeListenSource(listen_source));
   auto listener = EventListener<QuerySnapshot>::Create(
-      [context, callback](StatusOr<QuerySnapshot> maybe_snapshot) {
-        if (maybe_snapshot.ok()) {
-          auto* bridge = new QuerySnapshotBridge();
-          bridge->impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
-              std::move(maybe_snapshot).ValueOrDie());
-          callback(context, static_cast<void*>(bridge), "");
-        } else {
-          std::string msg = maybe_snapshot.status().error_message();
-          callback(context, nullptr, msg.c_str());
-        }
+      [owned = OwnContext(context, release_context),
+       callback](StatusOr<QuerySnapshot> maybe_snapshot) {
+        ReportSnapshot<QuerySnapshotBridge, QuerySnapshot>(
+            callback, owned.get(), std::move(maybe_snapshot),
+            [](QuerySnapshot snapshot) {
+              auto* bridge = new QuerySnapshotBridge();
+              bridge->impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
+                  std::move(snapshot));
+              return bridge;
+            });
       });
 
-  auto registration = const_cast<Query&>(impl_->query_).AddSnapshotListener(
-      options, std::move(listener));
+  ListenerRegistrationBridge result;
   result.impl_ = std::make_shared<ListenerRegistrationBridge::Impl>(
-      std::move(registration));
+      const_cast<Query&>(impl_->query_)
+          .AddSnapshotListener(std::move(options), std::move(listener)));
   return result;
 }
 
-// NOTE: QueryBridge Where filter operations are defined further below,
-// after the ConvertMap/ConvertValue anonymous namespace.
+// Filters and cursors are defined further below, after UserDataParser.
 
 // ===========================================================================
 // CollectionReferenceBridge
@@ -639,6 +522,15 @@ std::string CollectionReferenceBridge::collection_id() const noexcept {
 std::string CollectionReferenceBridge::path() const noexcept {
   if (!impl_) return "";
   return impl_->query_.query().path().CanonicalString();
+}
+
+bool CollectionReferenceBridge::GetParent(
+    DocumentReferenceBridge& parent) const noexcept {
+  const ResourcePath& path = impl_->query_.query().path();
+  if (path.size() <= 1) return false;
+  parent.impl_ = std::make_shared<DocumentReferenceBridge::Impl>(
+      DocumentReference{path.PopLast(), impl_->query_.firestore()});
+  return true;
 }
 
 DocumentReferenceBridge CollectionReferenceBridge::Document() const noexcept {
@@ -948,10 +840,6 @@ void FirestoreBridge::SetAuthUser(const std::string& uid) const noexcept {
   }
 }
 
-bool FirestoreBridge::is_valid() const noexcept {
-  return impl_ != nullptr;
-}
-
 CollectionReferenceBridge FirestoreBridge::GetCollection(
     const std::string& collection_path) const noexcept {
   if (!impl_) return CollectionReferenceBridge{};
@@ -971,6 +859,11 @@ DocumentReferenceBridge FirestoreBridge::GetDocument(
   return result;
 }
 
+std::string FirestoreBridge::project_id() const noexcept {
+  if (!impl_) return "";
+  return impl_->firestore_->database_id().project_id();
+}
+
 std::string FirestoreBridge::database_id() const noexcept {
   if (!impl_) return "";
   return impl_->firestore_->database_id().database_id();
@@ -988,82 +881,27 @@ QueryBridge FirestoreBridge::GetCollectionGroup(
 
 void FirestoreBridge::Terminate(
     void* context, ErrorCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, "Firestore is not initialized");
-    return;
-  }
-  impl_->firestore_->Terminate([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+  impl_->firestore_->Terminate(Reporter(context, callback));
 }
 
 void FirestoreBridge::ClearPersistence(
     void* context, ErrorCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, "Firestore is not initialized");
-    return;
-  }
-  impl_->firestore_->ClearPersistence([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+  impl_->firestore_->ClearPersistence(Reporter(context, callback));
 }
 
 void FirestoreBridge::WaitForPendingWrites(
     void* context, ErrorCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, "Firestore is not initialized");
-    return;
-  }
-  impl_->firestore_->WaitForPendingWrites([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+  impl_->firestore_->WaitForPendingWrites(Reporter(context, callback));
 }
 
 void FirestoreBridge::EnableNetwork(
     void* context, ErrorCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, "Firestore is not initialized");
-    return;
-  }
-  impl_->firestore_->EnableNetwork([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+  impl_->firestore_->EnableNetwork(Reporter(context, callback));
 }
 
 void FirestoreBridge::DisableNetwork(
     void* context, ErrorCallback callback) const noexcept {
-  if (!impl_) {
-    callback(context, "Firestore is not initialized");
-    return;
-  }
-  impl_->firestore_->DisableNetwork([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+  impl_->firestore_->DisableNetwork(Reporter(context, callback));
 }
 
 // ===========================================================================
@@ -1116,11 +954,6 @@ void FirestoreBridge::set_settings_cache_size_bytes(int64_t bytes) noexcept {
   Settings settings = impl_->firestore_->settings();
   settings.set_cache_size_bytes(bytes);
   impl_->firestore_->set_settings(settings);
-}
-
-void FirestoreBridge::apply_settings() noexcept {
-  // Settings are already applied immediately in the set_settings_* methods.
-  // This is a no-op placeholder for future use.
 }
 
 // ===========================================================================
@@ -1217,10 +1050,29 @@ BridgeFieldValue BridgeFieldValue::FromMap(
 }
 
 BridgeFieldValue BridgeFieldValue::FromReference(
+    const DocumentReferenceBridge& document) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Reference;
+  const DocumentReference& ref = document.impl_->ref_;
+  v.string_value_ = ref.Path();
+  v.project_id_ = ref.firestore()->database_id().project_id();
+  v.database_id_ = ref.firestore()->database_id().database_id();
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromDocumentPath(
     const std::string& document_path) noexcept {
   BridgeFieldValue v;
   v.tag_ = Tag::Reference;
   v.string_value_ = document_path;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::Unsupported(
+    const std::string& type_name) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Unsupported;
+  v.string_value_ = type_name;
   return v;
 }
 
@@ -1260,583 +1112,466 @@ BridgeFieldValue BridgeFieldValue::ArrayRemove(
   return v;
 }
 
-BridgeFieldValue BridgeFieldValue::IncrementInt(int64_t operand) noexcept {
+BridgeFieldValue BridgeFieldValue::Increment(
+    const BridgeFieldValue& operand) noexcept {
   BridgeFieldValue v;
   v.tag_ = Tag::SentinelIncrement;
-  v.bool_value_ = false;  // false = integer increment
-  v.int64_value_ = operand;
+  v.array_value_ = {operand};
   return v;
 }
 
-BridgeFieldValue BridgeFieldValue::IncrementDouble(double operand) noexcept {
+BridgeFieldValue BridgeFieldValue::Minimum(
+    const BridgeFieldValue& operand) noexcept {
   BridgeFieldValue v;
-  v.tag_ = Tag::SentinelIncrement;
-  v.bool_value_ = true;  // true = double increment
-  v.double_value_ = operand;
+  v.tag_ = Tag::SentinelMinimum;
+  v.array_value_ = {operand};
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::Maximum(
+    const BridgeFieldValue& operand) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::SentinelMaximum;
+  v.array_value_ = {operand};
   return v;
 }
 
 // ===========================================================================
-// Internal: UserDataConverter
+// UserDataParser
 // ===========================================================================
 // Converts BridgeFieldValue trees into nanopb protobuf values, handling
-// sentinel field values (transforms) via ParseAccumulator/ParseContext.
+// sentinel field values (transforms) via ParseAccumulator/ParseContext. A port
+// of upstream's FSTUserDataReader, with the same validation and messages.
 
-namespace {
+class UserDataParser {
+ public:
+  explicit UserDataParser(DatabaseId database_id)
+      : database_id_(std::move(database_id)) {}
 
-// Forward declaration
-absl::optional<Message<google_firestore_v1_Value>> ConvertValue(
-    const BridgeFieldValue& value,
-    ParseContext&& context,
-    const DatabaseId& database_id);
+  ParsedSetData ParseSetData(const BridgeFieldValueMap& data) const {
+    ParseAccumulator accumulator{UserDataSource::Set};
+    auto parsed = ParseMap(data, accumulator.RootContext());
+    return std::move(accumulator).SetData(ObjectValue{std::move(parsed)});
+  }
 
-Message<google_firestore_v1_Value> ConvertMap(
-    const BridgeFieldValueMap& entries,
-    ParseContext&& context,
-    const DatabaseId& database_id) {
-  Message<google_firestore_v1_Value> result;
-  result->which_value_type = google_firestore_v1_Value_map_value_tag;
-  result->map_value = {};
+  ParsedSetData ParseMergeData(const BridgeFieldValueMap& data,
+                               const FieldPathVector* field_mask) const {
+    ParseAccumulator accumulator{UserDataSource::MergeSet};
+    ObjectValue update_object{ParseMap(data, accumulator.RootContext())};
 
-  if (entries.empty()) {
-    const FieldPath* path = context.path();
-    if (path && !path->empty()) {
-      context.AddToFieldMask(*path);
+    if (!field_mask) {
+      return std::move(accumulator).MergeData(std::move(update_object));
+    }
+    std::set<FieldPath> validated_paths;
+    for (const auto& segments : *field_mask) {
+      FieldPath path = MakeFieldPath(segments);
+      if (!accumulator.Contains(path)) {
+        ThrowInvalidArgument(
+            "Field '%s' is specified in your field mask but missing from your "
+            "input data.",
+            path.CanonicalString());
+      }
+      validated_paths.insert(std::move(path));
+    }
+    return std::move(accumulator)
+        .MergeData(std::move(update_object),
+                   FieldMask{std::move(validated_paths)});
+  }
+
+  ParsedSetData ParseSetData(const BridgeFieldValueMap& data,
+                             SetOption option,
+                             const FieldPathVector& merge_fields) const {
+    switch (option) {
+      case SetOption::Overwrite:
+        return ParseSetData(data);
+      case SetOption::Merge:
+        return ParseMergeData(data, nullptr);
+      case SetOption::MergeFields:
+        return ParseMergeData(data, &merge_fields);
+    }
+    UNREACHABLE();
+  }
+
+  ParsedUpdateData ParseUpdateData(const BridgeUpdateData& data) const {
+    ParseAccumulator accumulator{UserDataSource::Update};
+    ParseContext context = accumulator.RootContext();
+    ObjectValue update_data;
+
+    for (const auto& entry : data) {
+      FieldPath path = MakeFieldPath(entry.first);
+      if (entry.second.tag() == Tag::SentinelDelete) {
+        // Add it to the field mask, but don't add anything to update_data.
+        context.AddToFieldMask(std::move(path));
+      } else {
+        auto parsed = ParseData(entry.second, context.ChildContext(path));
+        if (parsed) {
+          context.AddToFieldMask(path);
+          update_data.Set(path, std::move(*parsed));
+        }
+      }
+    }
+    return std::move(accumulator).UpdateData(std::move(update_data));
+  }
+
+  Message<google_firestore_v1_Value> ParseQueryValue(
+      const BridgeFieldValue& value, bool allow_arrays = false) const {
+    ParseAccumulator accumulator{allow_arrays ? UserDataSource::ArrayArgument
+                                              : UserDataSource::Argument};
+    auto parsed = ParseData(value, accumulator.RootContext());
+    HARD_ASSERT(parsed, "Parsed data should not be nil.");
+    HARD_ASSERT(accumulator.field_transforms().empty(),
+                "Field transforms should have been disallowed.");
+    return std::move(*parsed);
+  }
+
+  static FieldPath MakeFieldPath(const FieldPathSegments& segments) {
+    return FieldPath(segments.begin(), segments.end());
+  }
+
+ private:
+  using Tag = BridgeFieldValue::Tag;
+
+  static bool IsSentinel(const BridgeFieldValue& value) {
+    switch (value.tag()) {
+      case Tag::SentinelDelete:
+      case Tag::SentinelServerTimestamp:
+      case Tag::SentinelArrayUnion:
+      case Tag::SentinelArrayRemove:
+      case Tag::SentinelIncrement:
+      case Tag::SentinelMinimum:
+      case Tag::SentinelMaximum:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// The API call that created a sentinel, for error messages.
+  static const char* MethodName(const BridgeFieldValue& value) {
+    switch (value.tag()) {
+      case Tag::SentinelDelete:
+        return "FieldValue.delete()";
+      case Tag::SentinelServerTimestamp:
+        return "FieldValue.serverTimestamp()";
+      case Tag::SentinelArrayUnion:
+        return "FieldValue.arrayUnion()";
+      case Tag::SentinelArrayRemove:
+        return "FieldValue.arrayRemove()";
+      case Tag::SentinelIncrement:
+        return "FieldValue.increment()";
+      case Tag::SentinelMinimum:
+        return "FieldValue.minimum()";
+      case Tag::SentinelMaximum:
+        return "FieldValue.maximum()";
+      default:
+        return "";
+    }
+  }
+
+  /// Returns the parsed value, or nullopt for a sentinel, which goes into the
+  /// context's transforms or field mask instead.
+  absl::optional<Message<google_firestore_v1_Value>> ParseData(
+      const BridgeFieldValue& value, ParseContext&& context) const {
+    if (value.tag() == Tag::Map) {
+      return ParseMap(value.map_value_, std::move(context));
+    }
+    if (IsSentinel(value)) {
+      ParseSentinel(value, std::move(context));
+      return absl::nullopt;
+    }
+
+    if (context.path()) {
+      context.AddToFieldMask(*context.path());
+    }
+    if (value.tag() == Tag::Array) {
+      if (context.array_element() &&
+          context.data_source() != UserDataSource::ArrayArgument) {
+        ThrowInvalidArgument("Nested arrays are not supported");
+      }
+      return ParseArray(value.array_value_, std::move(context));
+    }
+    return ParseScalar(value, std::move(context));
+  }
+
+  Message<google_firestore_v1_Value> ParseMap(const BridgeFieldValueMap& entries,
+                                              ParseContext&& context) const {
+    Message<google_firestore_v1_Value> result;
+    result->which_value_type = google_firestore_v1_Value_map_value_tag;
+    result->map_value = {};
+
+    if (entries.empty()) {
+      const FieldPath* path = context.path();
+      if (path && !path->empty()) {
+        context.AddToFieldMask(*path);
+      }
+      return result;
+    }
+
+    pb_size_t count = 0;
+    for (const auto& entry : entries) {
+      if (!IsSentinel(entry.second)) ++count;
+    }
+    result->map_value.fields_count = count;
+    result->map_value.fields =
+        nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(count);
+
+    pb_size_t index = 0;
+    for (const auto& entry : entries) {
+      auto parsed = ParseData(entry.second, context.ChildContext(entry.first));
+      if (parsed) {
+        result->map_value.fields[index].key = nanopb::MakeBytesArray(entry.first);
+        result->map_value.fields[index].value = *parsed->release();
+        ++index;
+      }
     }
     return result;
   }
 
-  // Count non-sentinel entries for sizing the fields array.
-  pb_size_t non_sentinel_count = 0;
-  for (const auto& entry : entries) {
-    auto tag = entry.second.tag();
-    if (tag != BridgeFieldValue::Tag::SentinelDelete &&
-        tag != BridgeFieldValue::Tag::SentinelServerTimestamp &&
-        tag != BridgeFieldValue::Tag::SentinelArrayUnion &&
-        tag != BridgeFieldValue::Tag::SentinelArrayRemove &&
-        tag != BridgeFieldValue::Tag::SentinelIncrement) {
-      ++non_sentinel_count;
-    }
-  }
+  Message<google_firestore_v1_Value> ParseArray(
+      const BridgeFieldValueVector& elements, ParseContext&& context) const {
+    Message<google_firestore_v1_Value> result;
+    result->which_value_type = google_firestore_v1_Value_array_value_tag;
+    result->array_value.values_count = static_cast<pb_size_t>(elements.size());
+    result->array_value.values = nanopb::MakeArray<google_firestore_v1_Value>(
+        result->array_value.values_count);
 
-  result->map_value.fields_count = non_sentinel_count;
-  result->map_value.fields =
-      nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(
-          non_sentinel_count);
-
-  pb_size_t index = 0;
-  for (const auto& entry : entries) {
-    auto parsed = ConvertValue(entry.second,
-                                context.ChildContext(entry.first),
-                                database_id);
-    if (parsed) {
-      result->map_value.fields[index].key =
-          nanopb::MakeBytesArray(entry.first);
-      result->map_value.fields[index].value = *parsed->release();
-      ++index;
-    }
-  }
-
-  return result;
-}
-
-Message<google_firestore_v1_Value> ConvertArray(
-    const BridgeFieldValueVector& elements,
-    ParseContext&& context,
-    const DatabaseId& database_id) {
-  Message<google_firestore_v1_Value> result;
-  result->which_value_type = google_firestore_v1_Value_array_value_tag;
-  result->array_value.values_count =
-      static_cast<pb_size_t>(elements.size());
-  result->array_value.values =
-      nanopb::MakeArray<google_firestore_v1_Value>(
-          result->array_value.values_count);
-
-  for (size_t i = 0; i < elements.size(); ++i) {
-    auto parsed = ConvertValue(elements[i],
-                                context.ChildContext(i),
-                                database_id);
-    if (!parsed) {
-      // Replace sentinels in arrays with null
-      parsed.emplace(model::DeepClone(model::NullValue()));
-    }
-    result->array_value.values[i] = *parsed->release();
-  }
-
-  return result;
-}
-
-Message<google_firestore_v1_Value> ConvertVector(
-    const DoubleVector& doubles) {
-  Message<google_firestore_v1_Value> result;
-  result->which_value_type = google_firestore_v1_Value_map_value_tag;
-  result->map_value = {};
-
-  result->map_value.fields_count = 2;
-  result->map_value.fields =
-      nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(2);
-
-  // __type__ = "__vector__"
-  result->map_value.fields[0].key =
-      nanopb::CopyBytesArray(model::kTypeValueFieldKey);
-  auto type_val = model::StringValue(std::string("__vector__"));
-  result->map_value.fields[0].value = *type_val.release();
-
-  // value = [doubles...]
-  Message<google_firestore_v1_Value> array_msg;
-  array_msg->which_value_type = google_firestore_v1_Value_array_value_tag;
-  array_msg->array_value.values_count =
-      static_cast<pb_size_t>(doubles.size());
-  array_msg->array_value.values =
-      nanopb::MakeArray<google_firestore_v1_Value>(
-          array_msg->array_value.values_count);
-
-  for (size_t i = 0; i < doubles.size(); ++i) {
-    Message<google_firestore_v1_Value> dval;
-    dval->which_value_type = google_firestore_v1_Value_double_value_tag;
-    dval->double_value = doubles[i];
-    array_msg->array_value.values[i] = *dval.release();
-  }
-
-  result->map_value.fields[1].key =
-      nanopb::CopyBytesArray(model::kVectorValueFieldKey);
-  result->map_value.fields[1].value = *array_msg.release();
-
-  return result;
-}
-
-void HandleSentinel(
-    const BridgeFieldValue& value,
-    ParseContext&& context,
-    const DatabaseId& database_id) {
-  auto tag = value.tag();
-
-  if (tag == BridgeFieldValue::Tag::SentinelDelete) {
-    if (context.data_source() == UserDataSource::MergeSet) {
-      context.AddToFieldMask(*context.path());
-    }
-    // For Update, delete at top level is handled by the caller
-    // by not including the field in the ObjectValue.
-
-  } else if (tag == BridgeFieldValue::Tag::SentinelServerTimestamp) {
-    context.AddToFieldTransforms(
-        *context.path(), ServerTimestampTransform());
-
-  } else if (tag == BridgeFieldValue::Tag::SentinelArrayUnion) {
-    // Convert elements to ArrayValue for the transform
-    ParseAccumulator elem_accumulator{UserDataSource::Argument};
-    Message<google_firestore_v1_ArrayValue> array_value;
-    auto elements = value.array_value();
-    array_value->values_count = static_cast<pb_size_t>(elements.size());
-    array_value->values = nanopb::MakeArray<google_firestore_v1_Value>(
-        array_value->values_count);
     for (size_t i = 0; i < elements.size(); ++i) {
-      ParseContext elem_ctx = elem_accumulator.RootContext();
-      auto parsed = ConvertValue(
-          elements[i],
-          elem_ctx.ChildContext(i),
-          database_id);
-      if (parsed) {
-        array_value->values[i] = *parsed->release();
-      } else {
-        array_value->values[i] = model::NullValue();
+      auto parsed = ParseData(elements[i], context.ChildContext(i));
+      if (!parsed) {
+        parsed.emplace(model::DeepClone(model::NullValue()));
       }
+      result->array_value.values[i] = *parsed->release();
     }
-    ArrayTransform transform(TransformOperation::Type::ArrayUnion,
-                             std::move(array_value));
-    context.AddToFieldTransforms(*context.path(), std::move(transform));
+    return result;
+  }
 
-  } else if (tag == BridgeFieldValue::Tag::SentinelArrayRemove) {
-    ParseAccumulator elem_accumulator{UserDataSource::Argument};
+  void ParseSentinel(const BridgeFieldValue& value,
+                     ParseContext&& context) const {
+    // Sentinels are only supported with writes, and not within arrays.
+    if (!context.write()) {
+      ThrowInvalidArgument("%s can only be used with updateData() and setData()%s",
+                           MethodName(value), context.FieldDescription());
+    }
+    if (!context.path()) {
+      ThrowInvalidArgument("%s is not currently supported inside arrays",
+                           MethodName(value));
+    }
+
+    switch (value.tag()) {
+      case Tag::SentinelDelete:
+        if (context.data_source() == UserDataSource::MergeSet) {
+          // No transform to add for a delete, but we need to add it to our
+          // field mask so it gets deleted.
+          context.AddToFieldMask(*context.path());
+        } else if (context.data_source() == UserDataSource::Update) {
+          HARD_ASSERT(!context.path()->empty(),
+                      "FieldValue.delete() at the top level should have "
+                      "already been handled.");
+          ThrowInvalidArgument(
+              "FieldValue.delete() can only appear at the top level of your "
+              "update data%s",
+              context.FieldDescription());
+        } else {
+          // We shouldn't encounter delete sentinels for queries or non-merge
+          // setData calls.
+          ThrowInvalidArgument(
+              "FieldValue.delete() can only be used with updateData() and "
+              "setData() with merge:true%s",
+              context.FieldDescription());
+        }
+        break;
+
+      case Tag::SentinelServerTimestamp:
+        context.AddToFieldTransforms(*context.path(), ServerTimestampTransform());
+        break;
+
+      case Tag::SentinelArrayUnion:
+        context.AddToFieldTransforms(
+            *context.path(),
+            ArrayTransform(TransformOperation::Type::ArrayUnion,
+                           ParseArrayTransformElements(value.array_value_)));
+        break;
+
+      case Tag::SentinelArrayRemove:
+        context.AddToFieldTransforms(
+            *context.path(),
+            ArrayTransform(TransformOperation::Type::ArrayRemove,
+                           ParseArrayTransformElements(value.array_value_)));
+        break;
+
+      case Tag::SentinelIncrement:
+        context.AddToFieldTransforms(
+            *context.path(),
+            NumericIncrementTransform(ParseQueryValue(value.array_value_[0])));
+        break;
+
+      case Tag::SentinelMinimum:
+        context.AddToFieldTransforms(
+            *context.path(),
+            NumericMinimumTransform(ParseQueryValue(value.array_value_[0])));
+        break;
+
+      case Tag::SentinelMaximum:
+        context.AddToFieldTransforms(
+            *context.path(),
+            NumericMaximumTransform(ParseQueryValue(value.array_value_[0])));
+        break;
+
+      default:
+        HARD_FAIL("Unknown FieldValue type: %s", static_cast<int>(value.tag()));
+    }
+  }
+
+  Message<google_firestore_v1_Value> ParseScalar(const BridgeFieldValue& value,
+                                                 ParseContext&& context) const {
+    Message<google_firestore_v1_Value> result;
+    switch (value.tag()) {
+      case Tag::Null:
+        return model::DeepClone(model::NullValue());
+
+      case Tag::Boolean:
+        result->which_value_type = google_firestore_v1_Value_boolean_value_tag;
+        result->boolean_value = value.bool_value_;
+        return result;
+
+      case Tag::Integer:
+        result->which_value_type = google_firestore_v1_Value_integer_value_tag;
+        result->integer_value = value.int64_value_;
+        return result;
+
+      case Tag::Double:
+        result->which_value_type = google_firestore_v1_Value_double_value_tag;
+        result->double_value = value.double_value_;
+        return result;
+
+      case Tag::String:
+        return model::StringValue(value.string_value_);
+
+      case Tag::Blob:
+        result->which_value_type = google_firestore_v1_Value_bytes_value_tag;
+        result->bytes_value = nanopb::MakeBytesArray(value.string_value_.data(),
+                                                     value.string_value_.size());
+        return result;
+
+      case Tag::Timestamp:
+        // Firestore stores microseconds; truncate as upstream does.
+        result->which_value_type = google_firestore_v1_Value_timestamp_value_tag;
+        result->timestamp_value.seconds = value.int64_value_;
+        result->timestamp_value.nanos = value.int32_value_ / 1000 * 1000;
+        return result;
+
+      case Tag::GeoPoint:
+        result->which_value_type = google_firestore_v1_Value_geo_point_value_tag;
+        result->geo_point_value.latitude = value.double_value_;
+        result->geo_point_value.longitude = value.double2_value_;
+        return result;
+
+      case Tag::Reference: {
+        if (value.project_id_ != database_id_.project_id() ||
+            value.database_id_ != database_id_.database_id()) {
+          ThrowInvalidArgument(
+              "Document Reference is for database %s/%s but should be for "
+              "database %s/%s%s",
+              value.project_id_, value.database_id_,
+              database_id_.project_id(), database_id_.database_id(),
+              context.FieldDescription());
+        }
+        return model::RefValue(database_id_,
+                               DocumentKey::FromPathString(value.string_value_));
+      }
+
+      case Tag::Vector:
+        return ParseVector(value.vector_value_);
+
+      case Tag::Unsupported:
+        ThrowInvalidArgument("Unsupported type: %s%s", value.string_value_,
+                             context.FieldDescription());
+
+      default:
+        HARD_FAIL("Unexpected value type: %s", static_cast<int>(value.tag()));
+    }
+  }
+
+  static Message<google_firestore_v1_Value> ParseVector(
+      const DoubleVector& doubles) {
+    Message<google_firestore_v1_Value> result;
+    result->which_value_type = google_firestore_v1_Value_map_value_tag;
+    result->map_value = {};
+    result->map_value.fields_count = 2;
+    result->map_value.fields =
+        nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(2);
+
+    result->map_value.fields[0].key =
+        nanopb::CopyBytesArray(model::kTypeValueFieldKey);
+    result->map_value.fields[0].value =
+        *model::StringValue(std::string("__vector__")).release();
+
+    Message<google_firestore_v1_Value> array;
+    array->which_value_type = google_firestore_v1_Value_array_value_tag;
+    array->array_value.values_count = static_cast<pb_size_t>(doubles.size());
+    array->array_value.values = nanopb::MakeArray<google_firestore_v1_Value>(
+        array->array_value.values_count);
+    for (size_t i = 0; i < doubles.size(); ++i) {
+      array->array_value.values[i].which_value_type =
+          google_firestore_v1_Value_double_value_tag;
+      array->array_value.values[i].double_value = doubles[i];
+    }
+
+    result->map_value.fields[1].key =
+        nanopb::CopyBytesArray(model::kVectorValueFieldKey);
+    result->map_value.fields[1].value = *array.release();
+    return result;
+  }
+
+  Message<google_firestore_v1_ArrayValue> ParseArrayTransformElements(
+      const BridgeFieldValueVector& elements) const {
+    ParseAccumulator accumulator{UserDataSource::Argument};
+
     Message<google_firestore_v1_ArrayValue> array_value;
-    auto elements = value.array_value();
     array_value->values_count = static_cast<pb_size_t>(elements.size());
-    array_value->values = nanopb::MakeArray<google_firestore_v1_Value>(
-        array_value->values_count);
+    array_value->values =
+        nanopb::MakeArray<google_firestore_v1_Value>(array_value->values_count);
+
     for (size_t i = 0; i < elements.size(); ++i) {
-      ParseContext elem_ctx = elem_accumulator.RootContext();
-      auto parsed = ConvertValue(
-          elements[i],
-          elem_ctx.ChildContext(i),
-          database_id);
-      if (parsed) {
-        array_value->values[i] = *parsed->release();
-      } else {
-        array_value->values[i] = model::NullValue();
-      }
+      ParseContext context = accumulator.RootContext();
+      auto parsed = ParseData(elements[i], context.ChildContext(i));
+      HARD_ASSERT(parsed && accumulator.field_transforms().empty(),
+                  "Failed to properly parse array transform element");
+      array_value->values[i] = *parsed->release();
     }
-    ArrayTransform transform(TransformOperation::Type::ArrayRemove,
-                             std::move(array_value));
-    context.AddToFieldTransforms(*context.path(), std::move(transform));
-
-  } else if (tag == BridgeFieldValue::Tag::SentinelIncrement) {
-    Message<google_firestore_v1_Value> operand;
-    if (value.bool_value()) {
-      // Double increment
-      operand->which_value_type = google_firestore_v1_Value_double_value_tag;
-      operand->double_value = value.double_value();
-    } else {
-      // Integer increment
-      operand->which_value_type = google_firestore_v1_Value_integer_value_tag;
-      operand->integer_value = value.int64_value();
-    }
-    NumericIncrementTransform transform(std::move(operand));
-    context.AddToFieldTransforms(*context.path(), std::move(transform));
+    return array_value;
   }
+
+  DatabaseId database_id_;
+};
+
+namespace {
+
+UserDataParser ParserFor(const std::shared_ptr<Firestore>& firestore) {
+  return UserDataParser(firestore->database_id());
 }
 
-absl::optional<Message<google_firestore_v1_Value>> ConvertValue(
-    const BridgeFieldValue& value,
-    ParseContext&& context,
-    const DatabaseId& database_id) {
-  using Tag = BridgeFieldValue::Tag;
-
-  switch (value.tag()) {
-    case Tag::SentinelDelete:
-    case Tag::SentinelServerTimestamp:
-    case Tag::SentinelArrayUnion:
-    case Tag::SentinelArrayRemove:
-    case Tag::SentinelIncrement:
-      HandleSentinel(value, std::move(context), database_id);
-      return absl::nullopt;
-
-    case Tag::Map:
-      return ConvertMap(value.map_value(), std::move(context), database_id);
-
-    case Tag::Array:
-      if (context.path()) {
-        context.AddToFieldMask(*context.path());
-      }
-      return ConvertArray(value.array_value(), std::move(context),
-                          database_id);
-
-    default:
-      break;
-  }
-
-  // Scalar values — add to field mask
-  if (context.path()) {
-    context.AddToFieldMask(*context.path());
-  }
-
-  switch (value.tag()) {
-    case Tag::Null:
-      return model::DeepClone(model::NullValue());
-
-    case Tag::Boolean: {
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type = google_firestore_v1_Value_boolean_value_tag;
-      result->boolean_value = value.bool_value();
-      return result;
-    }
-
-    case Tag::Integer: {
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type = google_firestore_v1_Value_integer_value_tag;
-      result->integer_value = value.int64_value();
-      return result;
-    }
-
-    case Tag::Double: {
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type = google_firestore_v1_Value_double_value_tag;
-      result->double_value = value.double_value();
-      return result;
-    }
-
-    case Tag::String:
-      return model::StringValue(value.string_value());
-
-    case Tag::Blob: {
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type = google_firestore_v1_Value_bytes_value_tag;
-      result->bytes_value = nanopb::MakeBytesArray(
-          value.string_value().data(), value.string_value().size());
-      return result;
-    }
-
-    case Tag::Timestamp: {
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type =
-          google_firestore_v1_Value_timestamp_value_tag;
-      result->timestamp_value.seconds = value.timestamp_seconds();
-      result->timestamp_value.nanos = value.timestamp_nanos();
-      return result;
-    }
-
-    case Tag::GeoPoint: {
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type =
-          google_firestore_v1_Value_geo_point_value_tag;
-      result->geo_point_value.latitude = value.geo_latitude();
-      result->geo_point_value.longitude = value.geo_longitude();
-      return result;
-    }
-
-    case Tag::Reference: {
-      // Build the full reference name from the document path.
-      // Format: projects/{project}/databases/{db}/documents/{path}
-      std::string ref_name =
-          ResourcePath({"projects", database_id.project_id(),
-                        "databases", database_id.database_id(),
-                        "documents", value.string_value()})
-              .CanonicalString();
-      Message<google_firestore_v1_Value> result;
-      result->which_value_type =
-          google_firestore_v1_Value_reference_value_tag;
-      result->reference_value = nanopb::MakeBytesArray(ref_name);
-      return result;
-    }
-
-    case Tag::Vector:
-      return ConvertVector(value.vector_value());
-
-    default:
-      // Already handled above (Map, Array, sentinels)
-      return absl::nullopt;
-  }
-}
-
-}  // anonymous namespace
+}  // namespace
 
 // ===========================================================================
 // DocumentReferenceBridge — Write Operations
 // ===========================================================================
 
-std::string DocumentReferenceBridge::SetData(
-    const BridgeFieldValueMap& data,
-    std::function<void(std::string)> callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::Set};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).SetData(std::move(obj));
-
-  impl_->ref_.SetData(std::move(parsed),
-      [callback = std::move(callback)](Status status) {
-        callback(status.ok() ? "" : status.error_message());
-      });
-  return "";
+void DocumentReferenceBridge::SetData(const BridgeFieldValueMap& data,
+                                      SetOption option,
+                                      const FieldPathVector& merge_fields,
+                                      void* context,
+                                      ErrorCallback callback) noexcept {
+  auto parsed = ParserFor(impl_->ref_.firestore())
+                    .ParseSetData(data, option, merge_fields);
+  impl_->ref_.SetData(std::move(parsed), Reporter(context, callback));
 }
 
-std::string DocumentReferenceBridge::SetDataMerge(
-    const BridgeFieldValueMap& data,
-    std::function<void(std::string)> callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::MergeSet};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).MergeData(std::move(obj));
-
-  impl_->ref_.SetData(std::move(parsed),
-      [callback = std::move(callback)](Status status) {
-        callback(status.ok() ? "" : status.error_message());
-      });
-  return "";
-}
-
-std::string DocumentReferenceBridge::SetDataMergeFields(
-    const BridgeFieldValueMap& data,
-    const StringVector& merge_fields,
-    std::function<void(std::string)> callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::MergeSet};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-
-  std::set<FieldPath> validated_paths;
-  for (const auto& field : merge_fields) {
-    auto path = FieldPath::FromDotSeparatedString(field);
-    if (!accumulator.Contains(path)) {
-      return "Field '" + path.CanonicalString() +
-             "' is specified in your field mask but missing from your input "
-             "data.";
-    }
-    validated_paths.insert(std::move(path));
-  }
-
-  auto parsed = std::move(accumulator)
-      .MergeData(std::move(obj), FieldMask{std::move(validated_paths)});
-
-  impl_->ref_.SetData(std::move(parsed),
-      [callback = std::move(callback)](Status status) {
-        callback(status.ok() ? "" : status.error_message());
-      });
-  return "";
-}
-
-std::string DocumentReferenceBridge::UpdateData(
-    const BridgeFieldValueMap& data,
-    std::function<void(std::string)> callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::Update};
-  ParseContext context = accumulator.RootContext();
-  ObjectValue update_data;
-
-  for (const auto& entry : data) {
-    auto path = FieldPath::FromDotSeparatedString(entry.first);
-
-    if (entry.second.tag() == BridgeFieldValue::Tag::SentinelDelete) {
-      // Add to field mask but don't add to updateData.
-      context.AddToFieldMask(std::move(path));
-    } else {
-      auto parsed = ConvertValue(entry.second,
-                                  context.ChildContext(path),
-                                  db_id);
-      if (parsed) {
-        context.AddToFieldMask(path);
-        update_data.Set(path, std::move(*parsed));
-      }
-    }
-  }
-
-  auto parsed = std::move(accumulator).UpdateData(std::move(update_data));
-
-  impl_->ref_.UpdateData(std::move(parsed),
-      [callback = std::move(callback)](Status status) {
-        callback(status.ok() ? "" : status.error_message());
-      });
-  return "";
-}
-
-// --- Fire-and-forget write overloads (no callback) ---
-
-std::string DocumentReferenceBridge::SetData(
-    const BridgeFieldValueMap& data) noexcept {
-  return SetData(data, [](std::string) {});
-}
-
-std::string DocumentReferenceBridge::SetDataMerge(
-    const BridgeFieldValueMap& data) noexcept {
-  return SetDataMerge(data, [](std::string) {});
-}
-
-std::string DocumentReferenceBridge::SetDataMergeFields(
-    const BridgeFieldValueMap& data,
-    const StringVector& merge_fields) noexcept {
-  return SetDataMergeFields(data, merge_fields, [](std::string) {});
-}
-
-std::string DocumentReferenceBridge::UpdateData(
-    const BridgeFieldValueMap& data) noexcept {
-  return UpdateData(data, [](std::string) {});
-}
-
-void DocumentReferenceBridge::DeleteDocumentNoCallback() const noexcept {
-  DeleteDocument([](std::string) {});
-}
-
-// --- C-callback write overloads ---
-
-std::string DocumentReferenceBridge::SetDataC(
-    const BridgeFieldValueMap& data,
-    void* context,
-    ErrorCallback callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::Set};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).SetData(std::move(obj));
-
-  impl_->ref_.SetData(std::move(parsed),
-      [context, callback](Status status) {
-        if (status.ok()) {
-          callback(context, "");
-        } else {
-          std::string msg = status.error_message();
-          callback(context, msg.c_str());
-        }
-      });
-  return "";
-}
-
-std::string DocumentReferenceBridge::SetDataMergeC(
-    const BridgeFieldValueMap& data,
-    void* context,
-    ErrorCallback callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::MergeSet};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).MergeData(std::move(obj));
-
-  impl_->ref_.SetData(std::move(parsed),
-      [context, callback](Status status) {
-        if (status.ok()) {
-          callback(context, "");
-        } else {
-          std::string msg = status.error_message();
-          callback(context, msg.c_str());
-        }
-      });
-  return "";
-}
-
-std::string DocumentReferenceBridge::UpdateDataC(
-    const BridgeFieldValueMap& data,
-    void* context,
-    ErrorCallback callback) noexcept {
-  if (!impl_) {
-    return "DocumentReference is not initialized";
-  }
-
-  const auto& db_id = impl_->ref_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::Update};
-  ParseContext parse_context = accumulator.RootContext();
-  ObjectValue update_data;
-
-  for (const auto& entry : data) {
-    auto path = FieldPath::FromDotSeparatedString(entry.first);
-
-    if (entry.second.tag() == BridgeFieldValue::Tag::SentinelDelete) {
-      parse_context.AddToFieldMask(std::move(path));
-    } else {
-      auto parsed_val = ConvertValue(entry.second,
-                                      parse_context.ChildContext(path),
-                                      db_id);
-      if (parsed_val) {
-        parse_context.AddToFieldMask(path);
-        update_data.Set(path, std::move(*parsed_val));
-      }
-    }
-  }
-
-  auto parsed = std::move(accumulator).UpdateData(std::move(update_data));
-
-  impl_->ref_.UpdateData(std::move(parsed),
-      [context, callback](Status status) {
-        if (status.ok()) {
-          callback(context, "");
-        } else {
-          std::string msg = status.error_message();
-          callback(context, msg.c_str());
-        }
-      });
-  return "";
+void DocumentReferenceBridge::UpdateData(const BridgeUpdateData& data,
+                                         void* context,
+                                         ErrorCallback callback) noexcept {
+  auto parsed = ParserFor(impl_->ref_.firestore()).ParseUpdateData(data);
+  impl_->ref_.UpdateData(std::move(parsed), Reporter(context, callback));
 }
 
 // ===========================================================================
@@ -1941,7 +1676,7 @@ BridgeFieldValue ConvertProtoValue(
     case model::TypeOrder::kReference: {
       std::string ref = nanopb::MakeString(value.reference_value);
       DocumentKey key = DocumentKey::FromName(ref);
-      return BridgeFieldValue::FromReference(key.ToString());
+      return BridgeFieldValue::FromDocumentPath(key.ToString());
     }
 
     case model::TypeOrder::kArray:
@@ -1996,15 +1731,9 @@ BridgeFieldValue ConvertProtoValue(
 
 }  // anonymous namespace
 
-BridgeFieldValueMap DocumentSnapshotBridge::data() const noexcept {
-  return data_with_server_timestamps(0);
-}
-
-BridgeFieldValueMap DocumentSnapshotBridge::data_with_server_timestamps(
-    int32_t behavior) const noexcept {
+BridgeFieldValueMap DocumentSnapshotBridge::data(
+    int32_t server_timestamp_behavior) const noexcept {
   if (!impl_) return BridgeFieldValueMap{};
-  if (!impl_->snapshot_.exists()) return BridgeFieldValueMap{};
-
   const auto& doc = impl_->snapshot_.internal_document();
   if (!doc.has_value()) return BridgeFieldValueMap{};
 
@@ -2012,246 +1741,283 @@ BridgeFieldValueMap DocumentSnapshotBridge::data_with_server_timestamps(
   if (value.which_value_type != google_firestore_v1_Value_map_value_tag) {
     return BridgeFieldValueMap{};
   }
-
-  auto firestore = impl_->snapshot_.firestore();
-  return ConvertProtoMap(value.map_value, firestore, behavior);
+  return ConvertProtoMap(value.map_value, impl_->snapshot_.firestore(),
+                         server_timestamp_behavior);
 }
 
-BridgeFieldValue DocumentSnapshotBridge::get_field(
-    const std::string& field_path) const noexcept {
-  return get_field_with_server_timestamps(field_path, 0);
-}
-
-BridgeFieldValue DocumentSnapshotBridge::get_field_with_server_timestamps(
-    const std::string& field_path, int32_t behavior) const noexcept {
-  if (!impl_) return BridgeFieldValue::Null();
-  if (!impl_->snapshot_.exists()) return BridgeFieldValue::Null();
-
-  auto path = FieldPath::FromDotSeparatedString(field_path);
-  auto value = impl_->snapshot_.GetValue(path);
-  if (!value.has_value()) return BridgeFieldValue::Null();
-
-  auto firestore = impl_->snapshot_.firestore();
-  return ConvertProtoValue(*value, firestore, behavior);
+bool DocumentSnapshotBridge::GetField(const FieldPathSegments& field_path,
+                                      int32_t server_timestamp_behavior,
+                                      BridgeFieldValue& value) const noexcept {
+  if (!impl_) return false;
+  auto field = impl_->snapshot_.GetValue(UserDataParser::MakeFieldPath(field_path));
+  if (!field.has_value()) return false;
+  value = ConvertProtoValue(*field, impl_->snapshot_.firestore(),
+                            server_timestamp_behavior);
+  return true;
 }
 
 // ===========================================================================
-// QueryBridge — Where filter operations
+// FilterBridge
 // ===========================================================================
-// These are defined here (after ConvertMap/ConvertValue) so they can use them.
+
+struct FilterBridge::Impl {
+  // A field filter, unless `filters` is set.
+  FieldPathSegments field_path;
+  FilterOperator op = FilterOperator::Equal;
+  BridgeFieldValue value;
+
+  bool is_composite = false;
+  core::CompositeFilter::Operator composite_op =
+      core::CompositeFilter::Operator::And;
+  std::vector<FilterBridge> filters;
+};
+
+FilterBridge::FilterBridge() noexcept = default;
+FilterBridge::~FilterBridge() noexcept = default;
+FilterBridge::FilterBridge(const FilterBridge&) noexcept = default;
+FilterBridge& FilterBridge::operator=(const FilterBridge&) noexcept = default;
+FilterBridge::FilterBridge(FilterBridge&&) noexcept = default;
+FilterBridge& FilterBridge::operator=(FilterBridge&&) noexcept = default;
+
+FilterBridge FilterBridge::Field(const FieldPathSegments& field_path,
+                                 FilterOperator op,
+                                 const BridgeFieldValue& value) noexcept {
+  auto impl = std::make_shared<Impl>();
+  impl->field_path = field_path;
+  impl->op = op;
+  impl->value = value;
+  FilterBridge result;
+  result.impl_ = std::move(impl);
+  return result;
+}
+
+FilterBridge FilterBridge::And(const std::vector<FilterBridge>& filters) noexcept {
+  auto impl = std::make_shared<Impl>();
+  impl->is_composite = true;
+  impl->composite_op = core::CompositeFilter::Operator::And;
+  impl->filters = filters;
+  FilterBridge result;
+  result.impl_ = std::move(impl);
+  return result;
+}
+
+FilterBridge FilterBridge::Or(const std::vector<FilterBridge>& filters) noexcept {
+  auto impl = std::make_shared<Impl>();
+  impl->is_composite = true;
+  impl->composite_op = core::CompositeFilter::Operator::Or;
+  impl->filters = filters;
+  FilterBridge result;
+  result.impl_ = std::move(impl);
+  return result;
+}
+
+// ===========================================================================
+// QueryBridge — filters, ordering and cursors
+// ===========================================================================
 
 namespace {
 
-nanopb::SharedMessage<google_firestore_v1_Value> BridgeValueToProto(
-    const BridgeFieldValue& value,
-    const DatabaseId& database_id) {
-  ParseAccumulator accumulator{UserDataSource::Argument};
-  auto converted = ConvertValue(value, accumulator.RootContext(), database_id);
-  if (converted) {
-    return nanopb::SharedMessage<google_firestore_v1_Value>(
-        std::move(*converted));
+FieldFilter::Operator CoreOperator(FilterOperator op) {
+  switch (op) {
+    case FilterOperator::LessThan:
+      return FieldFilter::Operator::LessThan;
+    case FilterOperator::LessThanOrEqual:
+      return FieldFilter::Operator::LessThanOrEqual;
+    case FilterOperator::Equal:
+      return FieldFilter::Operator::Equal;
+    case FilterOperator::NotEqual:
+      return FieldFilter::Operator::NotEqual;
+    case FilterOperator::GreaterThanOrEqual:
+      return FieldFilter::Operator::GreaterThanOrEqual;
+    case FilterOperator::GreaterThan:
+      return FieldFilter::Operator::GreaterThan;
+    case FilterOperator::ArrayContains:
+      return FieldFilter::Operator::ArrayContains;
+    case FilterOperator::In:
+      return FieldFilter::Operator::In;
+    case FilterOperator::ArrayContainsAny:
+      return FieldFilter::Operator::ArrayContainsAny;
+    case FilterOperator::NotIn:
+      return FieldFilter::Operator::NotIn;
   }
-  return nanopb::SharedMessage<google_firestore_v1_Value>(
-      model::DeepClone(model::NullValue()));
+  UNREACHABLE();
 }
 
-nanopb::SharedMessage<google_firestore_v1_Value> BridgeValuesToArrayProto(
-    const BridgeFieldValueVector& values,
-    const DatabaseId& database_id) {
-  Message<google_firestore_v1_Value> array_val;
-  array_val->which_value_type = google_firestore_v1_Value_array_value_tag;
-  array_val->array_value.values_count =
-      static_cast<pb_size_t>(values.size());
-  array_val->array_value.values =
-      nanopb::MakeArray<google_firestore_v1_Value>(
-          array_val->array_value.values_count);
+/// Mirrors FIRQuery's boundFromSnapshot:isInclusive:.
+Bound BoundFromSnapshot(const api::DocumentSnapshot& snapshot,
+                        bool is_inclusive,
+                        const core::Query& query) {
+  if (!snapshot.exists()) {
+    ThrowInvalidArgument(
+        "Invalid query. You are trying to start or end a query using a "
+        "document that doesn't exist.");
+  }
+
+  const auto& document = *snapshot.internal_document();
+  const auto& database_id = snapshot.firestore()->database_id();
+  const auto& order_bys = query.normalized_order_bys();
+
+  nanopb::SharedMessage<google_firestore_v1_ArrayValue> components{{}};
+  components->values_count = static_cast<pb_size_t>(order_bys.size());
+  components->values = nanopb::MakeArray<google_firestore_v1_Value>(
+      components->values_count);
+
+  for (size_t i = 0; i < order_bys.size(); ++i) {
+    const auto& field = order_bys[i].field();
+    if (field == FieldPath::KeyFieldPath()) {
+      components->values[i] =
+          *model::RefValue(database_id, document->key()).release();
+      continue;
+    }
+    auto value = document->field(field);
+    if (!value) {
+      ThrowInvalidArgument(
+          "Invalid query. You are trying to start or end a query using a "
+          "document for which the field '%s' (used as the order by) does not "
+          "exist.",
+          field.CanonicalString());
+    }
+    if (model::IsServerTimestamp(*value)) {
+      ThrowInvalidArgument(
+          "Invalid query. You are trying to start or end a query using a "
+          "document for which the field '%s' is an uncommitted server "
+          "timestamp. (Since the value of this field is unknown, you cannot "
+          "start/end a query with it.)",
+          field.CanonicalString());
+    }
+    components->values[i] = *model::DeepClone(*value).release();
+  }
+  return Bound::FromValue(std::move(components), is_inclusive);
+}
+
+/// Mirrors FIRQuery's boundFromFieldValues:isInclusive:.
+Bound BoundFromFieldValues(const api::Query& api_query,
+                           const BridgeFieldValueVector& values,
+                           bool is_inclusive) {
+  const core::Query& query = api_query.query();
+  // Use explicit order bys because it has to match the query the user made.
+  const auto& explicit_order_bys = query.explicit_order_bys();
+  if (values.size() > explicit_order_bys.size()) {
+    ThrowInvalidArgument(
+        "Invalid query. You are trying to start or end a query using more "
+        "values than were specified in the order by.");
+  }
+
+  const auto& database_id = api_query.firestore()->database_id();
+  UserDataParser parser(database_id);
+
+  nanopb::SharedMessage<google_firestore_v1_ArrayValue> components{{}};
+  components->values_count = static_cast<pb_size_t>(values.size());
+  components->values = nanopb::MakeArray<google_firestore_v1_Value>(
+      components->values_count);
 
   for (size_t i = 0; i < values.size(); ++i) {
-    ParseAccumulator accumulator{UserDataSource::Argument};
-    auto converted = ConvertValue(values[i], accumulator.RootContext(),
-                                   database_id);
-    if (converted) {
-      array_val->array_value.values[i] = *converted->release();
-    } else {
-      array_val->array_value.values[i] = model::NullValue();
+    auto value = parser.ParseQueryValue(values[i]);
+    if (explicit_order_bys[i].field().IsKeyFieldPath()) {
+      if (value->which_value_type != google_firestore_v1_Value_string_value_tag) {
+        ThrowInvalidArgument(
+            "Invalid query. Expected a string for the document ID.");
+      }
+      std::string document_id = nanopb::MakeString(value->string_value);
+      if (!query.IsCollectionGroupQuery() &&
+          document_id.find('/') != std::string::npos) {
+        ThrowInvalidArgument(
+            "Invalid query. When querying a collection and ordering by "
+            "document ID, you must pass a plain document ID, but '%s' "
+            "contains a slash.",
+            document_id);
+      }
+      ResourcePath path = query.path().Append(ResourcePath::FromString(document_id));
+      if (!DocumentKey::IsDocumentKey(path)) {
+        ThrowInvalidArgument(
+            "Invalid query. When querying a collection group and ordering by "
+            "document ID, you must pass a value that results in a valid "
+            "document path, but '%s' is not because it contains an odd number "
+            "of segments.",
+            path.CanonicalString());
+      }
+      value = model::RefValue(database_id, DocumentKey{path});
     }
+    components->values[i] = *value.release();
   }
-
-  return nanopb::SharedMessage<google_firestore_v1_Value>(
-      std::move(array_val));
+  return Bound::FromValue(std::move(components), is_inclusive);
 }
 
-}  // anonymous namespace
+}  // namespace
 
-QueryBridge QueryBridge::WhereEqualTo(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::Equal,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
+QueryBridge QueryBridge::Where(const FilterBridge& filter) const noexcept {
+  const api::Query& query = impl_->query_;
+
+  // Mirrors FIRQuery's parseFilter:. An empty composite filter parses to an
+  // empty filter, and a composite of one filter to that filter.
+  std::function<core::Filter(const FilterBridge::Impl&)> parse =
+      [&](const FilterBridge::Impl& filter) -> core::Filter {
+    if (filter.is_composite) {
+      std::vector<core::Filter> filters;
+      for (const auto& child : filter.filters) {
+        core::Filter parsed = parse(*child.impl_);
+        if (!parsed.IsEmpty()) {
+          filters.push_back(std::move(parsed));
+        }
+      }
+      if (filters.size() == 1) {
+        return filters[0];
+      }
+      return core::CompositeFilter::Create(std::move(filters),
+                                           filter.composite_op);
+    }
+
+    FieldFilter::Operator op = CoreOperator(filter.op);
+    bool allow_arrays = op == FieldFilter::Operator::In ||
+                        op == FieldFilter::Operator::NotIn ||
+                        op == FieldFilter::Operator::ArrayContainsAny;
+    auto value =
+        ParserFor(query.firestore()).ParseQueryValue(filter.value, allow_arrays);
+    return query.ParseFieldFilter(
+        UserDataParser::MakeFieldPath(filter.field_path), op,
+        nanopb::SharedMessage<google_firestore_v1_Value>(std::move(value)),
+        [] { return std::string("a value"); });
+  };
+
+  core::Filter parsed = parse(*filter.impl_);
+  if (parsed.IsEmpty()) {
+    // An empty composite filter adds nothing.
+    return *this;
+  }
   QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
+  result.impl_ = std::make_shared<Impl>(query.AddNewFilter(std::move(parsed)));
   return result;
 }
 
-QueryBridge QueryBridge::WhereNotEqualTo(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::NotEqual,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
+QueryBridge QueryBridge::StartAt(const BridgeFieldValueVector& values,
+                                 bool inclusive) const noexcept {
   QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
+  result.impl_ = std::make_shared<Impl>(impl_->query_.StartAt(
+      BoundFromFieldValues(impl_->query_, values, inclusive)));
   return result;
 }
 
-QueryBridge QueryBridge::WhereLessThan(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::LessThan,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
+QueryBridge QueryBridge::EndAt(const BridgeFieldValueVector& values,
+                               bool inclusive) const noexcept {
   QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
+  result.impl_ = std::make_shared<Impl>(impl_->query_.EndAt(
+      BoundFromFieldValues(impl_->query_, values, inclusive)));
   return result;
 }
 
-QueryBridge QueryBridge::WhereGreaterThan(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::GreaterThan,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
+QueryBridge QueryBridge::StartAtDocument(const DocumentSnapshotBridge& snapshot,
+                                         bool inclusive) const noexcept {
   QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
+  result.impl_ = std::make_shared<Impl>(impl_->query_.StartAt(BoundFromSnapshot(
+      snapshot.impl_->snapshot_, inclusive, impl_->query_.query())));
   return result;
 }
 
-QueryBridge QueryBridge::WhereLessThanOrEqual(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::LessThanOrEqual,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
+QueryBridge QueryBridge::EndAtDocument(const DocumentSnapshotBridge& snapshot,
+                                       bool inclusive) const noexcept {
   QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
-  return result;
-}
-
-QueryBridge QueryBridge::WhereGreaterThanOrEqual(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(),
-      FieldFilter::Operator::GreaterThanOrEqual,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
-  return result;
-}
-
-QueryBridge QueryBridge::WhereArrayContains(
-    const std::string& field,
-    const BridgeFieldValue& value) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::ArrayContains,
-      BridgeValueToProto(value, db_id),
-      []() -> std::string { return "a value"; });
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
-  return result;
-}
-
-QueryBridge QueryBridge::WhereIn(
-    const std::string& field,
-    const BridgeFieldValueVector& values) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::In,
-      BridgeValuesToArrayProto(values, db_id),
-      []() -> std::string { return "a value"; });
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
-  return result;
-}
-
-QueryBridge QueryBridge::WhereNotIn(
-    const std::string& field,
-    const BridgeFieldValueVector& values) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(), FieldFilter::Operator::NotIn,
-      BridgeValuesToArrayProto(values, db_id),
-      []() -> std::string { return "a value"; });
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
-  return result;
-}
-
-QueryBridge QueryBridge::WhereArrayContainsAny(
-    const std::string& field,
-    const BridgeFieldValueVector& values) const noexcept {
-  if (!impl_) return QueryBridge{};
-  auto db_id = impl_->query_.firestore()->database_id();
-  auto field_path = FieldPath::FromServerFormat(field);
-  if (!field_path.ok()) return QueryBridge{};
-  auto filter = impl_->query_.ParseFieldFilter(
-      std::move(field_path).ValueOrDie(),
-      FieldFilter::Operator::ArrayContainsAny,
-      BridgeValuesToArrayProto(values, db_id),
-      []() -> std::string { return "a value"; });
-  QueryBridge result;
-  result.impl_ = std::make_shared<Impl>(
-      impl_->query_.AddNewFilter(std::move(filter)));
+  result.impl_ = std::make_shared<Impl>(impl_->query_.EndAt(BoundFromSnapshot(
+      snapshot.impl_->snapshot_, inclusive, impl_->query_.query())));
   return result;
 }
 
@@ -2341,85 +2107,28 @@ WriteBatchBridge::WriteBatchBridge(
 WriteBatchBridge& WriteBatchBridge::operator=(
     WriteBatchBridge&&) noexcept = default;
 
-std::string WriteBatchBridge::SetData(
-    const DocumentReferenceBridge& doc,
-    const BridgeFieldValueMap& data) noexcept {
-  if (!impl_ || !doc.impl_) return "WriteBatch or DocumentReference not initialized";
-
-  const auto& db_id = impl_->batch_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::Set};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).SetData(std::move(obj));
-
+void WriteBatchBridge::SetData(const DocumentReferenceBridge& doc,
+                               const BridgeFieldValueMap& data,
+                               SetOption option,
+                               const FieldPathVector& merge_fields) noexcept {
+  auto parsed = ParserFor(impl_->batch_.firestore())
+                    .ParseSetData(data, option, merge_fields);
   impl_->batch_.SetData(doc.impl_->ref_, std::move(parsed));
-  return "";
 }
 
-std::string WriteBatchBridge::SetDataMerge(
-    const DocumentReferenceBridge& doc,
-    const BridgeFieldValueMap& data) noexcept {
-  if (!impl_ || !doc.impl_) return "WriteBatch or DocumentReference not initialized";
-
-  const auto& db_id = impl_->batch_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::MergeSet};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).MergeData(std::move(obj));
-
-  impl_->batch_.SetData(doc.impl_->ref_, std::move(parsed));
-  return "";
-}
-
-std::string WriteBatchBridge::UpdateData(
-    const DocumentReferenceBridge& doc,
-    const BridgeFieldValueMap& data) noexcept {
-  if (!impl_ || !doc.impl_) return "WriteBatch or DocumentReference not initialized";
-
-  const auto& db_id = impl_->batch_.firestore()->database_id();
-  ParseAccumulator accumulator{UserDataSource::Update};
-  ParseContext context = accumulator.RootContext();
-  ObjectValue update_data;
-
-  for (const auto& entry : data) {
-    auto path = FieldPath::FromDotSeparatedString(entry.first);
-
-    if (entry.second.tag() == BridgeFieldValue::Tag::SentinelDelete) {
-      context.AddToFieldMask(std::move(path));
-    } else {
-      auto parsed = ConvertValue(entry.second, context.ChildContext(path), db_id);
-      if (parsed) {
-        context.AddToFieldMask(path);
-        update_data.Set(path, std::move(*parsed));
-      }
-    }
-  }
-
-  auto parsed = std::move(accumulator).UpdateData(std::move(update_data));
+void WriteBatchBridge::UpdateData(const DocumentReferenceBridge& doc,
+                                  const BridgeUpdateData& data) noexcept {
+  auto parsed = ParserFor(impl_->batch_.firestore()).ParseUpdateData(data);
   impl_->batch_.UpdateData(doc.impl_->ref_, std::move(parsed));
-  return "";
 }
 
 void WriteBatchBridge::DeleteData(
     const DocumentReferenceBridge& doc) noexcept {
-  if (!impl_ || !doc.impl_) return;
   impl_->batch_.DeleteData(doc.impl_->ref_);
 }
 
 void WriteBatchBridge::Commit(void* context, ErrorCallback callback) noexcept {
-  if (!impl_) {
-    callback(context, "WriteBatch is not initialized");
-    return;
-  }
-
-  impl_->batch_.Commit([context, callback](Status status) {
-    if (status.ok()) {
-      callback(context, "");
-    } else {
-      std::string msg = status.error_message();
-      callback(context, msg.c_str());
-    }
-  });
+  impl_->batch_.Commit(Reporter(context, callback));
 }
 
 // ===========================================================================
@@ -2438,112 +2147,62 @@ TransactionBridge::~TransactionBridge() noexcept = default;
 
 DocumentSnapshotBridge TransactionBridge::GetDocument(
     const DocumentReferenceBridge& doc,
-    std::string& out_error) const noexcept {
-  if (!impl_ || !doc.impl_) {
-    out_error = "Transaction or DocumentReference not initialized";
-    return DocumentSnapshotBridge{};
-  }
-
+    int32_t& error_code,
+    std::string& error_message) const noexcept {
   // Block until the async Lookup completes, as FIRTransaction does upstream.
   std::promise<void> lookup_done;
 
   DocumentSnapshotBridge result;
-  std::string error_msg;
+  Status status;
 
   auto key = doc.impl_->ref_.key();
   api::SnapshotMetadata meta(/*has_pending_writes=*/false, /*from_cache=*/false);
   impl_->txn_->Lookup(
       {key},
-      [&result, &error_msg, &lookup_done, this, key, meta](
+      [&result, &status, &lookup_done, this, key, meta](
           const StatusOr<std::vector<model::Document>>& maybe_docs) {
         if (!maybe_docs.ok()) {
-          error_msg = maybe_docs.status().error_message();
+          status = maybe_docs.status();
         } else {
           const auto& docs = maybe_docs.ValueOrDie();
-          if (!docs.empty()) {
-            const auto& internal_doc = docs.front();
-            DocumentSnapshot snapshot;
-            if (internal_doc->is_found_document()) {
-              snapshot = DocumentSnapshot::FromDocument(
-                  impl_->firestore_, internal_doc, meta);
-            } else {
-              snapshot = DocumentSnapshot::FromNoDocument(
-                  impl_->firestore_, key, meta);
-            }
-            result.impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
-                std::move(snapshot));
-          }
+          HARD_ASSERT(docs.size() == 1,
+                      "Mismatch in docs returned from document lookup.");
+          const auto& internal_doc = docs.front();
+          DocumentSnapshot snapshot =
+              internal_doc->is_found_document()
+                  ? DocumentSnapshot::FromDocument(impl_->firestore_,
+                                                   internal_doc, meta)
+                  : DocumentSnapshot::FromNoDocument(impl_->firestore_, key,
+                                                     meta);
+          result.impl_ =
+              std::make_shared<DocumentSnapshotBridge::Impl>(std::move(snapshot));
         }
         lookup_done.set_value();
       });
 
   lookup_done.get_future().wait();
-  out_error = error_msg;
+  error_code = ErrorCode(status);
+  error_message = status.ok() ? std::string() : status.error_message();
   return result;
 }
 
-std::string TransactionBridge::SetData(
-    const DocumentReferenceBridge& doc,
-    const BridgeFieldValueMap& data) noexcept {
-  if (!impl_ || !doc.impl_) return "Transaction or DocumentReference not initialized";
-
-  const auto& db_id = impl_->firestore_->database_id();
-  ParseAccumulator accumulator{UserDataSource::Set};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).SetData(std::move(obj));
-
+void TransactionBridge::SetData(const DocumentReferenceBridge& doc,
+                                const BridgeFieldValueMap& data,
+                                SetOption option,
+                                const FieldPathVector& merge_fields) noexcept {
+  auto parsed =
+      ParserFor(impl_->firestore_).ParseSetData(data, option, merge_fields);
   impl_->txn_->Set(doc.impl_->ref_.key(), std::move(parsed));
-  return "";
 }
 
-std::string TransactionBridge::SetDataMerge(
-    const DocumentReferenceBridge& doc,
-    const BridgeFieldValueMap& data) noexcept {
-  if (!impl_ || !doc.impl_) return "Transaction or DocumentReference not initialized";
-
-  const auto& db_id = impl_->firestore_->database_id();
-  ParseAccumulator accumulator{UserDataSource::MergeSet};
-  auto result_value = ConvertMap(data, accumulator.RootContext(), db_id);
-  ObjectValue obj{std::move(result_value)};
-  auto parsed = std::move(accumulator).MergeData(std::move(obj));
-
-  impl_->txn_->Set(doc.impl_->ref_.key(), std::move(parsed));
-  return "";
-}
-
-std::string TransactionBridge::UpdateData(
-    const DocumentReferenceBridge& doc,
-    const BridgeFieldValueMap& data) noexcept {
-  if (!impl_ || !doc.impl_) return "Transaction or DocumentReference not initialized";
-
-  const auto& db_id = impl_->firestore_->database_id();
-  ParseAccumulator accumulator{UserDataSource::Update};
-  ParseContext context = accumulator.RootContext();
-  ObjectValue update_data;
-
-  for (const auto& entry : data) {
-    auto path = FieldPath::FromDotSeparatedString(entry.first);
-
-    if (entry.second.tag() == BridgeFieldValue::Tag::SentinelDelete) {
-      context.AddToFieldMask(std::move(path));
-    } else {
-      auto parsed = ConvertValue(entry.second, context.ChildContext(path), db_id);
-      if (parsed) {
-        context.AddToFieldMask(path);
-        update_data.Set(path, std::move(*parsed));
-      }
-    }
-  }
-
-  auto parsed = std::move(accumulator).UpdateData(std::move(update_data));
+void TransactionBridge::UpdateData(const DocumentReferenceBridge& doc,
+                                   const BridgeUpdateData& data) noexcept {
+  auto parsed = ParserFor(impl_->firestore_).ParseUpdateData(data);
   impl_->txn_->Update(doc.impl_->ref_.key(), std::move(parsed));
-  return "";
 }
 
 void TransactionBridge::DeleteData(
     const DocumentReferenceBridge& doc) noexcept {
-  if (!impl_ || !doc.impl_) return;
   impl_->txn_->Delete(doc.impl_->ref_.key());
 }
 
@@ -2565,7 +2224,6 @@ util::Executor& TransactionUserExecutor() {
 }  // namespace
 
 WriteBatchBridge FirestoreBridge::GetBatch() const noexcept {
-  if (!impl_) return WriteBatchBridge{};
   WriteBatchBridge result;
   result.impl_ = std::make_shared<WriteBatchBridge::Impl>(
       impl_->firestore_->GetBatch());
@@ -2576,13 +2234,8 @@ void FirestoreBridge::RunTransaction(
     void* context,
     TransactionUpdateCallback update_callback,
     void* result_context,
-    TransactionResultCallback result_callback,
-    int max_attempts) const noexcept {
-  if (!impl_) {
-    result_callback(result_context, "Firestore is not initialized");
-    return;
-  }
-
+    ErrorCallback result_callback,
+    int32_t max_attempts) const noexcept {
   // Capture the Firestore instance, not `this`: Swift calls this method on a
   // temporary copy of the bridge, which is gone before the transaction runs.
   auto update_fn = [context, update_callback, firestore = impl_->firestore_](
@@ -2592,28 +2245,22 @@ void FirestoreBridge::RunTransaction(
     auto* bridge = new TransactionBridge();
     bridge->impl_ = std::make_shared<TransactionBridge::Impl>(txn, firestore);
 
-    // The completion callback that Swift will call when done.
-    auto completion_fn = [txn, done = std::move(done)](
-        void* /*completion_context*/, const char* error) mutable {
-      std::string err(error);
-      if (err.empty()) {
-        done(Status::OK());
-      } else {
-        // The update block threw. That is final, so don't retry (kAborted
-        // alone counts as retryable).
-        txn->MarkPermanentlyFailed();
-        done(Status(Error::kErrorAborted, err));
-      }
-    };
-
-    // Store the completion in a shared_ptr so the C callback can use it.
-    auto shared_completion = std::make_shared<decltype(completion_fn)>(
-        std::move(completion_fn));
-
-    // C-compatible trampoline for the completion callback.
-    ErrorCallback c_completion = [](void* ctx, const char* error) {
-      auto* fn = static_cast<decltype(shared_completion.get())>(ctx);
-      (*fn)(nullptr, error);
+    // What Swift calls when the update block has finished.
+    using Completion = std::function<void(int32_t, const char*)>;
+    auto completion = std::make_shared<Completion>(
+        [txn, done = std::move(done)](int32_t code, const char* message) {
+          if (code == 0) {
+            done(Status::OK());
+          } else {
+            // The update block failed. That is final, so don't retry (kAborted
+            // alone counts as retryable).
+            txn->MarkPermanentlyFailed();
+            done(Status(static_cast<Error>(code), message));
+          }
+        });
+    ErrorCallback c_completion = [](void* ctx, int32_t code,
+                                    const char* message) {
+      (*static_cast<Completion*>(ctx))(code, message);
     };
 
     // This runs on the Firestore worker queue, but the update block calls
@@ -2621,23 +2268,28 @@ void FirestoreBridge::RunTransaction(
     // on that same queue. Run the block elsewhere, as FIRFirestore does with
     // a global dispatch queue upstream.
     TransactionUserExecutor().Execute(
-        [context, update_callback, bridge, c_completion, shared_completion] {
+        [context, update_callback, bridge, c_completion, completion] {
           update_callback(context, static_cast<void*>(bridge), c_completion,
-                          static_cast<void*>(shared_completion.get()));
+                          static_cast<void*>(completion.get()));
         });
   };
 
-  auto result_fn = [result_context, result_callback](Status status) {
-    if (status.ok()) {
-      result_callback(result_context, "");
-    } else {
-      std::string msg = status.error_message();
-      result_callback(result_context, msg.c_str());
-    }
-  };
+  impl_->firestore_->RunTransaction(std::move(update_fn),
+                                    Reporter(result_context, result_callback),
+                                    max_attempts);
+}
 
-  impl_->firestore_->RunTransaction(
-      std::move(update_fn), std::move(result_fn), max_attempts);
+ListenerRegistrationBridge FirestoreBridge::AddSnapshotsInSyncListener(
+    void* context,
+    ContextReleaseCallback release_context,
+    ErrorCallback callback) const noexcept {
+  auto listener = EventListener<util::Empty>::Create(
+      [owned = OwnContext(context, release_context),
+       callback](StatusOr<util::Empty>) { callback(owned.get(), 0, ""); });
+  ListenerRegistrationBridge result;
+  result.impl_ = std::make_shared<ListenerRegistrationBridge::Impl>(
+      impl_->firestore_->AddSnapshotsInSyncListener(std::move(listener)));
+  return result;
 }
 
 }  // namespace swift_bridge
