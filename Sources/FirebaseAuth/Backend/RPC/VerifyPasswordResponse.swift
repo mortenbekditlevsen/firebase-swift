@@ -85,7 +85,8 @@ import Foundation
          self.localID = try container.decodeIfPresent(String.self, forKey: .localID)
          self.email = try container.decodeIfPresent(String.self, forKey: .email)
          self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
-         self.idToken = try container.decode(String.self, forKey: .idToken)
+         // No ID token until a second factor is resolved (see AuthMFAResponse).
+         self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken) ?? ""
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
          self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
          self.photoURL = try container.decodeIfPresent(URL.self, forKey: .photoURL)

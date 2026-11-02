@@ -41,10 +41,16 @@ public struct AuthRequestConfiguration: Sendable, Equatable {
   // */
   public var appID: String
 
-  /** @property auth
-      @brief The FIRAuth instance used in the request.
-   */
-//  public weak var auth: Auth?
+  /// The `Auth` instance the requests are for. Errors that need it, such as a second factor
+  /// being required, get it from here. It's a back-reference, not configuration, so it isn't
+  /// part of equality.
+  weak var auth: Auth?
+
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.apiKey == rhs.apiKey && lhs.languageCode == rhs.languageCode && lhs.appID == rhs.appID &&
+      lhs.additionalFrameworkMarker == rhs.additionalFrameworkMarker &&
+      lhs.emulatorHostAndPort == rhs.emulatorHostAndPort && lhs.tenantId == rhs.tenantId
+  }
 //
 //  /// The heartbeat logger used to add heartbeats to the corresponding request's header.
 //  public var heartbeatLogger: FIRHeartbeatLoggerProtocol?

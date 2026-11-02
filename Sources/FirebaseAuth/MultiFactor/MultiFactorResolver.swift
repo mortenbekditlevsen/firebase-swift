@@ -39,69 +39,31 @@ import Foundation
      */
     public let auth: Auth
 
-    /** @fn resolveSignInWithAssertion:completion:
-         @brief A helper function to help users complete sign in with a second factor using an
-             FIRMultiFactorAssertion confirming the user successfully completed the second factor
-        challenge.
-         @param completion The block invoked when the request is complete, or fails.
-     */
-    
-    public func resolveSignIn(with assertion: MultiFactorAssertion,
-                              completion: ((AuthDataResult?, Error?) -> Void)? = nil) {
-      let phoneAssertion = assertion as? PhoneMultiFactorAssertion
-      guard let credential = phoneAssertion?.authCredential else {
-        fatalError("Internal Error: Missing credential")
-      }
-      switch credential.credentialKind {
-      case .phoneNumber: fatalError("Internal Error: Missing verificationCode")
-      case let .verification(verificationID, code):
-        let finalizeMFAPhoneRequestInfo =
-          AuthProtoFinalizeMFAPhoneRequestInfo(sessionInfo: verificationID, verificationCode: code)
-        let request = FinalizeMFASignInRequest(
-          mfaPendingCredential: mfaPendingCredential,
-          verificationInfo: finalizeMFAPhoneRequestInfo,
-          requestConfiguration: auth.requestConfiguration
-        )
-        AuthBackend.post(withRequest: request) { rawResponse, error in
-          if let error {
-            if let completion {
-              completion(nil, error)
-            }
-          } else if let response = rawResponse as? FinalizeMFAEnrollmentResponse {
-            self.auth.completeSignIn(withAccessToken: response.idToken,
-                                     accessTokenExpirationDate: nil,
-                                     refreshToken: response.refreshToken,
-                                     anonymous: false) { user, error in
-              guard let user else {
-                fatalError("Internal Auth Error: completeSignIn didn't pass back a user")
-              }
-              let result = AuthDataResult(withUser: user, additionalUserInfo: nil)
-              let decoratedCallback = self.auth
-                .signInFlowAuthDataResultCallback(byDecorating: completion)
-              decoratedCallback(result, nil)
-            }
-          }
-        }
-      }
-    }
-
-    /** @fn resolveSignInWithAssertion:completion:
-         @brief A helper function to help users complete sign in with a second factor using an
-             FIRMultiFactorAssertion confirming the user successfully completed the second factor
-        challenge.
-         @param completion The block invoked when the request is complete, or fails.
-     */
-    @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
+    /// Completes sign-in with a second factor, using a `MultiFactorAssertion` that confirms the
+    /// user completed the second factor challenge.
     public func resolveSignIn(with assertion: MultiFactorAssertion) async throws -> AuthDataResult {
-      return try await withCheckedThrowingContinuation { continuation in
-        self.resolveSignIn(with: assertion) { result, error in
-          if let result {
-            continuation.resume(returning: result)
-          } else {
-            continuation.resume(throwing: error!)
-          }
-        }
+      let phoneAssertion = assertion as? PhoneMultiFactorAssertion
+      guard let credential = phoneAssertion?.authCredential,
+            case let .verification(verificationID, code) = credential.credentialKind else {
+        throw AuthErrorUtils.error(code: .internalError,
+                                   message: "A phone assertion needs a verification code.")
       }
+      let request = FinalizeMFASignInRequest(
+        mfaPendingCredential: mfaPendingCredential,
+        verificationInfo: AuthProtoFinalizeMFAPhoneRequestInfo(sessionInfo: verificationID,
+                                                               verificationCode: code),
+        requestConfiguration: auth.requestConfiguration
+      )
+      let response = try await AuthBackend.post(withRequest: request)
+      guard let idToken = response.idToken, let refreshToken = response.refreshToken else {
+        throw AuthErrorUtils.unexpectedResponse(deserializedResponse: response)
+      }
+      let user = try await auth.completeSignIn(withAccessToken: idToken,
+                                               accessTokenExpirationDate: nil,
+                                               refreshToken: refreshToken,
+                                               anonymous: false)
+      try await auth.updateCurrentUser(user)
+      return AuthDataResult(withUser: user, additionalUserInfo: nil)
     }
 
     let mfaPendingCredential: String?

@@ -11,119 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #if os(iOS)
   import Foundation
+  import Synchronization
 
-  // TODO: Nothing should be public
-
-  /** @class FIRAuthAppCredentialManager
-      @brief A class to manage app credentials backed by iOS Keychain.
-   */
-public class AuthAppCredentialManager {
-    struct AppCredentials: Codable {
-        let credential: AuthAppCredential?
-        let pendingReceipts: [String]?
+  /// Manages app credentials, backed by the keychain.
+  final class AuthAppCredentialManager: Sendable {
+    private struct AppCredentials: Codable {
+      let credential: AuthAppCredential?
+      let pendingReceipts: [String]?
     }
-    let kKeychainDataKey = "app_credentials"
-    let kFullCredentialKey = "full_credential"
-    let kPendingReceiptsKey = "pending_receipts"
 
-    /** @property credential
-     @brief The full credential (which has a secret) to be used by the app, if one is available.
-     */
-    public var credential: AuthAppCredential?
+    private let kKeychainDataKey = "app_credentials"
 
-    /** @property maximumNumberOfPendingReceipts
-     @brief The maximum (but not necessarily the minimum) number of pending receipts to be kept.
-     @remarks Only tests should access this property.
-     */
-    public let maximumNumberOfPendingReceipts = 32
+    /// The maximum (but not necessarily the minimum) number of pending receipts to be kept.
+    let maximumNumberOfPendingReceipts = 32
+
+    private struct State {
+      /// The keychain for app credentials to load from and to save to.
+      let keychainServices: AuthStorage
+      /// The full credential (which has a secret) to be used by the app, if one is available.
+      var credential: AuthAppCredential?
+      /// Pending receipts, in the order they were recorded.
+      var pendingReceipts: [String] = []
+      var waiting: [String: [CheckedContinuation<AuthAppCredential, Never>]] = [:]
+      /// Only for testing.
+      var fakeCredential: AuthAppCredential?
+    }
+
+    private let state: Mutex<State>
 
     init(withKeychain keychain: AuthStorage) {
-        keychainServices = keychain
-        if let encodedData = try? keychain.data(forKey: kKeychainDataKey) {
+      var initial = State(keychainServices: keychain)
+      if let encodedData = try? keychain.data(forKey: kKeychainDataKey),
+         let saved = try? JSONDecoder().decode(AppCredentials.self, from: encodedData) {
+        initial.credential = saved.credential
+        initial.pendingReceipts = saved.pendingReceipts ?? []
+      }
+      state = Mutex(initial)
+    }
 
-            let decoder = JSONDecoder()
-            if let appCredentials = try? decoder.decode(AppCredentials.self, from: encodedData) {
-                self.credential = appCredentials.credential
-                self.pendingReceipts = appCredentials.pendingReceipts ?? []
-            }
+    /// The full credential (which has a secret) to be used by the app, if one is available.
+    var credential: AuthAppCredential? {
+      state.withLock { $0.credential }
+    }
+
+    var fakeCredential: AuthAppCredential? {
+      get { state.withLock { $0.fakeCredential } }
+      set { state.withLock { $0.fakeCredential = newValue } }
+    }
+
+    /// Records `receipt` and waits for its secret to arrive in a notification, or for
+    /// `timeout`. Returns the full credential, or one with only the receipt on timeout.
+    func didStartVerification(withReceipt receipt: String,
+                              timeout: TimeInterval) async -> AuthAppCredential {
+      await withCheckedContinuation { continuation in
+        state.withLock { state in
+          state.pendingReceipts.removeAll { $0 == receipt }
+          if state.pendingReceipts.count >= maximumNumberOfPendingReceipts {
+            state.pendingReceipts.removeFirst()
+          }
+          state.pendingReceipts.append(receipt)
+          state.waiting[receipt, default: []].append(continuation)
+          saveData(state)
         }
-    }
-
-    public func didStartVerification(withReceipt receipt: String,
-                                           timeout: TimeInterval,
-                                           callback: @escaping (AuthAppCredential) -> Void) {
-      pendingReceipts = pendingReceipts.filter { $0 != receipt }
-      if pendingReceipts.count >= maximumNumberOfPendingReceipts {
-        pendingReceipts.remove(at: 0)
-      }
-      pendingReceipts.append(receipt)
-      callbacksByReceipt[receipt] = callback
-      saveData()
-      kAuthGlobalWorkQueue.asyncAfter(deadline: .now() + timeout) {
-        self.callbackWithReceipt(receipt)
+        kAuthGlobalWorkQueue.asyncAfter(deadline: .now() + timeout) {
+          self.finishVerification(withReceipt: receipt)
+        }
       }
     }
 
-    public func canFinishVerification(withReceipt receipt: String, secret: String) -> Bool {
-      guard pendingReceipts.contains(receipt) else {
-        return false
+    /// Completes the verification of `receipt` with the secret from a notification.
+    /// Returns false if the receipt isn't pending.
+    func canFinishVerification(withReceipt receipt: String, secret: String) -> Bool {
+      let pending = state.withLock { state in
+        guard state.pendingReceipts.contains(receipt) else { return false }
+        state.pendingReceipts.removeAll { $0 == receipt }
+        state.credential = AuthAppCredential(receipt: receipt, secret: secret)
+        saveData(state)
+        return true
       }
-      pendingReceipts = pendingReceipts.filter { $0 != receipt }
-      credential = AuthAppCredential(receipt: receipt, secret: secret)
-      saveData()
-      callbackWithReceipt(receipt)
-      return true
+      if pending {
+        finishVerification(withReceipt: receipt)
+      }
+      return pending
     }
 
-    public func clearCredential() {
-      credential = nil
-      saveData()
+    func clearCredential() {
+      state.withLock { state in
+        state.credential = nil
+        saveData(state)
+      }
     }
 
     // MARK: Internal methods
 
-    private func saveData() {
-        let encoder = JSONEncoder()
-
-        let appCredentials = AppCredentials(credential: credential, pendingReceipts: pendingReceipts)
-        if let data = try? encoder.encode(appCredentials) {
-            try? keychainServices.setData(data, forKey: kKeychainDataKey)
-        }
-    }
-
-    private func callbackWithReceipt(_ receipt: String) {
-      guard let callback = callbacksByReceipt[receipt] else {
-        return
-      }
-      callbacksByReceipt.removeValue(forKey: receipt)
-      if let fakeCredential {
-        callback(fakeCredential)
-      } else if let credential {
-        callback(credential)
-      } else {
-        callback(AuthAppCredential(receipt: receipt, secret: nil))
+    private func saveData(_ state: State) {
+      let appCredentials = AppCredentials(credential: state.credential,
+                                          pendingReceipts: state.pendingReceipts)
+      if let data = try? JSONEncoder().encode(appCredentials) {
+        try? state.keychainServices.setData(data, forKey: kKeychainDataKey)
       }
     }
 
-    /** @var _keychainServices
-        @brief The keychain for app credentials to load from and to save to.
-     */
-    private let keychainServices: AuthStorage
-
-    /** @var pendingReceipts
-        @brief A list of pending receipts sorted in the order they were recorded.
-     */
-    private var pendingReceipts: [String] = []
-
-    /** @var callbacksByReceipt
-        @brief A map from pending receipts to callbacks.
-     */
-    private var callbacksByReceipt: [String: (AuthAppCredential) -> Void] = [:]
-
-    // Only for testing.
-    var fakeCredential: AuthAppCredential?
+    private func finishVerification(withReceipt receipt: String) {
+      let (waiting, credential) = state.withLock { state in
+        let waiting = state.waiting.removeValue(forKey: receipt) ?? []
+        let credential = state.fakeCredential ?? state.credential
+          ?? AuthAppCredential(receipt: receipt, secret: nil)
+        return (waiting, credential)
+      }
+      for continuation in waiting {
+        continuation.resume(returning: credential)
+      }
+    }
   }
 #endif

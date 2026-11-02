@@ -18,10 +18,8 @@ import Crypto
  @brief Utility class for constructing OAuth Sign In credentials.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-@MainActor
- public struct OAuthProvider: FederatedAuthProvider {
-     nonisolated
-     public static let id = "OAuth"
+public struct OAuthProvider: FederatedAuthProvider, Sendable {
+  public static let id = "OAuth"
 
   /** @property scopes
       @brief Array used to configure the OAuth scopes.
@@ -44,8 +42,8 @@ import Crypto
           configured.
       @return An instance of `OAuthProvider` corresponding to the specified provider ID.
    */
-   public static func provider(providerID: String) -> OAuthProvider {
-    return OAuthProvider(providerID: providerID, auth: Auth.auth())
+   public static func provider(providerID: AuthProviderID) -> OAuthProvider {
+    return OAuthProvider(providerID: providerID.rawValue, auth: Auth.auth())
   }
 
   /**
@@ -54,9 +52,8 @@ import Crypto
       @param auth The auth instance to be associated with the `OAuthProvider` instance.
       @return An instance of `OAuthProvider` corresponding to the specified provider ID.
    */
-   public static func provider(providerID: String,
-                                                                 auth: Auth) -> OAuthProvider {
-    return OAuthProvider(providerID: providerID, auth: auth)
+   public static func provider(providerID: AuthProviderID, auth: Auth) -> OAuthProvider {
+    return OAuthProvider(providerID: providerID.rawValue, auth: auth)
   }
 
   /**
@@ -64,8 +61,8 @@ import Crypto
           configured.
       @return An instance of `OAuthProvider` corresponding to the specified provider ID.
    */
-   public init(providerID: String) {
-    self.init(providerID: providerID, auth: Auth.auth())
+   public init(providerID: AuthProviderID, auth: Auth = Auth.auth()) {
+    self.init(providerID: providerID.rawValue, auth: auth)
   }
 
   /**
@@ -74,13 +71,13 @@ import Crypto
       @param auth The auth instance to be associated with the `OAuthProvider` instance.
       @return An instance of `OAuthProvider` corresponding to the specified provider ID.
    */
-   public init(providerID: String, auth: Auth) {
+   public init(providerID: String, auth: Auth = Auth.auth()) {
     if auth.requestConfiguration.emulatorHostAndPort == nil {
       if providerID == FacebookAuthProvider.id {
         fatalError("Sign in with Facebook is not supported via generic IDP; the Facebook TOS " +
           "dictate that you must use the Facebook iOS SDK for Facebook login.")
       }
-      if providerID == AuthProviderString.apple.rawValue {
+      if providerID == AuthProviderID.apple.rawValue {
         fatalError("Sign in with Apple is not supported via generic IDP; You must use the Apple SDK" +
           " for Sign in with Apple.")
       }
@@ -120,10 +117,11 @@ import Crypto
       @return A `AuthCredential` for the specified provider ID, ID token and access token.
    */
   
-  public static func credential(withProviderID providerID: String,
+  public static func credential(providerID: AuthProviderID,
                                 idToken: String,
-                                accessToken: String?) -> OAuthCredential {
-    return OAuthCredential(withProviderID: providerID, idToken: idToken, accessToken: accessToken)
+                                accessToken: String? = nil) -> OAuthCredential {
+    return OAuthCredential(withProviderID: providerID.rawValue, idToken: idToken,
+                           accessToken: accessToken)
   }
 
   /**
@@ -135,9 +133,9 @@ import Crypto
       @return An `AuthCredential`.
    */
   
-  public static func credential(withProviderID providerID: String,
+  public static func credential(providerID: AuthProviderID,
                                 accessToken: String) -> OAuthCredential {
-    return OAuthCredential(withProviderID: providerID, accessToken: accessToken)
+    return OAuthCredential(withProviderID: providerID.rawValue, accessToken: accessToken)
   }
 
   /**
@@ -152,122 +150,59 @@ import Crypto
       @return A `AuthCredential` for the specified provider ID, ID token and access token.
    */
   
-  public static func credential(withProviderID providerID: String, idToken: String,
+  public static func credential(providerID: AuthProviderID, idToken: String,
                                 rawNonce: String,
-                                accessToken: String) -> OAuthCredential {
+                                accessToken: String? = nil) -> OAuthCredential {
     return OAuthCredential(
-      withProviderID: providerID,
+      withProviderID: providerID.rawValue,
       idToken: idToken,
       rawNonce: rawNonce,
       accessToken: accessToken
     )
   }
 
-  /**
-      @brief Creates an `AuthCredential` for that OAuth 2 provider identified by providerID using
-        an ID token and raw nonce.
-
-      @param providerID The provider ID associated with the Auth credential being created.
-      @param idToken The IDToken associated with the Auth credential being created.
-      @param rawNonce The raw nonce associated with the Auth credential being created.
-      @return A `AuthCredential`.
-   */
-  
-  public static func credential(withProviderID providerID: String, idToken: String,
-                                rawNonce: String) -> OAuthCredential {
-    return OAuthCredential(withProviderID: providerID, idToken: idToken, rawNonce: rawNonce)
-  }
 
   #if os(iOS)
-    /** @fn getCredentialWithUIDelegate:completion:
-        @brief Used to obtain an auth credential via a mobile web flow.
-            This method is available on iOS only.
-        @param UIDelegate An optional UI delegate used to present the mobile web flow.
-        @param completion Optionally; a block which is invoked asynchronously on the main thread when
-            the mobile web flow is completed.
-     */
-    
-    public func getCredentialWith(_ UIDelegate: AuthUIDelegate?,
-                                  completion: ((AuthCredential?, Error?) -> Void)? = nil) {
-      guard let urlTypes = auth.mainBundleUrlTypes,
-            AuthWebUtils.isCallbackSchemeRegistered(forCustomURLScheme: callbackScheme,
-                                                    urlTypes: urlTypes) else {
+    /// Used to obtain an auth credential via a mobile web flow.
+    ///
+    /// This method is available on iOS only.
+    /// - Parameter uiDelegate: An optional UI delegate used to present the mobile web flow.
+    @MainActor
+    public func credential(with uiDelegate: AuthUIDelegate?) async throws -> AuthCredential {
+      guard AuthWebUtils.isCallbackSchemeRegistered(forCustomURLScheme: callbackScheme,
+                                                    urlTypes: auth.mainBundleUrlTypes ?? []) else {
         fatalError(
           "Please register custom URL scheme \(callbackScheme) in the app's Info.plist file."
         )
       }
-      kAuthGlobalWorkQueue.async { [weak self] in
-        guard let self = self else { return }
-        let eventID = AuthWebUtils.randomString(withLength: 10)
-        let sessionID = AuthWebUtils.randomString(withLength: 10)
-
-        let callbackOnMainThread: ((AuthCredential?, Error?) -> Void) = { credential, error in
-          if let completion {
-            DispatchQueue.main.async {
-              completion(credential, error)
-            }
-          }
-        }
-        self.getHeadfulLiteUrl(eventID: eventID, sessionID: sessionID) { headfulLiteURL, error in
-          if let error {
-            callbackOnMainThread(nil, error)
-            return
-          }
-          guard let headfulLiteURL else {
-            fatalError("FirebaseAuth Internal Error: Both error and headfulLiteURL return are nil")
-          }
-          let callbackMatcher: (URL?) -> Bool = { callbackURL in
-            AuthWebUtils.isExpectedCallbackURL(callbackURL,
-                                               eventID: eventID,
-                                               authType: "signInWithRedirect",
-                                               callbackScheme: self.callbackScheme)
-          }
-          self.auth.authURLPresenter.present(headfulLiteURL,
-                                             uiDelegate: UIDelegate,
-                                             callbackMatcher: callbackMatcher) { callbackURL, error in
-            if let error {
-              callbackOnMainThread(nil, error)
-              return
-            }
-            guard let callbackURL else {
-              fatalError("FirebaseAuth Internal Error: Both error and callbackURL return are nil")
-            }
-            let (oAuthResponseURLString, error) = self.oAuthResponseForURL(url: callbackURL)
-            if let error {
-              callbackOnMainThread(nil, error)
-              return
-            }
-            guard let oAuthResponseURLString else {
-              fatalError(
-                "FirebaseAuth Internal Error: Both error and oAuthResponseURLString return are nil"
-              )
-            }
-            let credential = OAuthCredential(withProviderID: self.providerID,
-                                             sessionID: sessionID,
-                                             OAuthResponseURLString: oAuthResponseURLString)
-            callbackOnMainThread(credential, nil)
-          }
-        }
+      let eventID = AuthWebUtils.randomString(withLength: 43)
+      let sessionID = AuthWebUtils.randomString(withLength: 43)
+      guard let headfulLiteURL = try await getHeadfulLiteUrl(eventID: eventID,
+                                                            sessionID: sessionID) else {
+        throw AuthErrorUtils.webSignInUserInteractionFailure(reason: "Invalid sign-in URL")
       }
-    }
-
-    /** @fn getCredentialWithUIDelegate:completion:
-        @brief Used to obtain an auth credential via a mobile web flow.
-            This method is available on iOS only.
-        @param UIDelegate An optional UI delegate used to present the mobile web flow.
-        @return An `AuthCredential`.
-     */
-    @available(iOS 13, tvOS 13, macOS 15.0, watchOS 8, *)
-    public func credential(with UIDelegate: AuthUIDelegate?) async throws -> AuthCredential {
-      return try await withCheckedThrowingContinuation { continuation in
-        getCredentialWith(UIDelegate) { credential, error in
-          if let credential = credential {
-            continuation.resume(returning: credential)
-          } else {
-            continuation.resume(throwing: error!) // TODO: Change to ?? and generate unknown error
-          }
-        }
+      let callbackScheme = self.callbackScheme
+      let callbackURL = try await auth.authURLPresenter.present(
+        headfulLiteURL,
+        uiDelegate: uiDelegate
+      ) { callbackURL in
+        AuthWebUtils.isExpectedCallbackURL(callbackURL,
+                                           eventID: eventID,
+                                           authType: "signInWithRedirect",
+                                           callbackScheme: callbackScheme)
       }
+      let (oAuthResponseURLString, error) = oAuthResponseForURL(url: callbackURL)
+      if let error {
+        throw error
+      }
+      guard let oAuthResponseURLString else {
+        fatalError(
+          "FirebaseAuth Internal Error: Both error and oAuthResponseURLString return are nil"
+        )
+      }
+      return OAuthCredential(withProviderID: providerID,
+                             sessionID: sessionID,
+                             OAuthResponseURLString: oAuthResponseURLString)
     }
   #endif
 
@@ -287,7 +222,7 @@ import Crypto
   public static func appleCredential(withIDToken idToken: String,
                                      rawNonce: String?,
                                      fullName: PersonNameComponents?) -> OAuthCredential {
-    return OAuthCredential(withProviderID: AuthProviderString.apple.rawValue,
+    return OAuthCredential(withProviderID: AuthProviderID.apple.rawValue,
                            idToken: idToken,
                            rawNonce: rawNonce,
                            fullName: fullName)

@@ -385,7 +385,12 @@ private let kFIRAuthErrorMessageMalformedJWT =
 
   /// `status` is an `OSStatus` on Apple platforms.
   public static func keychainError(function: String, status: Int32) -> Error {
-    let reason = "\(function) (\(status))"
+    #if canImport(Security)
+      let message = SecCopyErrorMessageString(status, nil) as String? ?? ""
+      let reason = "\(function) (\(status)) \(message)"
+    #else
+      let reason = "\(function) (\(status))"
+    #endif
     return error(code: .keychainError, userInfo: [NSLocalizedFailureReasonErrorKey: reason])
   }
 

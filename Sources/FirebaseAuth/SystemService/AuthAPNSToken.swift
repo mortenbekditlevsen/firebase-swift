@@ -11,40 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-#if !os(macOS)
+#if os(iOS)
   import Foundation
 
-  // TODO: Eliminate objc public after Sample app port.
+  /// An APNs token.
+  struct AuthAPNSToken: Sendable {
+    let data: Data
+    let type: AuthAPNSTokenType
 
-  /** @class AuthAPNSToken
-      @brief A data structure for an APNs token.
-   */
-   public class AuthAPNSToken {
-    public let data: Data
-    public let type: AuthAPNSTokenType
-
-    /** @fn initWithData:type:
-        @brief Initializes the instance.
-        @param data The APNs token data.
-        @param type The APNs token type.
-        @return The initialized instance.
-     */
     init(withData data: Data, type: AuthAPNSTokenType) {
       self.data = data
       self.type = type
     }
 
-    /** @property string
-        @brief The uppercase hexadecimal string form of the APNs token data.
-     */
-    public lazy var string: String = {
-      let byteArray = [UInt8](data)
-      var s = ""
-      for byte in byteArray {
-        s.append(String(format: "%02X", byte))
-      }
-      return s
-    }()
+    /// The uppercase hexadecimal string form of the APNs token data.
+    var string: String {
+      data.map { String(format: "%02X", $0) }.joined()
+    }
   }
 #endif

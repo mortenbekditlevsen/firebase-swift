@@ -15,35 +15,24 @@
 import Foundation
 
 
-public struct VerifyClientResponse: AuthRPCResponse {
+struct VerifyClientResponse: AuthRPCResponse {
   /// Receipt that the APNS token was successfully validated with APNS.
-  public let receipt: String?
+  let receipt: String?
 
-  /// The date after which delivery of the silent push notification is considered to have failed.
-  public let suggestedTimeOutDate: Date?
+  /// How long to wait for the silent push notification. The port decoded a
+  /// `suggestedTimeOutDate` date, which the backend never sends.
+  let suggestedTimeout: TimeInterval?
 
-    enum CodingKeys: CodingKey {
-        case receipt
-        case suggestedTimeOutDate
-    }
-    
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.receipt = try container.decodeIfPresent(String.self, forKey: .receipt)
-        
-        
-        self.suggestedTimeOutDate = try container.decodeIfPresent(Date.self, forKey: .suggestedTimeOutDate)
-    }
-    
-    // This looks weird - verify in production
-  public func setFields(dictionary: [String: Any]) throws {
-      /*
-       receipt = dictionary["receipt"] as? String
-       let suggestedTimeout = dictionary["suggestedTimeout"]
-       if let string = suggestedTimeout as? String,
-       let doubleVal = Double(string) {
-       suggestedTimeOutDate = Date(timeIntervalSinceNow: doubleVal)
+  private enum CodingKeys: String, CodingKey {
+    case receipt
+    case suggestedTimeout
+  }
 
-       */
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    receipt = try container.decodeIfPresent(String.self, forKey: .receipt)
+    // A string-encoded number of seconds.
+    suggestedTimeout = try container.decodeIfPresent(String.self, forKey: .suggestedTimeout)
+      .flatMap(TimeInterval.init)
   }
 }

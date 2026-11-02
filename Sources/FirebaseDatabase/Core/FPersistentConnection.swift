@@ -177,6 +177,9 @@ class FPersistentConnection: FConnectionDelegate {
         Task { @DatabaseActor in
             // XXXX TODO: likely no good
             interruptForReason(kFInterruptReasonWaitingForOpen)
+#if os(iOS) || os(tvOS)
+            setupReachability()
+#endif
         }
         // nb: The reason establishConnection isn't called here like the JS version
         // is because callers need to set the delegate first. The ctor can be
@@ -581,16 +584,21 @@ class FPersistentConnection: FConnectionDelegate {
         center.addObserver(forName: WKExtension.applicationWillEnterForegroundNotification,
                            object: nil,
                            queue: nil) { [weak self] _ in
-            self?.enteringForeground()
+            Task { @DatabaseActor in self?.enteringForeground() }
         }
 #elseif os(iOS) || os(tvOS)
 
         let center = NotificationCenter.default
         center.addObserver(forName: UIApplication.willEnterForegroundNotification,
                            object: nil, queue: nil) { [weak self] _ in
-            self?.enteringForeground()
+            Task { @DatabaseActor in self?.enteringForeground() }
         }
+#endif
+    }
 
+#if os(iOS) || os(tvOS)
+    /// Reconnects at once when the network becomes reachable.
+    private func setupReachability() {
         // An empty address is interpreted a generic internet access
         var zeroAddress = sockaddr()
         zeroAddress.sa_len = UInt8(MemoryLayout<sockaddr>.size)
@@ -600,17 +608,14 @@ class FPersistentConnection: FConnectionDelegate {
             return
         }
 
-        let reachabilityCallback: SCNetworkReachabilityCallBack = { (reachability, flags, info) in
+        let reachabilityCallback: SCNetworkReachabilityCallBack = { _, flags, info in
             guard let info = info else { return }
-            if flags.contains(.reachable) {
+            if isReachable(flags) {
                 FFLog("I-RDB034014",
                       "Network became reachable. Trigger a connection attempt")
                 let aSelf = Unmanaged<FPersistentConnection>.fromOpaque(info).takeUnretainedValue()
-
-                // Reset reconnect delay
-                aSelf.retryHelper.signalSuccess()
-                if aSelf.connectionState == .disconnected {
-                    aSelf.tryScheduleReconnect()
+                Task { @DatabaseActor in
+                    aSelf.enteringForeground()
                 }
             } else {
                 FFLog("I-RDB034015", "Network is not reachable")
@@ -618,22 +623,26 @@ class FPersistentConnection: FConnectionDelegate {
         }
 
         // Not handling retain release seems optimistic, but this is what is done in the
-        // Objective-C version. Look to https://github.com/ashleymills/Reachability.swift for
-        // something more thorough.
+        // Objective-C version: deinit unschedules the callbacks. Look to
+        // https://github.com/ashleymills/Reachability.swift for something more thorough.
         let opaqueWeakifiedReachability = Unmanaged<FPersistentConnection>.passUnretained(self).toOpaque()
         var ctx = SCNetworkReachabilityContext(version: 0,
                                                info: UnsafeMutableRawPointer(opaqueWeakifiedReachability),
                                                retain: nil,
                                                release: nil,
                                                copyDescription: nil)
-        if SCNetworkReachabilitySetCallback(reachability, reachabilityCallback, &ctx) {
-            SCNetworkReachabilitySetDispatchQueue(reachability, self.dispatchQueue)
+        if SCNetworkReachabilitySetCallback(reachability, reachabilityCallback, &ctx),
+           SCNetworkReachabilitySetDispatchQueue(reachability, Self.reachabilityQueue) {
+            self.reachability = reachability
         } else {
             FFLog("I-RDB034016",
                   "Failed to set up network reachability monitoring")
         }
-#endif
     }
+
+    /// The queue for reachability callbacks, which hop to the database actor.
+    private static let reachabilityQueue = DispatchQueue(label: "com.google.firebase.database.reachability")
+#endif
 
     private func sendAuthAndRestoreStateAfterComplete(_ restoreStateAfterComplete: Bool) {
         assert(connected, "Must be connected to send auth")
@@ -1200,3 +1209,14 @@ better performance
         }
     }
 }
+
+#if os(iOS) || os(tvOS)
+// Newer SDKs import the callback's flags as a raw UInt32.
+private func isReachable(_ flags: SCNetworkReachabilityFlags) -> Bool {
+    flags.contains(.reachable)
+}
+
+private func isReachable(_ flags: UInt32) -> Bool {
+    isReachable(SCNetworkReachabilityFlags(rawValue: flags))
+}
+#endif

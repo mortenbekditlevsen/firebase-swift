@@ -21,7 +21,8 @@
       @brief A protocol to handle user interface interactions for Firebase Auth.
           This protocol is available on iOS, macOS Catalyst, and tvOS only.
    */
-   public protocol AuthUIDelegate {
+   @MainActor
+  public protocol AuthUIDelegate: AnyObject, Sendable {
     /** @fn presentViewController:animated:completion:
          @brief If implemented, this method will be invoked when Firebase Auth needs to display a view
              controller.

@@ -40,14 +40,14 @@ final class FakeAuthKeychainServices: AuthStorage {
 
   private static let _instances: Mutex<[String: FakeAuthKeychainServices]> = .init([:])
 
-  private var fakeKeychain: [String: Any] = [:]
+  private let fakeKeychain = Mutex<[String: Data]>([:])
 
   func data(forKey key: String) throws -> Data? {
     if key.isEmpty {
       fatalError("The key cannot be empty.")
     }
 
-    if let data = fakeKeychain[key] as? Data {
+    if let data = fakeKeychain.withLock({ $0[key] }) {
       return data
     } else {
       throw AuthErrorUtils.keychainError(
@@ -61,7 +61,7 @@ final class FakeAuthKeychainServices: AuthStorage {
     if key.isEmpty {
       fatalError("The key cannot be empty.")
     }
-    fakeKeychain[key] = data
+    fakeKeychain.withLock { $0[key] = data }
   }
 
   func removeData(forKey key: String) throws {
@@ -69,13 +69,11 @@ final class FakeAuthKeychainServices: AuthStorage {
       fatalError("The key cannot be empty.")
     }
 
-    guard fakeKeychain[key] != nil else {
+    guard fakeKeychain.withLock({ $0.removeValue(forKey: key) }) != nil else {
       throw AuthErrorUtils.keychainError(
         function: "SecItemDelete",
         status: errSecItemNotFound
       )
     }
-
-    _ = fakeKeychain.removeValue(forKey: key)
   }
 }

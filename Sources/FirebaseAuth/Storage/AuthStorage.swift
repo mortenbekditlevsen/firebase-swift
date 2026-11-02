@@ -15,7 +15,7 @@
 import Foundation
 
 /// A protocol for a persistent data storage container.
-protocol AuthStorage {
+protocol AuthStorage: Sendable {
   /// Creates a storage instance with the given identifier.
   /// - Parameter identifier: The storage's distinguishing identifer.
   static func storage(identifier: String) -> Self

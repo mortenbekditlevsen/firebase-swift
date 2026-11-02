@@ -27,7 +27,7 @@ import Foundation
    @brief Safe public structure used to represent a second factor entity from a client perspective.
        This class is available on iOS only.
    */
-   public class MultiFactorInfo: Codable {
+   public class MultiFactorInfo {
     /**
         @brief The multi-factor enrollment ID.
      */
@@ -48,9 +48,12 @@ import Foundation
      */
     var factorID: String?
 
-    public init(proto: AuthProtoMFAEnrollment) {
+    /// Returns `nil` if the enrollment has no enrollment ID.
+    init?(proto: AuthProtoMFAEnrollment) {
       guard let uid = proto.mfaEnrollmentID else {
-        fatalError("Auth Internal Error: Failed to inialize MFA: missing enrollment ID")
+        AuthLog.logWarning(code: "I-AUT000035",
+                           message: "Ignoring a second factor enrollment without an enrollment ID.")
+        return nil
       }
       self.uid = uid
       displayName = proto.displayName
