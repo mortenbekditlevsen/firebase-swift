@@ -240,21 +240,11 @@ private final class AuthBackendRPCImplementation: AuthBackendImplementation {
           let enrollments = mfaResponse.mfaInfo else {
       return nil
     }
-    #if os(iOS)
-      // Only phone factors are supported so far.
-      let info: [MultiFactorInfo] = enrollments.compactMap { PhoneMultiFactorInfo(proto: $0) }
-      return AuthErrorUtils.secondFactorRequiredError(
-        pendingCredential: mfaResponse.mfaPendingCredential,
-        hints: info,
-        auth: auth
-      )
-    #else
-      // Multi-factor sign-in isn't available on this platform yet, so there's no resolver.
-      _ = enrollments
-      return AuthErrorUtils.error(code: .secondFactorRequired,
-                                  message: "This user has a second factor, which isn't supported " +
-                                    "on this platform yet.")
-    #endif
+    return AuthErrorUtils.secondFactorRequiredError(
+      pendingCredential: mfaResponse.mfaPendingCredential,
+      hints: enrollments.compactMap(MultiFactorInfo.info(for:)),
+      auth: auth
+    )
   }
 
   #if os(iOS)

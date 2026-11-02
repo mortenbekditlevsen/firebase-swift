@@ -11,25 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import Foundation
 
-#if os(iOS)
+/// Asserts ownership of a second factor, like `AuthCredential` does for a first factor.
+public class MultiFactorAssertion: @unchecked Sendable {
+  /// The second factor identifier for this opaque object asserting a second factor.
+  public let factorID: String
 
-  /** @class FIRMultiFactorAssertion
-   @brief The base class for asserting ownership of a second factor. This is equivalent to the
-       AuthCredential class.
-       This class is available on iOS only.
-   */
-   public class MultiFactorAssertion {
-    /**
-        @brief The second factor identifier for this opaque object asserting a second factor.
-     */
-    public var factorID: String
-
-    init(factorID: String) {
-      self.factorID = factorID
-    }
+  init(factorID: String) {
+    self.factorID = factorID
   }
-
-#endif
+}

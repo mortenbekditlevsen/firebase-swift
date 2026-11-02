@@ -42,40 +42,20 @@
         throw AuthErrorUtils.localPlayerNotAuthenticatedError()
       }
 
-      if #available(iOS 13.5, macOS 15.0.5, macCatalyst 13.5, tvOS 13.4.8, *) {
-        let (publicKeyURL, signature, salt, timestamp) = try await localPlayer.fetchItemsForIdentityVerificationSignature()
-          return GameCenterAuthCredential(withPlayerID: localPlayer.playerID,
-                                          teamPlayerID: localPlayer.teamPlayerID,
-                                          gamePlayerID: localPlayer.gamePlayerID,
-                                          publicKeyURL: publicKeyURL,
-                                          signature: signature,
-                                          salt: salt,
-                                          timestamp: timestamp,
-                                          displayName: localPlayer.displayName)
-      } else {
-          let (publicKeyURL, signature, salt, timestamp) = try await localPlayer
-              .generateIdentityVerificationSignature()
-          /**
-           @c `localPlayer.alias` is actually the displayname needed, instead of
-           `localPlayer.displayname`. For more information, check
-           https://developer.apple.com/documentation/gamekit/gkplayer
-           **/
-          let displayName = localPlayer.alias
-          return GameCenterAuthCredential(withPlayerID: localPlayer.playerID,
-                                          teamPlayerID: nil,
-                                          gamePlayerID: nil,
-                                          publicKeyURL: publicKeyURL,
-                                          signature: signature,
-                                          salt: salt,
-                                          timestamp: timestamp,
-                                          displayName: displayName)
-      }
+      // Upstream #16136: no pre-iOS 13.5 fallback, and no deprecated `playerID`.
+      let (publicKeyURL, signature, salt, timestamp) = try await localPlayer
+        .fetchItemsForIdentityVerificationSignature()
+      return GameCenterAuthCredential(withPlayerID: "",
+                                      teamPlayerID: localPlayer.teamPlayerID,
+                                      gamePlayerID: localPlayer.gamePlayerID,
+                                      publicKeyURL: publicKeyURL,
+                                      signature: signature,
+                                      salt: salt,
+                                      timestamp: timestamp,
+                                      displayName: localPlayer.displayName)
     }
-
-    /** @fn
-        @brief Creates an `AuthCredential` for a Game Center sign in.
-     */
   }
+
 
   // Change to internal
   @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)

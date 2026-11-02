@@ -30,6 +30,7 @@ struct FinalizeMFAEnrollmentRequest: IdentityToolkitRequest, AuthRPCRequest {
   var displayName: String?
 
   var verificationInfo: AuthProtoFinalizeMFAPhoneRequestInfo?
+  var totpVerificationInfo: AuthProtoFinalizeMFATOTPEnrollmentRequestInfo?
 
   /** @var response
       @brief The corresponding response for this request
@@ -49,6 +50,15 @@ struct FinalizeMFAEnrollmentRequest: IdentityToolkitRequest, AuthRPCRequest {
     self.verificationInfo = verificationInfo
       self.requestConfiguration = requestConfiguration
   }
+
+  init(idToken: String?, displayName: String?,
+       totpVerificationInfo: AuthProtoFinalizeMFATOTPEnrollmentRequestInfo,
+       requestConfiguration: AuthRequestConfiguration) {
+    self.idToken = idToken
+    self.displayName = displayName
+    self.totpVerificationInfo = totpVerificationInfo
+    self.requestConfiguration = requestConfiguration
+  }
 }
 
 extension FinalizeMFAEnrollmentRequest {
@@ -57,6 +67,7 @@ extension FinalizeMFAEnrollmentRequest {
     try c.encodeIfPresent(idToken, forKey: .init("idToken"))
     try c.encodeIfPresent(displayName, forKey: .init("displayName"))
     try c.encodeIfPresent(verificationInfo, forKey: .init("phoneVerificationInfo"))
+    try c.encodeIfPresent(totpVerificationInfo, forKey: .init("totpVerificationInfo"))
     try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
   }
 }

@@ -17,4 +17,5 @@ import Foundation
 public struct StartMFAEnrollmentResponse: AuthRPCResponse {
   // The port read `enrollmentResponse`, which the backend never sends.
   var phoneSessionInfo: AuthProtoStartMFAPhoneResponseInfo?
+  var totpSessionInfo: AuthProtoStartMFATOTPEnrollmentResponseInfo?
 }

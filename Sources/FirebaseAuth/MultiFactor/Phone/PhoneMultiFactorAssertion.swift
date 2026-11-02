@@ -11,23 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import Foundation
 
-#if os(iOS)
+/// Asserts ownership of a phone second factor.
+final class PhoneMultiFactorAssertion: MultiFactorAssertion, @unchecked Sendable {
+  let authCredential: PhoneAuthCredential
 
-  /** @class FIRPhoneMultiFactorAssertion
-   @brief The subclass of base class FIRMultiFactorAssertion, used to assert ownership of a phone
-       second factor.
-       This class is available on iOS only.
-   */
-  @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-  class PhoneMultiFactorAssertion: MultiFactorAssertion {
-    var authCredential: PhoneAuthCredential?
-
-    init() {
-      super.init(factorID: PhoneMultiFactorInfo.PhoneMultiFactorID)
-    }
+  init(authCredential: PhoneAuthCredential) {
+    self.authCredential = authCredential
+    super.init(factorID: PhoneMultiFactorInfo.PhoneMultiFactorID)
   }
 
-#endif
+  /// The verification ID and code; phone credentials with a temporary proof can't be used
+  /// as a second factor.
+  func verification() throws -> (id: String, code: String) {
+    guard case let .verification(id, code) = authCredential.credentialKind else {
+      throw AuthErrorUtils.error(code: .internalError,
+                                 message: "A phone assertion needs a verification code.")
+    }
+    return (id, code)
+  }
+}

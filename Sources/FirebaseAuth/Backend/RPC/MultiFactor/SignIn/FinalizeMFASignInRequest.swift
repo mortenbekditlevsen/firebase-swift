@@ -27,6 +27,8 @@ struct FinalizeMFASignInRequest: IdentityToolkitRequest, AuthRPCRequest {
     
   var mfaPendingCredential: String?
   var verificationInfo: AuthProtoFinalizeMFAPhoneRequestInfo?
+  var totpVerificationInfo: AuthProtoFinalizeMFATOTPSignInRequestInfo?
+  var mfaEnrollmentID: String?
 
   /** @var response
       @brief The corresponding response for this request
@@ -44,6 +46,16 @@ struct FinalizeMFASignInRequest: IdentityToolkitRequest, AuthRPCRequest {
     self.verificationInfo = verificationInfo
       self.requestConfiguration = requestConfiguration
   }
+
+  init(mfaPendingCredential: String?,
+       mfaEnrollmentID: String,
+       totpVerificationInfo: AuthProtoFinalizeMFATOTPSignInRequestInfo,
+       requestConfiguration: AuthRequestConfiguration) {
+    self.mfaPendingCredential = mfaPendingCredential
+    self.mfaEnrollmentID = mfaEnrollmentID
+    self.totpVerificationInfo = totpVerificationInfo
+    self.requestConfiguration = requestConfiguration
+  }
 }
 
 extension FinalizeMFASignInRequest {
@@ -51,6 +63,8 @@ extension FinalizeMFASignInRequest {
     var c = encoder.container(keyedBy: AuthRPCCodingKey.self)
     try c.encodeIfPresent(mfaPendingCredential, forKey: .init("mfaPendingCredential"))
     try c.encodeIfPresent(verificationInfo, forKey: .init("phoneVerificationInfo"))
+    try c.encodeIfPresent(totpVerificationInfo, forKey: .init("totpVerificationInfo"))
+    try c.encodeIfPresent(mfaEnrollmentID, forKey: .init("mfaEnrollmentId"))
     try c.encodeIfPresent(tenantID, forKey: .init(kTenantIDKey))
   }
 }

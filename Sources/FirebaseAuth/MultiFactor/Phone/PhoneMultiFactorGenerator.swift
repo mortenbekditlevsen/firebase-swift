@@ -11,31 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import Foundation
 
-#if os(iOS)
-
-  /** @class FIRPhoneMultiFactorGenerator
-   @brief The data structure used to help initialize an assertion for a second factor entity to the
-       Firebase Auth/CICP server. Depending on the type of second factor, this will help generate
-       the assertion.
-       This class is available on iOS only.
-   */
-  @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-  
-  public class PhoneMultiFactorGenerator {
-    /** @fn assertionWithCredential:
-         @brief Initializes the MFA assertion to confirm ownership of the phone second factor. Note that
-             this API is used for both enrolling and signing in with a phone second factor.
-         @param phoneAuthCredential The phone auth credential used for multi factor flows.
-     */
-    
-    public class func assertion(with phoneAuthCredential: PhoneAuthCredential)
-      -> MultiFactorAssertion {
-      let assertion = PhoneMultiFactorAssertion()
-      assertion.authCredential = phoneAuthCredential
-      return assertion
-    }
+/// Creates assertions for phone second factors.
+public enum PhoneMultiFactorGenerator {
+  /// The assertion that confirms ownership of a phone second factor, for both enrolling it and
+  /// signing in with it. Get the credential from `PhoneAuthProvider` (iOS only).
+  public static func assertion(with phoneAuthCredential: PhoneAuthCredential)
+    -> MultiFactorAssertion {
+    PhoneMultiFactorAssertion(authCredential: phoneAuthCredential)
   }
-#endif
+}

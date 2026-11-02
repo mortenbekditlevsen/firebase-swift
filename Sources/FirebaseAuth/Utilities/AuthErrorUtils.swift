@@ -557,7 +557,6 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any]
   }
 
-  #if os(iOS)
     // TODO(ncooke3): Address the optionality of these arguments.
     public static func secondFactorRequiredError(pendingCredential: String?,
                                                        hints: [MultiFactorInfo]?,
@@ -571,7 +570,6 @@ private let kFIRAuthErrorMessageMalformedJWT =
 
       return error(code: .secondFactorRequired, userInfo: userInfo)
     }
-  #endif // os(iOS)
 }
 
 public protocol MultiFactorResolverWrapper {}

@@ -11,52 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import Foundation
 
-#if os(iOS)
+/// A phone number second factor.
+public final class PhoneMultiFactorInfo: MultiFactorInfo, @unchecked Sendable {
+  /// The string identifier for using phone as a second factor.
+  public static let PhoneMultiFactorID = "phone"
 
-  /** @class FIRPhoneMultiFactorInfo
-   @brief Extends the MultiFactorInfo class for phone number second factors.
-       The identifier of this second factor is "phone".
-       This class is available on iOS only.
-   */
-   public class PhoneMultiFactorInfo: MultiFactorInfo {
-     public static let PhoneMultiFactorID = "FIRPhoneMultiFactorID"
+  /// The string identifier for using TOTP as a second factor.
+  public static let TOTPMultiFactorID = "totp"
 
-    /**
-        @brief This is the phone number associated with the current second factor.
-     */
-    public var phoneNumber: String
-    /// Returns `nil` if the enrollment has no enrollment ID or phone number.
-    override init?(proto: AuthProtoMFAEnrollment) {
-      guard let phoneInfo = proto.phoneInfo else {
-        return nil
-      }
-      phoneNumber = phoneInfo
-      super.init(proto: proto)
-      factorID = Self.PhoneMultiFactorID
+  /// The phone number associated with the current second factor.
+  public let phoneNumber: String
+
+  /// Returns `nil` if the enrollment has no enrollment ID or phone number.
+  init?(proto: AuthProtoMFAEnrollment) {
+    guard let phoneNumber = proto.phoneInfo else {
+      return nil
     }
-       
-//    // MARK: NSSecureCoding
-//
-//    private let kPhoneNumberCodingKey = "phoneNumber"
-//
-//    private static var secureCodingWorkaround = true
-//    override public class var supportsSecureCoding: Bool { return secureCodingWorkaround }
-//
-//    public required init?(coder: NSCoder) {
-//      guard let phoneNumber = coder.decodeObject(forKey: kPhoneNumberCodingKey) as? String else {
-//        return nil
-//      }
-//      self.phoneNumber = phoneNumber
-//      super.init(coder: coder)
-//    }
-//
-//    override public func encode(with coder: NSCoder) {
-//      super.encode(with: coder)
-//      coder.encode(phoneNumber, forKey: kPhoneNumberCodingKey)
-//    }
+    self.phoneNumber = phoneNumber
+    // The port used "FIRPhoneMultiFactorID" (upstream's Objective-C name) as the ID.
+    super.init(proto: proto, factorID: Self.PhoneMultiFactorID)
   }
-
-#endif
+}

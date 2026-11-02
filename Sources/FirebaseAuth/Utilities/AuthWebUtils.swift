@@ -97,14 +97,13 @@ typealias FIRFetchAuthDomainCallback = (String?, Error?) -> Void
 
       let response = try await AuthBackend.post(withRequest: request)
       // Look up an authorized domain ends with one of the supportedAuthDomains.
-      // The sequence of supportedAuthDomains matters. ("firebaseapp.com", "web.app")
+      // The sequence of supportedAuthDomains matters. (".firebaseapp.com", ".web.app")
       // The searching ends once the first valid suportedAuthDomain is found.
       var authDomain: String?
       for domain in response.authorizedDomains ?? [] {
           for supportedAuthDomain in Self.supportedAuthDomains {
-              let index = domain.count - supportedAuthDomain.count
-              if index >= 2, domain.hasSuffix(supportedAuthDomain),
-                 domain.count >= supportedAuthDomain.count + 2 {
+              // Upstream #16892: a subdomain only, so "evilfirebaseapp.com" doesn't match.
+              if domain.hasSuffix(supportedAuthDomain), domain.count > supportedAuthDomain.count {
                   authDomain = domain
                   break
               }
@@ -182,6 +181,6 @@ typealias FIRFetchAuthDomainCallback = (String?, Error?) -> Void
   }
 
   static var supportedAuthDomains: [String] {
-    return ["firebaseapp.com", "web.app"]
+    return [".firebaseapp.com", ".web.app"]
   }
 }

@@ -44,13 +44,29 @@
     func webViewController(_ controller: AuthWebViewController, didFailWithError error: Error)
   }
 
-  class AuthWebViewController: UIViewController,
+  /// Shows the sign-in page on Mac Catalyst, where there's no `SFSafariViewController`.
+  final class AuthWebViewController: UIViewController,
     WKNavigationDelegate {
     // MARK: - Properties
 
-    private var url: URL
+    private let url: URL
     weak var delegate: AuthWebViewControllerDelegate?
-    private weak var webView: AuthWebView?
+
+    // Upstream #16274: the web view and spinner live here, sized to the view, instead of in
+    // a view sized to the deprecated `UIScreen.main.bounds`.
+    private let webView: WKWebView = {
+      let webView = WKWebView(frame: .zero)
+      webView.isOpaque = false
+      webView.backgroundColor = .clear
+      webView.scrollView.isOpaque = false
+      webView.scrollView.backgroundColor = .clear
+      webView.scrollView.bounces = false
+      webView.scrollView.alwaysBounceVertical = false
+      webView.scrollView.alwaysBounceHorizontal = false
+      return webView
+    }()
+
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     // MARK: - Initialization
 
@@ -67,11 +83,14 @@
 
     // MARK: - View Lifecycle
 
-    override public func loadView() {
-      let webView = AuthWebView(frame: UIScreen.main.bounds)
-      webView.webView.navigationDelegate = self
-      view = webView
-      self.webView = webView
+    override func viewDidLoad() {
+      super.viewDidLoad()
+      view.backgroundColor = .white
+
+      webView.navigationDelegate = self
+      view.addSubview(webView)
+      view.addSubview(spinner)
+
       navigationItem.leftBarButtonItem = UIBarButtonItem(
         barButtonSystemItem: .cancel,
         target: self,
@@ -79,9 +98,15 @@
       )
     }
 
-    override public func viewDidAppear(_ animated: Bool) {
+    override func viewDidLayoutSubviews() {
+      super.viewDidLayoutSubviews()
+      webView.frame = view.bounds
+      spinner.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
       super.viewDidAppear(animated)
-      webView?.webView.load(URLRequest(url: url))
+      webView.load(URLRequest(url: url))
     }
 
     // MARK: - Actions
@@ -92,8 +117,8 @@
 
     // MARK: - WKNavigationDelegate
 
-    public func webView(_ webView: WKWebView,
-                        decidePolicyFor navigationAction: WKNavigationAction) async
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction) async
       -> WKNavigationActionPolicy {
       // Navigation always continues: the port cancelled every page but the callback.
       _ = delegate?.webViewController(
@@ -103,19 +128,19 @@
       return .allow
     }
 
-    public func webView(_ webView: WKWebView,
-                        didStartProvisionalNavigation navigation: WKNavigation!) {
-      self.webView?.spinner.isHidden = false
-      self.webView?.spinner.startAnimating()
+    func webView(_ webView: WKWebView,
+                 didStartProvisionalNavigation navigation: WKNavigation!) {
+      spinner.isHidden = false
+      spinner.startAnimating()
     }
 
-    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-      self.webView?.spinner.isHidden = true
-      self.webView?.spinner.stopAnimating()
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+      spinner.isHidden = true
+      spinner.stopAnimating()
     }
 
-    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!,
-                        withError error: Error) {
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!,
+                 withError error: Error) {
       if (error as NSError).domain == NSURLErrorDomain,
          (error as NSError).code == NSURLErrorCancelled {
         // It's okay for the page to be redirected before it is completely loaded.  See b/32028062 .

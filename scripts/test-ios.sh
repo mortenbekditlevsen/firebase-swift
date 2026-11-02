@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Runs the phone auth integration tests (iOS-only) in the iOS Simulator against the
-# Auth emulator. Needs firebase-tools and Java 21.
+# Runs the iOS-only tests in the iOS Simulator: phone auth against the Auth emulator, and
+# reloading the saved user after the device unlocks. Needs firebase-tools and Java 21.
 #
 #   IOS_DESTINATION   xcodebuild destination (default: the first available iPhone)
 #   Extra arguments go to xcodebuild, e.g. -derivedDataPath.
@@ -34,5 +34,6 @@ export XCODEBUILD_ARGS="$*"
 firebase emulators:exec --project demo-firebase-swift --only auth '
   TEST_RUNNER_FIREBASE_AUTH_EMULATOR_HOST="$FIREBASE_AUTH_EMULATOR_HOST" \
   xcodebuild test -scheme firebase-swift-Package -destination "$IOS_DESTINATION" \
-    -only-testing:FirebaseIntegrationTests/PhoneAuthIntegrationTests $XCODEBUILD_ARGS
+    -only-testing:FirebaseIntegrationTests/PhoneAuthIntegrationTests \
+    -only-testing:FirebaseAuthTests/ProtectedDataTests $XCODEBUILD_ARGS
 '

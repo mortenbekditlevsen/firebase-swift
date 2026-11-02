@@ -11,56 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import Foundation
 
-#if os(iOS)
-  private let kUIDCodingKey = "uid"
+/// A second factor enrolled for a user.
+public class MultiFactorInfo: @unchecked Sendable {
+  /// The multi-factor enrollment ID.
+  public let uid: String
 
-  private let kDisplayNameCodingKey = "displayName"
+  /// The user friendly name of the current second factor.
+  public let displayName: String?
 
-  private let kEnrollmentDateCodingKey = "enrollmentDate"
+  /// The second factor enrollment date.
+  public let enrollmentDate: Date?
 
-  private let kFactorIDCodingKey = "factorID"
+  /// The identifier of the second factor: `PhoneMultiFactorInfo.PhoneMultiFactorID` or
+  /// `PhoneMultiFactorInfo.TOTPMultiFactorID`.
+  public let factorID: String
 
-  /** @class FIRMultiFactorInfo
-   @brief Safe public structure used to represent a second factor entity from a client perspective.
-       This class is available on iOS only.
-   */
-   public class MultiFactorInfo {
-    /**
-        @brief The multi-factor enrollment ID.
-     */
-     public var uid: String
-
-    /**
-        @brief The user friendly name of the current second factor.
-     */
-    public var displayName: String?
-
-    /**
-        @brief The second factor enrollment date.
-     */
-    public var enrollmentDate: Date?
-
-    /**
-        @brief The identifier of the second factor.
-     */
-    var factorID: String?
-
-    /// Returns `nil` if the enrollment has no enrollment ID.
-    init?(proto: AuthProtoMFAEnrollment) {
-      guard let uid = proto.mfaEnrollmentID else {
-        AuthLog.logWarning(code: "I-AUT000035",
-                           message: "Ignoring a second factor enrollment without an enrollment ID.")
-        return nil
-      }
-      self.uid = uid
-      displayName = proto.displayName
-      enrollmentDate = proto.enrolledAt
+  /// Returns `nil` if the enrollment has no enrollment ID.
+  init?(proto: AuthProtoMFAEnrollment, factorID: String) {
+    guard let uid = proto.mfaEnrollmentID else {
+      AuthLog.logWarning(code: "I-AUT000035",
+                         message: "Ignoring a second factor enrollment without an enrollment ID.")
+      return nil
     }
-
-    // MARK: - NSSecureCoding
-
+    self.uid = uid
+    displayName = proto.displayName
+    enrollmentDate = proto.enrolledAt
+    self.factorID = factorID
   }
-#endif
+
+  /// The phone or TOTP factor for an enrollment, or `nil` for other or invalid enrollments.
+  static func info(for proto: AuthProtoMFAEnrollment) -> MultiFactorInfo? {
+    if proto.phoneInfo != nil {
+      return PhoneMultiFactorInfo(proto: proto)
+    }
+    if proto.isTOTP {
+      return TOTPMultiFactorInfo(proto: proto)
+    }
+    return nil
+  }
+}

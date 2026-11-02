@@ -55,7 +55,7 @@ MODULES = [
            "FirebaseSharedSwift/Sources/third_party/FirebaseDataEncoder", "exact",
            "12.19.2", "FirebaseSharedSwift/CHANGELOG.md"),
     Module("FirebaseAuth", "Sources/FirebaseAuth", "FirebaseAuth/Sources/Swift", "lines",
-           "11.0.0", "FirebaseAuth/CHANGELOG.md"),
+           "13.1.1", "FirebaseAuth/CHANGELOG.md"),
     Module("FirebaseFunctions", "Sources/FirebaseFunctions", "FirebaseFunctions/Sources", "lines",
            "13.1.1", "FirebaseFunctions/CHANGELOG.md"),
     Module("FirebaseStorage", "Sources/FirebaseStorage", "FirebaseStorage/Sources", "lines",
