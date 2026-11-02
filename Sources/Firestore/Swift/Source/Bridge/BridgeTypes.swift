@@ -326,7 +326,7 @@ public final class __PipelineSnapshotBridge: @unchecked Sendable {
 public final class __RealtimePipelineSnapshotBridge: @unchecked Sendable {
   public var results: [__PipelineResultBridge] { [] }
   public var changes: [__PipelineResultChangeBridge] { [] }
-  public var metadata: SnapshotMetadata { SnapshotMetadata() }
+  public var metadata: SnapshotMetadata { SnapshotMetadata(cppMetadata: CppSnapshotMetadata(false, false)) }
 }
 
 /// Bridge for pipeline listen options.

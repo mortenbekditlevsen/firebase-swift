@@ -121,8 +121,15 @@ public extension Firestore {
   /// throwing. Available on all platforms.
   func runTransaction(_ updateBlock: @escaping (Transaction) throws
     -> sending Any?) async throws -> sending Any? {
+    try await runTransaction(with: nil, block: updateBlock)
+  }
+
+  /// Like `runTransaction(_:)`, with options such as the number of attempts.
+  func runTransaction(with options: TransactionOptions?,
+                      block updateBlock: @escaping (Transaction) throws
+                        -> sending Any?) async throws -> sending Any? {
     return try await withCheckedThrowingContinuation { continuation in
-      self.runTransaction(updateBlock) { anyValue, error in
+      self.runTransaction(with: options, block: updateBlock) { anyValue, error in
         if let error {
           continuation.resume(throwing: error)
         } else {

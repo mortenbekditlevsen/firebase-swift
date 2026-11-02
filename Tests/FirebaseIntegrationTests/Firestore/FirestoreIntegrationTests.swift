@@ -55,9 +55,10 @@ struct FirestoreIntegrationTests {
 
   @Test func updatingAMissingDocumentFails() async throws {
     let fixture = try EmulatorFixture()
-    await #expect(throws: (any Error).self) {
+    let error = await #expect(throws: FirestoreErrorCode.self) {
       try await fixture.collection.document("missing").updateData(["x": Int64(1)])
     }
+    #expect(error?.code == .notFound)
   }
 
   @Test func queriesFilterOrderAndLimit() async throws {

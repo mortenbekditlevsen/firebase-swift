@@ -24,9 +24,10 @@ import Testing
 struct FirestoreAuthIntegrationTests {
   @Test func unauthenticatedWritesToProtectedPathsFail() async throws {
     let fixture = try EmulatorFixture()
-    await #expect(throws: (any Error).self) {
+    let error = await #expect(throws: FirestoreErrorCode.self) {
       try await fixture.db.document("users/nobody/notes/n").setData(["x": Int64(1)])
     }
+    #expect(error?.code == .permissionDenied)
   }
 
   @Test func rulesSeeTheSignedInUser() async throws {
@@ -37,9 +38,10 @@ struct FirestoreAuthIntegrationTests {
     try await mine.setData(["text": "hello"])
     #expect(try await mine.getDocument(source: .server).get("text") as? String == "hello")
 
-    await #expect(throws: (any Error).self) {
+    let error = await #expect(throws: FirestoreErrorCode.self) {
       try await fixture.db.document("users/someone-else/notes/n").setData(["x": Int64(1)])
     }
+    #expect(error?.code == .permissionDenied)
   }
 
   @Test func signingOutRevokesAccess() async throws {
