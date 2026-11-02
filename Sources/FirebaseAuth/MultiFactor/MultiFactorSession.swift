@@ -28,12 +28,6 @@ import Foundation
 
     var multiFactorInfo: MultiFactorInfo?
 
-    class var sessionForCurrentUser: MultiFactorSession {
-      let currentUser = Auth.auth().currentUser
-      let idToken = currentUser?.tokenService.accessToken
-      return .init(idToken: idToken)
-    }
-
     convenience init(idToken: String?) {
       self.init()
       self.idToken = idToken

@@ -88,7 +88,8 @@ import Foundation
          // No ID token until a second factor is resolved (see AuthMFAResponse).
          self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken) ?? ""
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
-         self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
+         // Absent when a second factor is needed.
+         self.refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken) ?? ""
          self.photoURL = try container.decodeIfPresent(URL.self, forKey: .photoURL)
          self.mfaPendingCredential = try container.decodeIfPresent(String.self, forKey: .mfaPendingCredential)
          self.mfaInfo = try container.decodeIfPresent([AuthProtoMFAEnrollment].self, forKey: .mfaInfo)

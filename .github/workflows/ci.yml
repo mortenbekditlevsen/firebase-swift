@@ -60,12 +60,27 @@ jobs:
           path: .build-ios-packages
           key: ios-spm-${{ hashFiles('Package.resolved') }}
           restore-keys: ios-spm-
-      # Builds every library; the tests run on macOS and Linux.
+      # Builds every library; the iOS-only phone auth tests run below, the rest on macOS and Linux.
       - name: Build for the iOS Simulator
         run: >-
           xcodebuild build -scheme firebase-swift-Package
           -destination 'generic/platform=iOS Simulator'
           -clonedSourcePackagesDirPath .build-ios-packages -quiet
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('firebase.json') }}
+          restore-keys: firebase-emulators-${{ runner.os }}-
+      - run: npm install -g firebase-tools
+      - name: Phone auth tests (iOS Simulator, Auth emulator)
+        run: scripts/test-ios-phone-auth.sh -clonedSourcePackagesDirPath .build-ios-packages -quiet
 
   linux:
     runs-on: ubuntu-latest
