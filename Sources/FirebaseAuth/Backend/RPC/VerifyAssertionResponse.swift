@@ -339,7 +339,8 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
          // No ID token until a second factor is resolved (see AuthMFAResponse).
          self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken) ?? ""
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
-         self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
+         // Absent when a second factor is needed.
+         self.refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken) ?? ""
          self.action = try container.decodeIfPresent(String.self, forKey: .action)
          self.language = try container.decodeIfPresent(String.self, forKey: .language)
          self.timeZone = try container.decodeIfPresent(String.self, forKey: .timeZone)
@@ -350,7 +351,7 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
          self.needConfirmation = try container.decodeIfPresent(Bool.self, forKey: .needConfirmation) ?? false
          self.emailRecycled = try container.decodeIfPresent(Bool.self, forKey: .emailRecycled) ?? false
          self.emailVerified = try container.decodeIfPresent(Bool.self, forKey: .emailVerified) ?? false
-         self.isNewUser = try container.decode(Bool.self, forKey: .isNewUser)
+         self.isNewUser = try container.decodeIfPresent(Bool.self, forKey: .isNewUser) ?? false
          self.username = try container.decodeIfPresent(String.self, forKey: .username)
          self.oauthIDToken = try container.decodeIfPresent(String.self, forKey: .oauthIDToken)
          self.oauthExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .oauthExpireIn))?.date

@@ -69,7 +69,8 @@ import Foundation
          // No ID token until a second factor is resolved (see AuthMFAResponse).
          self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken) ?? ""
          self.email = try container.decodeIfPresent(String.self, forKey: .email)
-         self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
+         // Absent when a second factor is needed.
+         self.refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken) ?? ""
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
 
          self.isNewUser = try container.decodeIfPresent(Bool.self, forKey: .isNewUser) ?? false

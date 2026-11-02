@@ -28,7 +28,11 @@ import Foundation
     /// Gets a session for a second factor enrollment operation. It identifies the current user
     /// trying to enroll a second factor.
     public func session() async throws -> MultiFactorSession {
-      MultiFactorSession.sessionForCurrentUser
+      // The port took the default app's current user (fixed upstream in #14238).
+      guard let user else {
+        throw AuthErrorUtils.nullUserError(message: nil)
+      }
+      return MultiFactorSession(idToken: try await user.internalGetToken())
     }
 
     /// Enrolls a second factor as identified by the `MultiFactorAssertion` parameter for the
@@ -85,10 +89,12 @@ import Foundation
         throw AuthErrorUtils.unexpectedResponse(deserializedResponse: response)
       }
       do {
-        _ = try await auth.completeSignIn(withAccessToken: idToken,
-                                          accessTokenExpirationDate: nil,
-                                          refreshToken: refreshToken,
-                                          anonymous: false)
+        let user = try await auth.completeSignIn(withAccessToken: idToken,
+                                                 accessTokenExpirationDate: nil,
+                                                 refreshToken: refreshToken,
+                                                 anonymous: false)
+        // The port dropped the new user, so the current one kept its old factors.
+        try await auth.updateCurrentUser(user)
       } catch {
         if signOutOnFailure {
           try? auth.signOut()
