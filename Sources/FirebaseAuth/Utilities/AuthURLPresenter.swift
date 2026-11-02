@@ -11,182 +11,123 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-#if os(iOS) 
+#if os(iOS)
 
   import Foundation
-  import UIKit
-  import WebKit
   import SafariServices
+  import UIKit
 
-  // TODO: Remove objc's and publics
+  /// Presents a URL in an `SFSafariViewController` (or a `WKWebView` on Mac Catalyst) until
+  /// the app gets a callback URL that `Auth.canHandle(_:)` matches.
+  @MainActor
+  final class AuthURLPresenter: NSObject, SFSafariViewControllerDelegate,
+    AuthWebViewControllerDelegate {
+    /// `Auth` creates one off the main actor.
+    nonisolated override init() {
+      super.init()
+    }
 
-  /** @class AuthURLPresenter
-      @brief A Class responsible for presenting URL via SFSafariViewController or WKWebView.
-   */
-  @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public class AuthURLPresenter: NSObject,
-    SFSafariViewControllerDelegate, AuthWebViewControllerDelegate {
-    /** @fn
-        @brief Presents an URL to interact with user.
-        @param url The URL to present.
-        @param uiDelegate The UI delegate to present view controller.
-        @param completion A block to be called either synchronously if the presentation fails to start,
-            or asynchronously in future on an unspecified thread once the presentation finishes.
-     */
-     public
+    /// Presents `url` and returns the matching callback URL.
+    ///
+    /// Throws `webContextAlreadyPresented`-style cancellation if another presentation is
+    /// active, and `webContextCancelled` if the user closes the page.
     func present(_ url: URL,
                  uiDelegate: AuthUIDelegate?,
-                 callbackMatcher: @escaping (URL?) -> Bool,
-                 completion: @escaping (URL?, Error?) -> Void) {
-      if isPresenting {
+                 callbackMatcher: @escaping @Sendable (URL?) -> Bool) async throws -> URL {
+      guard continuation == nil else {
         // Unable to start a new presentation on top of another.
-        // Invoke the new completion closure and leave the old one as-is
-        // to be invoked when the presentation finishes.
-        DispatchQueue.main.async {
-          completion(nil, AuthErrorUtils.webContextCancelledError(message: nil))
-        }
-        return
+        throw AuthErrorUtils.webContextCancelledError(message: nil)
       }
-      isPresenting = true
-      self.callbackMatcher = callbackMatcher
-      self.completion = completion
-      DispatchQueue.main.async {
-        self.uiDelegate = uiDelegate ?? AuthDefaultUIDelegate.defaultUIDelegate()
+      return try await withCheckedThrowingContinuation { continuation in
+        self.continuation = continuation
+        self.callbackMatcher = callbackMatcher
+        let uiDelegate = fakeUIDelegate ?? uiDelegate ?? AuthDefaultUIDelegate.defaultUIDelegate()
+        self.uiDelegate = uiDelegate
         #if targetEnvironment(macCatalyst)
-          self.webViewController = AuthWebViewController(url: url, delegate: self)
-          if let webViewController = self.webViewController {
-            let navController = UINavigationController(rootViewController: webViewController)
-            if let fakeUIDelegate = self.fakeUIDelegate {
-              fakeUIDelegate.present(navController, animated: true)
-            } else {
-              self.uiDelegate?.present(navController, animated: true)
-            }
-          }
+          let webViewController = AuthWebViewController(url: url, delegate: self)
+          self.webViewController = webViewController
+          uiDelegate?.present(UINavigationController(rootViewController: webViewController),
+                              animated: true, completion: nil)
         #else
-          self.safariViewController = SFSafariViewController(url: url)
-          self.safariViewController?.delegate = self
-          if let safariViewController = self.safariViewController {
-            if let fakeUIDelegate = self.fakeUIDelegate {
-              fakeUIDelegate.present(safariViewController, animated: true)
-            } else {
-              self.uiDelegate?.present(safariViewController, animated: true)
-            }
-          }
+          let safariViewController = SFSafariViewController(url: url)
+          safariViewController.delegate = self
+          self.safariViewController = safariViewController
+          uiDelegate?.present(safariViewController, animated: true, completion: nil)
         #endif
       }
     }
 
-    /** @fn canHandleURL:
-        @brief Determines if a URL was produced by the currently presented URL.
-        @param url The URL to handle.
-        @return Whether the URL could be handled or not.
-     */
-     public func canHandle(url: URL) -> Bool {
-      if isPresenting,
-         let callbackMatcher = callbackMatcher,
-         callbackMatcher(url) {
-        finishPresentation(withURL: url, error: nil)
-        return true
+    /// Determines if a URL was produced by the currently presented URL, and if so finishes
+    /// the presentation with it.
+    func canHandle(url: URL) -> Bool {
+      guard let callbackMatcher, callbackMatcher(url) else {
+        return false
       }
-      return false
+      finishPresentation(.success(url))
+      return true
+    }
+
+    // MARK: SFSafariViewControllerDelegate
+
+    nonisolated func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+      MainActor.assumeIsolated {
+        guard controller == safariViewController else { return }
+        // The controller is gone already, so there's nothing to dismiss.
+        safariViewController = nil
+        finishPresentation(.failure(AuthErrorUtils.webContextCancelledError(message: nil)))
+      }
     }
 
     // MARK: AuthWebViewControllerDelegate
 
     func webViewControllerDidCancel(_ controller: AuthWebViewController) {
-      kAuthGlobalWorkQueue.async {
-        if self.webViewController == controller {
-          self.finishPresentation(withURL: nil,
-                                  error: AuthErrorUtils.webContextCancelledError(message: nil))
-        }
-      }
+      guard webViewController == controller else { return }
+      finishPresentation(.failure(AuthErrorUtils.webContextCancelledError(message: nil)))
     }
 
     func webViewController(_ controller: AuthWebViewController, canHandle url: URL) -> Bool {
-      var result = false
-      kAuthGlobalWorkQueue.sync {
-        if self.webViewController == controller {
-          result = self.canHandle(url: url)
-        }
-      }
-      return result
+      webViewController == controller && canHandle(url: url)
     }
 
     func webViewController(_ controller: AuthWebViewController,
                            didFailWithError error: Error) {
-      kAuthGlobalWorkQueue.async {
-        if self.webViewController == controller {
-          self.finishPresentation(withURL: nil, error: error)
-        }
-      }
+      guard webViewController == controller else { return }
+      finishPresentation(.failure(error))
     }
 
-    /** @var_isPresenting
-        @brief Whether or not some web-based content is being presented.
-            Accesses to this property are serialized on the global Auth work queue
-            and thus this variable should not be read or written outside of the work queue.
-     */
-    private var isPresenting: Bool = false
-
-    /** @var callbackMatcher
-        @brief The callback URL matcher for the current presentation, if one is active.
-     */
-    private var callbackMatcher: ((URL) -> Bool)?
-
-    /** @var safariViewController
-        @brief The SFSafariViewController used for the current presentation, if any.
-     */
-    private var safariViewController: SFSafariViewController?
-
-    /** @var webViewController
-        @brief The FIRAuthWebViewController used for the current presentation, if any.
-     */
-    private var webViewController: AuthWebViewController?
-
-    /** @var uiDelegate
-        @brief The UIDelegate used to present the SFSafariViewController.
-     */
-    var uiDelegate: AuthUIDelegate?
-
-    /** @var completion
-        @brief The completion handler for the current presentation, if one is active.
-            Accesses to this variable are serialized on the global Auth work queue
-            and thus this variable should not be read or written outside of the work queue.
-        @remarks This variable is also used as a flag to indicate a presentation is active.
-     */
-    var completion: ((URL?, Error?) -> Void)?
-
-    /** @var fakeUIDelegate
-        @brief Test-only option to validate the calls to the uiDelegate.
-     */
+    /// Test-only option to validate the calls to the uiDelegate.
     var fakeUIDelegate: AuthUIDelegate?
 
-    // MARK: Private methods
+    // MARK: Private
 
-    private func finishPresentation(withURL url: URL?, error: Error?) {
+    /// The callback URL matcher for the current presentation, if one is active.
+    private var callbackMatcher: (@Sendable (URL?) -> Bool)?
+
+    /// Resumes the caller of `present`; non-nil while a presentation is active.
+    private var continuation: CheckedContinuation<URL, Error>?
+
+    private var safariViewController: SFSafariViewController?
+    private var webViewController: AuthWebViewController?
+
+    /// The UIDelegate used to present the view controller.
+    private var uiDelegate: AuthUIDelegate?
+
+    private func finishPresentation(_ result: Result<URL, Error>) {
+      let continuation = self.continuation
+      self.continuation = nil
       callbackMatcher = nil
       let uiDelegate = self.uiDelegate
       self.uiDelegate = nil
-      let completion = self.completion
-      self.completion = nil
-      let safariViewController = self.safariViewController
-      self.safariViewController = nil
-      let webViewController = self.webViewController
-      self.webViewController = nil
-      if safariViewController != nil || webViewController != nil {
-        uiDelegate?.dismiss(animated: true) {
-          kAuthGlobalWorkQueue.async {
-            self.isPresenting = false
-            if let completion {
-              completion(url, error)
-            }
-          }
+      let presented = safariViewController != nil || webViewController != nil
+      safariViewController = nil
+      webViewController = nil
+      guard let continuation else { return }
+      if presented, let uiDelegate {
+        uiDelegate.dismiss(animated: true) {
+          continuation.resume(with: result)
         }
-      }
-      isPresenting = false
-      if let completion {
-        completion(url, error)
+      } else {
+        continuation.resume(with: result)
       }
     }
   }

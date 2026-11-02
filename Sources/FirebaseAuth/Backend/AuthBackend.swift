@@ -223,39 +223,39 @@ private final class AuthBackendRPCImplementation: AuthBackendImplementation {
     fileprivate func post<T: AuthRPCRequest>(withRequest request: T) async throws -> T.Response {
         let response = try await post3(withRequest: request)
         
-//        if let auth = request.requestConfiguration.auth,
-          if let mfaError = AuthBackendRPCImplementation
-            .generateMFAError(response: response, auth: /* auth */ nil) {
+        if let auth = request.requestConfiguration.auth,
+           let mfaError = AuthBackendRPCImplementation.generateMFAError(response: response,
+                                                                        auth: auth) {
             throw mfaError
         } else if let error = AuthBackendRPCImplementation.phoneCredentialInUse(response: response) {
             throw error
         }
         return response
     }
-    
-  #if os(iOS)
-    private class func generateMFAError(response: AuthRPCResponse, auth: Auth) -> Error? {
-      if let mfaResponse = response as? EmailLinkSignInResponse,
-         mfaResponse.idToken == nil,
-         let enrollments = mfaResponse.MFAInfo {
-        var info: [MultiFactorInfo] = []
-        for enrollment in enrollments {
-          info.append(MultiFactorInfo(proto: enrollment))
-        }
-        return AuthErrorUtils.secondFactorRequiredError(
-          pendingCredential: mfaResponse.MFAPendingCredential,
-          hints: info,
-          auth: auth
-        )
-      } else {
-        return nil
-      }
-    }
-  #else
-    private class func generateMFAError(response: AuthRPCResponse, auth: Auth?) -> Error? {
+
+  /// The "second factor required" error, if `response` is a sign-in that needs one.
+  private class func generateMFAError(response: AuthRPCResponse, auth: Auth) -> Error? {
+    guard let mfaResponse = response as? AuthMFAResponse,
+          mfaResponse.idToken.isEmpty,
+          let enrollments = mfaResponse.mfaInfo else {
       return nil
     }
-  #endif
+    #if os(iOS)
+      // Only phone factors are supported so far.
+      let info: [MultiFactorInfo] = enrollments.compactMap { PhoneMultiFactorInfo(proto: $0) }
+      return AuthErrorUtils.secondFactorRequiredError(
+        pendingCredential: mfaResponse.mfaPendingCredential,
+        hints: info,
+        auth: auth
+      )
+    #else
+      // Multi-factor sign-in isn't available on this platform yet, so there's no resolver.
+      _ = enrollments
+      return AuthErrorUtils.error(code: .secondFactorRequired,
+                                  message: "This user has a second factor, which isn't supported " +
+                                    "on this platform yet.")
+    #endif
+  }
 
   #if os(iOS)
     // Check whether or not the successful response is actually the special case phone
@@ -267,8 +267,7 @@ private final class AuthBackendRPCImplementation: AuthBackendImplementation {
          let temporaryProof = phoneAuthResponse.temporaryProof,
          temporaryProof.count > 0 {
         let credential = PhoneAuthCredential(withTemporaryProof: temporaryProof,
-                                             phoneNumber: phoneNumber,
-                                             providerID: PhoneAuthProvider.id)
+                                             phoneNumber: phoneNumber)
         return AuthErrorUtils.credentialAlreadyInUseError(message: nil,
                                                           credential: credential,
                                                           email: nil)

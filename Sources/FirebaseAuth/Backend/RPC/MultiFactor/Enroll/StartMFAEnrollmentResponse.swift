@@ -14,16 +14,7 @@
 
 import Foundation
 
-public struct StartMFAEnrollmentResponse:
-    AuthRPCResponse, Decodable {
-    enum CodingKeys: CodingKey {
-        case enrollmentResponse
-    }
-    
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.enrollmentResponse = try container.decodeIfPresent(AuthProtoStartMFAPhoneResponseInfo.self, forKey: .enrollmentResponse)
-    }
-    
-    var enrollmentResponse: AuthProtoStartMFAPhoneResponseInfo?
+public struct StartMFAEnrollmentResponse: AuthRPCResponse {
+  // The port read `enrollmentResponse`, which the backend never sends.
+  var phoneSessionInfo: AuthProtoStartMFAPhoneResponseInfo?
 }

@@ -23,14 +23,15 @@ typealias FIRFetchAuthDomainCallback = (String?, Error?) -> Void
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
  public struct AuthWebUtils {
+  /// A random string of URL-safe characters (about 6 bits each), from the system's
+  /// cryptographically secure generator.
   static func randomString(withLength length: Int) -> String {
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
     var randomString = ""
+    randomString.reserveCapacity(length)
     for _ in 0 ..< length {
-        let randomValue = UInt32.random(in: 65 ..< 91)
-      guard let randomCharacter = Unicode.Scalar(randomValue) else { continue }
-      randomString += String(Character(randomCharacter))
+      randomString.append(alphabet.randomElement()!)
     }
-      // XXX TODO: test that this is actually a random string
     return randomString
   }
 

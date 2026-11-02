@@ -11,250 +11,184 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-#if os(iOS) 
+#if os(iOS)
   import Foundation
+  import Synchronization
   import UIKit
 
-  // TODO: This may be needed for extension detecting support
-  // @_implementationOnly //import FirebaseCoreExtension
-
-//  #if SWIFT_PACKAGE
-//    @_implementationOnly import GoogleUtilities_Environment
-//  #else
-//    @_implementationOnly import GoogleUtilities
-//  #endif // SWIFT_PACKAGE
-
-  public protocol AuthAPNSTokenApplication {
-    func registerForRemoteNotifications()
+  protocol AuthAPNSTokenApplication: Sendable {
+    @MainActor func registerForRemoteNotifications()
   }
 
   extension UIApplication: AuthAPNSTokenApplication {}
 
-  // TODO: remove objc public here and below after Sample ported.
-  /** @class AuthAPNSToken
-      @brief A data structure for an APNs token.
-   */
-  @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-   public class AuthAPNSTokenManager {
-    /** @property timeout
-        @brief The timeout for registering for remote notification.
-        @remarks Only tests should access this property.
-     */
-    var timeout: TimeInterval = 5
+  /// Gets the APNs token phone auth sends to the backend.
+  ///
+  /// There's no app delegate swizzling in this port: the app passes the token to
+  /// `Auth.setAPNSToken(_:type:)` from
+  /// `application(_:didRegisterForRemoteNotificationsWithDeviceToken:)`.
+  final class AuthAPNSTokenManager: Sendable {
+    /// The timeout for registering for remote notifications.
+    let timeout: TimeInterval
 
-    /** @fn initWithApplication:
-        @brief Initializes the instance.
-        @param application The @c UIApplication to request the token from.
-        @return The initialized instance.
-     */
-    init(withApplication application: AuthAPNSTokenApplication) {
+    let application: AuthAPNSTokenApplication
+
+    private struct State {
+      var token: AuthAPNSToken?
+      var pending: [CheckedContinuation<AuthAPNSToken, Error>] = []
+      /// Bumped by each registration, so a timer only cancels its own.
+      var generation = 0
+    }
+
+    private let state = Mutex(State())
+
+    init(withApplication application: AuthAPNSTokenApplication, timeout: TimeInterval = 5) {
       self.application = application
+      self.timeout = timeout
     }
 
-    /** @fn getTokenWithCallback:
-        @brief Attempts to get the APNs token.
-        @param callback The block to be called either immediately or in future, either when a token
-            becomes available, or when timeout occurs, whichever happens earlier.
-     */
-    public func getToken(callback: @escaping (AuthAPNSToken?, Error?) -> Void) {
-      if failFastForTesting {
-        let error = NSError(domain: "dummy domain", code: AuthErrorCode.missingAppToken.rawValue)
-        callback(nil, error)
-        return
-      }
-      if let token = tokenStore {
-        callback(token, nil)
-        return
-      }
-      if pendingCallbacks.count > 0 {
-        pendingCallbacks.append(callback)
-        return
-      }
-      pendingCallbacks = [callback]
-
-      DispatchQueue.main.async {
-        self.application.registerForRemoteNotifications()
-      }
-      let applicableCallbacks = pendingCallbacks
-      let deadline = DispatchTime.now() + timeout
-      kAuthGlobalWorkQueue.asyncAfter(deadline: deadline) {
-        // Only cancel if the pending callbacks remain the same, i.e., not triggered yet.
-        if applicableCallbacks.count == self.pendingCallbacks.count {
-          self.callback(withToken: nil, error: nil)
+    /// Returns the APNs token, registering for remote notifications if there's none yet.
+    /// Throws `missingAppToken` if no token arrives within `timeout`.
+    func getToken() async throws -> AuthAPNSToken {
+      try await withCheckedThrowingContinuation { continuation in
+        enum Action { case resume(AuthAPNSToken), wait, register(Int) }
+        let action: Action = state.withLock { state in
+          if let token = state.token {
+            return .resume(token)
+          }
+          state.pending.append(continuation)
+          guard state.pending.count == 1 else { return .wait }
+          state.generation += 1
+          return .register(state.generation)
         }
-      }
-    }
-
-    /** @property token
-        @brief The APNs token, if one is available.
-        @remarks Setting a token with AuthAPNSTokenTypeUnknown will automatically converts it to
-            a token with the automatically detected type.
-     */
-    public var token: AuthAPNSToken? {
-      get {
-        return tokenStore
-      }
-      set(setToken) {
-        guard let setToken else {
-          tokenStore = nil
-          return
-        }
-        var newToken = setToken
-        if setToken.type == AuthAPNSTokenType.unknown {
-          let detectedTokenType = isProductionApp() ? AuthAPNSTokenType.prod : AuthAPNSTokenType
-            .sandbox
-          newToken = AuthAPNSToken(withData: setToken.data, type: detectedTokenType)
-        }
-        tokenStore = newToken
-        callback(withToken: newToken, error: nil)
-      }
-    }
-
-    // Should only be written to in tests
-    var tokenStore: AuthAPNSToken?
-
-    /** @fn cancelWithError:
-        @brief Cancels any pending `getTokenWithCallback:` request.
-        @param error The error to return.
-     */
-    func cancel(withError error: Error) {
-      callback(withToken: nil, error: error)
-    }
-
-    var failFastForTesting: Bool = false
-
-    // `application` is a var to enable unit test faking.
-    var application: AuthAPNSTokenApplication
-    private var pendingCallbacks: [(AuthAPNSToken?, Error?) -> Void] = []
-
-    private func callback(withToken token: AuthAPNSToken?, error: Error?) {
-      let pendingCallbacks = self.pendingCallbacks
-      self.pendingCallbacks = []
-      for callback in pendingCallbacks {
-        callback(token, error)
-      }
-    }
-
-    private func isProductionApp() -> Bool {
-      let defaultAppTypeProd = true
-//      if GULAppEnvironmentUtil.isSimulator() {
-//        AuthLog.logInfo(code: "I-AUT000006", message: "Assuming prod APNs token type on simulator.")
-//        return defaultAppTypeProd
-//      }
-//      // Apps distributed via AppStore or TestFlight use the Production APNS certificates.
-//      if GULAppEnvironmentUtil.isFromAppStore() {
-//        return defaultAppTypeProd
-//      }
-
-      // TODO: resolve https://github.com/firebase/firebase-ios-sdk/issues/10921
-      if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
-        // Distributed via TestFlight
-        return defaultAppTypeProd
-      }
-
-      let path = Bundle.main.bundlePath + "embedded.mobileprovision"
-      guard let url = URL(string: path) else {
-        AuthLog.logInfo(code: "I-AUT000007", message: "\(path) does not exist")
-        return defaultAppTypeProd
-      }
-      do {
-        let profileData = try Data(contentsOf: url)
-
-        // The "embedded.mobileprovision" sometimes contains characters with value 0, which signals the
-        // end of a c-string and halts the ASCII parser, or with value > 127, which violates strict 7-bit
-        // ASCII. Replace any 0s or invalid characters in the input.
-        let byteArray = [UInt8](profileData)
-        var outBytes: [UInt8] = []
-        for byte in byteArray {
-          if byte == 0 || byte > 127 {
-            outBytes.append(46) // ASCII '.'
-          } else {
-            outBytes.append(byte)
+        switch action {
+        case let .resume(token):
+          continuation.resume(returning: token)
+        case .wait:
+          break
+        case let .register(generation):
+          let application = self.application
+          Task { @MainActor in application.registerForRemoteNotifications() }
+          kAuthGlobalWorkQueue.asyncAfter(deadline: .now() + timeout) {
+            let expired = self.state.withLock { state -> [CheckedContinuation<AuthAPNSToken, Error>] in
+              guard state.generation == generation else { return [] }
+              defer { state.pending = [] }
+              return state.pending
+            }
+            let error = AuthErrorUtils.missingAppTokenError(underlyingError: nil)
+            for continuation in expired {
+              continuation.resume(throwing: error)
+            }
           }
         }
-        guard let embeddedProfile = String(bytes: outBytes, encoding: .utf8) else {
+      }
+    }
+
+    /// The APNs token, if one is available.
+    ///
+    /// Setting a token of type `unknown` detects the type from the provisioning profile.
+    var token: AuthAPNSToken? {
+      get { state.withLock { $0.token } }
+      set {
+        guard var token = newValue else {
+          state.withLock { $0.token = nil }
+          return
+        }
+        if token.type == .unknown {
+          token = AuthAPNSToken(withData: token.data,
+                                type: Self.isProductionApp() ? .prod : .sandbox)
+        }
+        let waiting = state.withLock { [token] state in
+          state.token = token
+          defer { state.pending = [] }
+          return state.pending
+        }
+        for continuation in waiting {
+          continuation.resume(returning: token)
+        }
+      }
+    }
+
+    /// Fails any pending `getToken()` calls with `error`.
+    func cancel(withError error: Error) {
+      let waiting = state.withLock { state in
+        defer { state.pending = [] }
+        return state.pending
+      }
+      for continuation in waiting {
+        continuation.resume(throwing: error)
+      }
+    }
+
+    private static func isProductionApp() -> Bool {
+      let defaultAppTypeProd = true
+      #if targetEnvironment(simulator)
+        AuthLog.logInfo(code: "I-AUT000006", message: "Assuming prod APNs token type on simulator.")
+        return defaultAppTypeProd
+      #else
+        // App Store builds have no embedded provisioning profile, so they take the default
+        // below. (Upstream checks for them first through GoogleUtilities.)
+
+        // TODO: resolve https://github.com/firebase/firebase-ios-sdk/issues/10921
+        // to support TestFlight
+
+        let path = Bundle.main.bundlePath + "/" + "embedded.mobileprovision"
+        let profileData: Data
+        do {
+          profileData = try Data(contentsOf: URL(fileURLWithPath: path))
+        } catch {
           AuthLog.logInfo(code: "I-AUT000008",
-                          message: "Error while reading embedded mobileprovision. Failed to convert to String")
+                          message: "Error while reading embedded mobileprovision \(error)")
           return defaultAppTypeProd
         }
 
-        // TODO: This code needs iOS 13. Use split instead?
-//        let scanner = Scanner(string: embeddedProfile)
-//        if scanner.scanUpToString("<plist") != nil {
-//          if let plistContents = scanner.scanUpToString("</plist>")
-//        }
+        // The "embedded.mobileprovision" sometimes contains characters with value 0, which signals
+        // the end of a c-string and halts the ASCII parser, or with value > 127, which violates
+        // strict 7-bit ASCII. Replace any 0s or invalid characters in the input.
+        let bytes = profileData.map { $0 == 0 || $0 > 127 ? 46 /* ASCII '.' */ : $0 }
+        guard let embeddedProfile = String(bytes: bytes, encoding: .utf8) else {
+          AuthLog.logInfo(code: "I-AUT000008",
+                          message: "Error while reading embedded mobileprovision. " +
+                            "Failed to convert to String")
+          return defaultAppTypeProd
+        }
 
-      } catch {
-        AuthLog.logInfo(code: "I-AUT000008",
-                        message: "Error while reading embedded mobileprovision \(error)")
-        return defaultAppTypeProd
-      }
-
-      // TODO: Finish this port
-
-//      NSMutableData *profileData = [NSMutableData dataWithContentsOfFile:path options:0 error:&error];
-//
-//      if (!profileData.length || error) {
-//        FIRLogInfo(kFIRLoggerAuth, @"I-AUT000007", @"Error while reading embedded mobileprovision %@",
-//                   error);
-//        return defaultAppTypeProd;
-//      }
-
-//      NSScanner *scanner = [NSScanner scannerWithString:embeddedProfile];
-//      NSString *plistContents;
-//      if ([scanner scanUpToString:@"<plist" intoString:nil]) {
-//        if ([scanner scanUpToString:@"</plist>" intoString:&plistContents]) {
-      // TODO: how does a file name get read with this append?
-//          plistContents = [plistContents stringByAppendingString:@"</plist>"];
-//        }
-//      }
-//
-//      if (!plistContents.length) {
-//        return defaultAppTypeProd;
-//      }
-//
-//      NSData *data = [plistContents dataUsingEncoding:NSUTF8StringEncoding];
-//      if (!data.length) {
-//        FIRLogInfo(kFIRLoggerAuth, @"I-AUT000009",
-//                   @"Couldn't read plist fetched from embedded mobileprovision");
-//        return defaultAppTypeProd;
-//      }
-//
-//      NSError *plistMapError;
-//      id plistData = [NSPropertyListSerialization propertyListWithData:data
-//                                                               options:NSPropertyListImmutable
-//                                                                format:nil
-//                                                                 error:&plistMapError];
-//      if (plistMapError || ![plistData isKindOfClass:[NSDictionary class]]) {
-//        FIRLogInfo(kFIRLoggerAuth, @"I-AUT000010", @"Error while converting assumed plist to dict %@",
-//                   plistMapError.localizedDescription);
-//        return defaultAppTypeProd;
-//      }
-//      NSDictionary *plistMap = (NSDictionary *)plistData;
-//
-//      if ([plistMap valueForKeyPath:@"ProvisionedDevices"]) {
-//        FIRLogInfo(kFIRLoggerAuth, @"I-AUT000011",
-//                   @"Provisioning profile has specifically provisioned devices, "
-//                   @"most likely a Dev profile.");
-//      }
-//
-//      NSString *apsEnvironment = [plistMap valueForKeyPath:@"Entitlements.aps-environment"];
-//      FIRLogDebug(kFIRLoggerAuth, @"I-AUT000012", @"APNS Environment in profile: %@", apsEnvironment);
-//
-//      // No aps-environment in the profile.
-//      if (!apsEnvironment.length) {
-//        FIRLogInfo(kFIRLoggerAuth, @"I-AUT000013",
-//                   @"No aps-environment set. If testing on a device APNS is not "
-//                   @"correctly configured. Please recheck your provisioning profiles.");
-//        return defaultAppTypeProd;
-//      }
-//
-//      if ([apsEnvironment isEqualToString:@"development"]) {
-//        return NO;
-//      }
-
-      return defaultAppTypeProd
+        guard let start = embeddedProfile.range(of: "<plist"),
+              let end = embeddedProfile.range(of: "</plist>", range: start.lowerBound ..< embeddedProfile.endIndex)
+        else {
+          return defaultAppTypeProd
+        }
+        let plistContents = embeddedProfile[start.lowerBound ..< end.upperBound]
+        do {
+          let plistData = try PropertyListSerialization.propertyList(from: Data(plistContents.utf8),
+                                                                     format: nil)
+          guard let plistMap = plistData as? [String: Any] else {
+            AuthLog.logInfo(code: "I-AUT000008",
+                            message: "Error while converting assumed plist to dictionary.")
+            return defaultAppTypeProd
+          }
+          if plistMap["ProvisionedDevices"] != nil {
+            AuthLog.logInfo(code: "I-AUT000011",
+                            message: "Provisioning profile has specifically provisioned devices, " +
+                              "most likely a Dev profile.")
+          }
+          guard let entitlements = plistMap["Entitlements"] as? [String: Any],
+                let apsEnvironment = entitlements["aps-environment"] as? String else {
+            AuthLog.logInfo(code: "I-AUT000013",
+                            message: "No aps-environment set. If testing on a device APNS is not " +
+                              "correctly configured. Please recheck your provisioning profiles.")
+            return defaultAppTypeProd
+          }
+          AuthLog.logDebug(code: "I-AUT000012",
+                           message: "APNS Environment in profile: \(apsEnvironment)")
+          return apsEnvironment != "development"
+        } catch {
+          AuthLog.logInfo(code: "I-AUT000008",
+                          message: "Error while converting assumed plist to dict " +
+                            "\(error.localizedDescription)")
+          return defaultAppTypeProd
+        }
+      #endif
     }
   }
 #endif

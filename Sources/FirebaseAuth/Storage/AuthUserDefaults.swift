@@ -25,7 +25,9 @@ private let persistentDomainLock = Mutex(())
 /** @class AuthUserDefaults
     @brief The utility class to storage data in NSUserDefaults.
  */
-class AuthUserDefaults: AuthStorage {
+// UserDefaults is thread-safe but isn't marked Sendable; read-modify-writes of the shared
+// domain take `persistentDomainLock`.
+final class AuthUserDefaults: AuthStorage, @unchecked Sendable {
   /** @var _persistentDomainName
       @brief The name of the persistent domain in user defaults.
    */

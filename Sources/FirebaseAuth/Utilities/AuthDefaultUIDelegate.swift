@@ -22,7 +22,8 @@
       @remarks This class should be used in the case that a UIDelegate was expected and necessary to
           continue a given flow, but none was provided.
    */
-  class AuthDefaultUIDelegate: AuthUIDelegate {
+  @MainActor
+  final class AuthDefaultUIDelegate: AuthUIDelegate {
     // TODO: Figure out what to do for extensions.
     /** @fn defaultUIDelegate
         @brief Returns a default FIRAuthUIDelegate object.
@@ -39,19 +40,10 @@
         return nil
       }
       var topViewController: UIViewController?
-      if #available(iOS 13.0, tvOS 13.0, *) {
-        let connectedScenes = UIApplication.shared.connectedScenes
-        for scene in connectedScenes {
-          if let windowScene = scene as? UIWindowScene {
-            for window in windowScene.windows {
-              if window.isKeyWindow {
-                topViewController = window.rootViewController
-              }
-            }
-          }
+      for case let windowScene as UIWindowScene in UIApplication.shared.connectedScenes {
+        for window in windowScene.windows where window.isKeyWindow {
+          topViewController = window.rootViewController
         }
-      } else {
-        topViewController = UIApplication.shared.keyWindow?.rootViewController
       }
       while true {
         if let controller = topViewController?.presentedViewController {

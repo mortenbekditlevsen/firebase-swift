@@ -66,7 +66,8 @@ import Foundation
      
      public init(from decoder: any Decoder) throws {
          let container = try decoder.container(keyedBy: CodingKeys.self)
-         self.idToken = try container.decode(String.self, forKey: .idToken)
+         // No ID token until a second factor is resolved (see AuthMFAResponse).
+         self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken) ?? ""
          self.email = try container.decodeIfPresent(String.self, forKey: .email)
          self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date

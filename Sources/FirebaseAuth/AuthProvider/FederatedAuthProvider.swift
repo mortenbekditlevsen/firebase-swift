@@ -18,25 +18,13 @@ import Foundation
     Utility type for constructing federated auth provider credentials.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public protocol FederatedAuthProvider {
+ public protocol FederatedAuthProvider: Sendable {
   #if os(iOS)
-    /** @fn getCredentialWithUIDelegate:completion:
-        @brief Used to obtain an auth credential via a mobile web flow.
-            This method is available on iOS only.
-        @param UIDelegate An optional UI delegate used to present the mobile web flow.
-        @param completion Optionally; a block which is invoked asynchronously on the main thread when
-            the mobile web flow is completed.
-     */
-    
-    func getCredentialWith(_ UIDelegate: AuthUIDelegate?,
-                           completion: ((AuthCredential?, Error?) -> Void)?)
-
-    /** @fn getCredentialWithUIDelegate:completion:
-        @brief Used to obtain an auth credential via a mobile web flow.
-            This method is available on iOS only.
-        @param UIDelegate An optional UI delegate used to present the mobile web flow.
-     */
-    @available(iOS 13, tvOS 13, macOS 15.0, watchOS 8, *)
-    func credential(with UIDelegate: AuthUIDelegate?) async throws -> AuthCredential
+    /// Used to obtain an auth credential via a mobile web flow.
+    ///
+    /// This method is available on iOS only.
+    /// - Parameter uiDelegate: An optional UI delegate used to present the mobile web flow.
+    @MainActor
+    func credential(with uiDelegate: AuthUIDelegate?) async throws -> AuthCredential
   #endif
 }

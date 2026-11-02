@@ -142,11 +142,35 @@ extension Auth: AuthInterop {
 //    let provider = ComponentType<AuthProvider>.instance(for: AuthProvider.self,
 //                                                        in: app.container)
 //    return provider.auth()
-      let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
+      #if os(Linux) || os(Android)
+        let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
+      #else
+        // The keychain, as upstream, where this process may use it. Unsigned binaries (command
+        // line tools, test runners) can't, and keep the user in UserDefaults instead.
+        let auth: Auth
+        if AuthKeychainServices.isAvailable {
+          auth = Auth(app: app, keychainStorageProvider: AuthKeychainServices.self)
+        } else {
+          Auth.logKeychainUnavailableOnce()
+          auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
+        }
+      #endif
       app.auth = auth
 
       return auth
   }
+
+  #if !os(Linux) && !os(Android)
+    private static let keychainUnavailableWarning: Void = AuthLog.logWarning(
+      code: "I-AUT000036",
+      message: "This process can't use the keychain (it isn't signed with a keychain entitlement), " +
+        "so the signed-in user is stored in UserDefaults instead."
+    )
+
+    private static func logKeychainUnavailableOnce() {
+      _ = keychainUnavailableWarning
+    }
+  #endif
 
   /** @property app
    @brief Gets the `FirebaseApp` object that this auth object is connected to.
@@ -381,75 +405,6 @@ extension Auth: AuthInterop {
    */
 
   #if os(iOS)
-    @available(tvOS, unavailable)
-    @available(macOS, unavailable)
-    @available(watchOS, unavailable)
-    /** @fn signInWithProvider:UIDelegate:completion:
-     @brief Signs in using the provided auth provider instance.
-     This method is available on iOS, macOS Catalyst, and tvOS only.
-
-     @param provider An instance of an auth provider used to initiate the sign-in flow.
-     @param uiDelegate Optionally an instance of a class conforming to the AuthUIDelegate
-     protocol, this is used for presenting the web context. If nil, a default AuthUIDelegate
-     will be used.
-     @param completion Optionally; a block which is invoked when the sign in flow finishes, or is
-     canceled. Invoked asynchronously on the main thread in the future.
-
-     @remarks Possible error codes:
-     <ul>
-     <li>@c AuthErrorCodeOperationNotAllowed - Indicates that email and password
-     accounts are not enabled. Enable them in the Auth section of the
-     Firebase console.
-     </li>
-     <li>@c AuthErrorCodeUserDisabled - Indicates the user's account is disabled.
-     </li>
-     <li>@c AuthErrorCodeWebNetworkRequestFailed - Indicates that a network request within a
-     SFSafariViewController or WKWebView failed.
-     </li>
-     <li>@c AuthErrorCodeWebInternalError - Indicates that an internal error occurred within a
-     SFSafariViewController or WKWebView.
-     </li>
-     <li>@c AuthErrorCodeWebSignInUserInteractionFailure - Indicates a general failure during
-     a web sign-in flow.
-     </li>
-     <li>@c AuthErrorCodeWebContextAlreadyPresented - Indicates that an attempt was made to
-     present a new web context while one was already being presented.
-     </li>
-     <li>@c AuthErrorCodeWebContextCancelled - Indicates that the URL presentation was
-     cancelled prematurely by the user.
-     </li>
-     <li>@c AuthErrorCodeAccountExistsWithDifferentCredential - Indicates the email asserted
-     by the credential (e.g. the email in a Facebook access token) is already in use by an
-     existing account, that cannot be authenticated with this sign-in method. Call
-     fetchProvidersForEmail for this user’s email and then prompt them to sign in with any of
-     the sign-in providers returned. This error will only be thrown if the "One account per
-     email address" setting is enabled in the Firebase console, under Auth settings.
-     </li>
-     </ul>
-
-     @remarks See @c AuthErrors for a list of error codes that are common to all API methods.
-     */
-    
-    public func signIn(with provider: FederatedAuthProvider,
-                       uiDelegate: AuthUIDelegate?,
-                       completion: ((AuthDataResult?, Error?) -> Void)?) {
-      kAuthGlobalWorkQueue.async {
-        let decoratedCallback = self.signInFlowAuthDataResultCallback(byDecorating: completion)
-        provider.getCredentialWith(uiDelegate) { rawCredential, error in
-          if let error {
-            decoratedCallback(nil, error)
-            return
-          }
-          guard let credential = rawCredential else {
-            fatalError("Internal Auth Error: Failed to get a AuthCredential")
-          }
-          self.internalSignInAndRetrieveData(withCredential: credential,
-                                             isReauthentication: false,
-                                             callback: decoratedCallback)
-        }
-      }
-    }
-
     /** @fn signInWithProvider:UIDelegate:completion:
      @brief Signs in using the provided auth provider instance.
      This method is available on iOS, macOS Catalyst, and tvOS only.
@@ -499,15 +454,8 @@ extension Auth: AuthInterop {
     @available(watchOS, unavailable)
     public func signIn(with provider: FederatedAuthProvider,
                        uiDelegate: AuthUIDelegate?) async throws -> AuthDataResult {
-      return try await withCheckedThrowingContinuation { continuation in
-        self.signIn(with: provider, uiDelegate: uiDelegate) { result, error in
-          if let result {
-            continuation.resume(returning: result)
-          } else {
-            continuation.resume(throwing: error!)
-          }
-        }
-      }
+      let credential = try await provider.credential(with: uiDelegate)
+      return try await signIn(with: credential)
     }
   #endif // iOS
 
@@ -1273,25 +1221,39 @@ extension Auth: AuthInterop {
   }
 
   #if os(iOS)
+    /// The APNs token used for phone number authentication.
+    ///
+    /// There's no app delegate swizzling in this port, so phone auth needs the app to pass
+    /// the token to `setAPNSToken(_:type:)`.
+    public var apnsToken: Data? {
+      tokenManager?.token?.data
+    }
+
+    /// Sets the APNs token along with its type. Call it from
+    /// `application(_:didRegisterForRemoteNotificationsWithDeviceToken:)`.
     public func setAPNSToken(_ token: Data, type: AuthAPNSTokenType) {
-      _state.withLock { state in
-        state.tokenManager.token = AuthAPNSToken(withData: token, type: type)
-      }
+      tokenManager?.token = AuthAPNSToken(withData: token, type: type)
     }
 
+    /// Fails a pending APNs token request. Call it from
+    /// `application(_:didFailToRegisterForRemoteNotificationsWithError:)`.
+    public func apnsTokenRegistrationDidFail(with error: Error) {
+      tokenManager?.cancel(withError: error)
+    }
+
+    /// Whether the remote notification is for `Auth`. Pass every remote notification here
+    /// from `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`, and ignore
+    /// the ones it returns `true` for.
     public func canHandleNotification(_ userInfo: [AnyHashable: Any]) -> Bool {
-      _state.withLock { state in
-        state.notificationManager.canHandle(notification: userInfo)
-      }
+      notificationManager?.canHandle(notification: userInfo) ?? false
     }
 
+    /// Whether the URL is for `Auth`. Pass URLs the app opens here (from
+    /// `application(_:open:options:)` or `scene(_:openURLContexts:)`), and ignore the ones it
+    /// returns `true` for.
+    @MainActor
     public func canHandle(_ url: URL) -> Bool {
-      _state.withLock { state in
-        guard let presenter = state.authURLPresenter as? AuthURLPresenter else {
-          return false
-        }
-        return presenter.canHandle(url: url)
-      }
+      authURLPresenter.canHandle(url: url)
     }
   #endif
 
@@ -1324,10 +1286,10 @@ extension Auth: AuthInterop {
     initialState.mainBundleUrlTypes = Bundle.main
       .object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]]
     #if os(iOS)
-      initialState.authURLPresenter = AuthURLPresenter()
       initialState.settings = AuthSettings()
     #endif
     self._state = Mutex(initialState)
+    _state.withLock { $0.requestConfiguration.auth = self }
 
     _state.withLock { state in
       _protectedDataInitialization(keychainStorageProvider, state: &state)
@@ -1368,8 +1330,17 @@ extension Auth: AuthInterop {
     }
 
     #if os(iOS)
-      // TODO: re-port the iOS phone-auth managers; the previous WIP referenced an
-      // undefined `strongSelf` and never compiled. Tracking issue: phase 6.
+      // App extensions can't use UIApplication, and so can't use phone auth.
+      if !Bundle.main.bundlePath.hasSuffix(".appex"), state.tokenManager == nil {
+        let application = AuthSharedApplication()
+        let appCredentialManager = AuthAppCredentialManager(withKeychain: state.keychainServices)
+        state.tokenManager = AuthAPNSTokenManager(withApplication: application)
+        state.appCredentialManager = appCredentialManager
+        state.notificationManager = AuthNotificationManager(
+          withApplication: application,
+          appCredentialManager: appCredentialManager
+        )
+      }
     #endif
   }
 
@@ -1687,41 +1658,20 @@ extension Auth: AuthInterop {
           // Special case for phone auth credentials
           let operation = isReauthentication ? AuthOperationType.reauth : AuthOperationType
               .signUpOrSignIn
-          signIn(withPhoneCredential: phoneCredential,
-                 operation: operation) { rawResponse, error in
-              if let callback {
-                  if let error {
-                      callback(nil, error)
-                      return
-                  }
-                  guard let response = rawResponse as? VerifyPhoneNumberResponse else {
-                      fatalError("Internal Auth Error: Failed to get a VerifyPhoneNumberResponse")
-                  }
-                  self.completeSignIn(withAccessToken: response.idToken,
-                                      accessTokenExpirationDate: response.approximateExpirationDate,
-                                      refreshToken: response.refreshToken,
-                                      anonymous: false) { user, error in
-                      if let error {
-                          callback(nil, error)
-                          return
-                      }
-                      if let user {
-                          let additionalUserInfo = AdditionalUserInfo(providerID: PhoneAuthProvider.id,
-                                                                      profile: nil,
-                                                                      username: nil,
-                                                                      isNewUser: response.isNewUser)
-                          let result = AuthDataResult(
-                            withUser: user,
-                            additionalUserInfo: additionalUserInfo
-                          )
-                          callback(result, nil)
-                      } else {
-                          callback(nil, nil)
-                      }
-                  }
-              }
+          let response = try await signIn(withPhoneCredential: phoneCredential,
+                                          operation: operation)
+          guard let idToken = response.idToken, let refreshToken = response.refreshToken else {
+              throw AuthErrorUtils.unexpectedResponse(deserializedResponse: response)
           }
-          return
+          let user = try await completeSignIn(withAccessToken: idToken,
+                                              accessTokenExpirationDate: response.approximateExpirationDate,
+                                              refreshToken: refreshToken,
+                                              anonymous: false)
+          let additionalUserInfo = AdditionalUserInfo(providerID: PhoneAuthProvider.id,
+                                                      profile: nil,
+                                                      username: nil,
+                                                      isNewUser: response.isNewUser)
+          return AuthDataResult(withUser: user, additionalUserInfo: additionalUserInfo)
       }
 #endif
       
@@ -1762,30 +1712,26 @@ extension Auth: AuthInterop {
             asynchronously on the global auth work queue in the future.
      */
     private func signIn(withPhoneCredential credential: PhoneAuthCredential,
-                        operation: AuthOperationType,
-                        callback: @escaping (AuthRPCResponse?, Error?) -> Void) {
+                        operation: AuthOperationType) async throws -> VerifyPhoneNumberResponse {
       switch credential.credentialKind {
       case let .phoneNumber(phoneNumber, temporaryProof):
         let request = VerifyPhoneNumberRequest(temporaryProof: temporaryProof,
                                                phoneNumber: phoneNumber,
                                                operation: operation,
                                                requestConfiguration: requestConfiguration)
-        AuthBackend.post(withRequest: request, callback: callback)
-        return
+        return try await AuthBackend.post(withRequest: request)
       case let .verification(verificationID, code):
-        guard verificationID.count > 0 else {
-          callback(nil, AuthErrorUtils.missingVerificationIDError(message: nil))
-          return
+        guard !verificationID.isEmpty else {
+          throw AuthErrorUtils.missingVerificationIDError(message: nil)
         }
-        guard code.count > 0 else {
-          callback(nil, AuthErrorUtils.missingVerificationCodeError(message: nil))
-          return
+        guard !code.isEmpty else {
+          throw AuthErrorUtils.missingVerificationCodeError(message: nil)
         }
         let request = VerifyPhoneNumberRequest(verificationID: verificationID,
                                                verificationCode: code,
                                                operation: operation,
                                                requestConfiguration: requestConfiguration)
-        AuthBackend.post(withRequest: request, callback: callback)
+        return try await AuthBackend.post(withRequest: request)
       }
     }
   #endif
@@ -1904,26 +1850,20 @@ extension Auth: AuthInterop {
 
   #if os(iOS)
 
-    // TODO: the next three should be internal after Sample is ported.
-    public var tokenManager: AuthAPNSTokenManager! {
-      get { _state.withLock { $0.tokenManager } }
-      set { _state.withLock { $0.tokenManager = newValue } }
+    /// The phone auth managers. Nil in app extensions, which can't use phone auth.
+    var tokenManager: AuthAPNSTokenManager? {
+      _state.withLock { $0.tokenManager }
     }
 
-    public var appCredentialManager: AuthAppCredentialManager! {
-      get { _state.withLock { $0.appCredentialManager } }
-      set { _state.withLock { $0.appCredentialManager = newValue } }
+    var appCredentialManager: AuthAppCredentialManager? {
+      _state.withLock { $0.appCredentialManager }
     }
 
-    public var notificationManager: AuthNotificationManager! {
-      get { _state.withLock { $0.notificationManager } }
-      set { _state.withLock { $0.notificationManager = newValue } }
+    var notificationManager: AuthNotificationManager? {
+      _state.withLock { $0.notificationManager }
     }
 
-    internal var authURLPresenter: AuthWebViewControllerDelegate {
-      get { _state.withLock { $0.authURLPresenter! } }
-      set { _state.withLock { $0.authURLPresenter = newValue } }
-    }
+    let authURLPresenter = AuthURLPresenter()
 
   #endif // TARGET_OS_IOS
 
@@ -1961,10 +1901,9 @@ extension Auth: AuthInterop {
     var listenerHandles: [any NSObjectProtocol] = []
 
     #if os(iOS)
-      var tokenManager: AuthAPNSTokenManager!
-      var appCredentialManager: AuthAppCredentialManager!
-      var notificationManager: AuthNotificationManager!
-      var authURLPresenter: AuthWebViewControllerDelegate!
+      var tokenManager: AuthAPNSTokenManager?
+      var appCredentialManager: AuthAppCredentialManager?
+      var notificationManager: AuthNotificationManager?
       var applicationDidBecomeActiveObserver: AnyObject?
       var applicationDidEnterBackgroundObserver: AnyObject?
       var protectedDataDidBecomeAvailableObserver: AnyObject?

@@ -5,6 +5,14 @@ import PackageDescription
 // FirebaseVersion() in Sources/FirebaseCore/App.swift; see UPSTREAM.md.
 let firebaseVersion = "12.14.0"
 
+/// Firestore and the dependencies only it needs (gRPC, abseil, nanopb), which are by far the
+/// largest. Apps that don't use Firestore can disable the trait so SwiftPM doesn't fetch them:
+/// `.package(url: ..., traits: [])`. Enabled by default, as in firebase-ios-sdk 13.
+let firestoreTrait = Trait(
+  name: "Firestore",
+  description: "Enables Firestore support and its underlying dependencies (gRPC, Abseil)."
+)
+
 let package = Package(
     name: "firebase-swift",
     platforms: [
@@ -21,6 +29,10 @@ let package = Package(
         .library(name: "FirebaseFunctions", targets: ["FirebaseFunctions"]),
         .library(name: "FirebaseStorage", targets: ["FirebaseStorage"]),
         .library(name: "FirebaseFirestore", targets: ["FirebaseFirestore"]),
+    ],
+    traits: [
+        firestoreTrait,
+        .default(enabledTraits: [firestoreTrait.name]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
@@ -140,9 +152,12 @@ let package = Package(
             "FirebaseCore",
             "leveldb",
             .product(name: "Logging", package: "swift-log"),
-            .product(name: "nanopb", package: "nanopb"),
-            .product(name: "abseil", package: "abseil-cpp-SwiftPM"),
-            .product(name: "gRPC-cpp", package: "grpc-ios"),
+            .product(name: "nanopb", package: "nanopb",
+                     condition: .when(traits: [firestoreTrait.name])),
+            .product(name: "abseil", package: "abseil-cpp-SwiftPM",
+                     condition: .when(traits: [firestoreTrait.name])),
+            .product(name: "gRPC-cpp", package: "grpc-ios",
+                     condition: .when(traits: [firestoreTrait.name])),
           ],
           path: "Sources/Firestore",
           exclude: [ // ObjC removed
@@ -320,7 +335,7 @@ let package = Package(
         ),
     ],
     swiftLanguageModes: [.v6],
-    // Matches upstream firebase-ios-sdk 12.19 and its abseil/gRPC pins. Abseil
+    // Matches upstream firebase-ios-sdk 13.1 and its abseil/gRPC pins. Abseil
     // builds its own absl::string_view below C++17, so every C++ target must
     // agree on the standard or the link fails.
     cxxLanguageStandard: .gnucxx17

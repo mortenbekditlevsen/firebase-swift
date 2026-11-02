@@ -28,19 +28,15 @@ import Foundation
         @brief This is the phone number associated with the current second factor.
      */
     public var phoneNumber: String
-    override public init(proto: AuthProtoMFAEnrollment) {
+    /// Returns `nil` if the enrollment has no enrollment ID or phone number.
+    override init?(proto: AuthProtoMFAEnrollment) {
       guard let phoneInfo = proto.phoneInfo else {
-        fatalError("Internal Auth Error: Missing phone number in Multi Factor Enrollment")
+        return nil
       }
       phoneNumber = phoneInfo
       super.init(proto: proto)
       factorID = Self.PhoneMultiFactorID
     }
-       
-       required init(from decoder: Decoder) throws {
-           // XXX TODO: implement secure coding pattern
-           fatalError("init(from:) has not been implemented")
-       }
        
 //    // MARK: NSSecureCoding
 //

@@ -21,6 +21,7 @@
   /** @protocol AuthWebViewControllerDelegate
       @brief Defines a delegate for AuthWebViewController
    */
+  @MainActor
   protocol AuthWebViewControllerDelegate: AnyObject {
     /** @fn webViewControllerDidCancel:
         @brief Notifies the delegate that the web view controller is being cancelled by the user.
@@ -41,18 +42,6 @@
         @param error The error that has occurred.
      */
     func webViewController(_ controller: AuthWebViewController, didFailWithError error: Error)
-
-    /** @fn presentURL:UIDelegate:callbackMatcher:completion:
-        @brief Presents an URL to interact with user.
-        @param url The URL to present.
-        @param uiDelegate The UI delegate to present view controller.
-        @param completion A block to be called either synchronously if the presentation fails to start,
-            or asynchronously in future on an unspecified thread once the presentation finishes.
-     */
-    func present(_ url: URL,
-                 uiDelegate: AuthUIDelegate?,
-                 callbackMatcher: @escaping (URL?) -> Bool,
-                 completion: @escaping (URL?, Error?) -> Void)
   }
 
   class AuthWebViewController: UIViewController,
@@ -103,17 +92,15 @@
 
     // MARK: - WKNavigationDelegate
 
-    public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-      let canHandleURL = delegate?.webViewController(
+    public func webView(_ webView: WKWebView,
+                        decidePolicyFor navigationAction: WKNavigationAction) async
+      -> WKNavigationActionPolicy {
+      // Navigation always continues: the port cancelled every page but the callback.
+      _ = delegate?.webViewController(
         self,
         canHandle: navigationAction.request.url ?? url
-      ) ?? false
-      if canHandleURL {
-        decisionHandler(.allow)
-      } else {
-        decisionHandler(.cancel)
-      }
+      )
+      return .allow
     }
 
     public func webView(_ webView: WKWebView,

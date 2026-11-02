@@ -16,8 +16,8 @@ import Foundation
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 
-public struct VerifyClientRequest: IdentityToolkitRequest, AuthRPCRequest, Encodable {
-    public typealias Response = VerifyClientResponse
+struct VerifyClientRequest: IdentityToolkitRequest, AuthRPCRequest, Encodable {
+    typealias Response = VerifyClientResponse
 
   /// The endpoint for the verifyClient request.
   private static let verifyClientEndpoint = "verifyClient"
@@ -40,7 +40,10 @@ public struct VerifyClientRequest: IdentityToolkitRequest, AuthRPCRequest, Encod
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(self.appToken, forKey: .appToken)
-        try container.encode(self.isSandbox, forKey: .isSandbox)
+        // Upstream only sends the flag when it's set.
+        if isSandbox {
+            try container.encode(true, forKey: .isSandbox)
+        }
     }
 
   /// The APNS device token.
@@ -57,10 +60,10 @@ public struct VerifyClientRequest: IdentityToolkitRequest, AuthRPCRequest, Encod
     var useStaging: Bool { false }
     var useIdentityPlatform: Bool { false }
 
-  public init(withAppToken: String?,
+  init(withAppToken appToken: String?,
                     isSandbox: Bool,
                     requestConfiguration: AuthRequestConfiguration) {
-    appToken = withAppToken
+    self.appToken = appToken
     self.isSandbox = isSandbox
       self.requestConfiguration = requestConfiguration
   }

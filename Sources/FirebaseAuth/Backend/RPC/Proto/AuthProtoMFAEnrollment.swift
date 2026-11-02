@@ -14,7 +14,7 @@
 
 import Foundation
 
-public struct AuthProtoMFAEnrollment: Decodable, Sendable {
+public struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
     public var phoneInfo: String?
     
     public var mfaEnrollmentID: String?
@@ -30,17 +30,33 @@ public struct AuthProtoMFAEnrollment: Decodable, Sendable {
         case enrolledAt
     }
     
+    /// The backend's format for `enrolledAt`. Encoding uses it too, so a user saved with its
+    /// enrollments decodes the same way.
+    private static func dateFormatter() -> DateFormatter {
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        return dateFormatter
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.phoneInfo = try container.decodeIfPresent(String.self, forKey: .phoneInfo)
         self.mfaEnrollmentID = try container.decodeIfPresent(String.self, forKey: .mfaEnrollmentID)
         self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         if let enrolledAtString = try container.decodeIfPresent(String.self, forKey: .enrolledAt) {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-            self.enrolledAt = dateFormatter.date(from: enrolledAtString)
+            self.enrolledAt = Self.dateFormatter().date(from: enrolledAtString)
         } else {
             self.enrolledAt = nil
         }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(phoneInfo, forKey: .phoneInfo)
+        try container.encodeIfPresent(mfaEnrollmentID, forKey: .mfaEnrollmentID)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
+        try container.encodeIfPresent(enrolledAt.map { Self.dateFormatter().string(from: $0) },
+                                      forKey: .enrolledAt)
     }
 }

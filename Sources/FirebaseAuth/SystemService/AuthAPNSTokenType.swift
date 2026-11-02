@@ -19,7 +19,7 @@
    *  @brief The APNs token type for the app.
    *      This enum is available on iOS, macOS Catalyst, tvOS, and watchOS only.
    */
-   public enum AuthAPNSTokenType: Int {
+   public enum AuthAPNSTokenType: Int, Sendable {
     /** Unknown token type.
         The actual token type will be detected from the provisioning profile in the app's bundle.
      */

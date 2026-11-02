@@ -110,12 +110,10 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
     }
     
 #if os(iOS)
-    /** @property multiFactor
-     @brief Multi factor object associated with the user.
-     This property is available on iOS only.
-     */
-    @MainActor
-    public private(set) var multiFactor: MultiFactor
+    /// Multi factor object associated with the user. This property is available on iOS only.
+    public var multiFactor: MultiFactor {
+        MultiFactor(user: self, enrollments: userdata.mfaEnrollments)
+    }
 #endif
     
     /** @fn updateEmail:completion:
@@ -233,67 +231,16 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
      */
     
 #if os(iOS)
-    /** @fn updatePhoneNumberCredential:completion:
-     @brief Updates the phone number for the user. On success, the cached user profile data is
-     updated.
-     This method is available on iOS only.
-     
-     @param phoneNumberCredential The new phone number credential corresponding to the phone number
-     to be added to the Firebase account, if a phone number is already linked to the account this
-     new phone number will replace it.
-     @param completion Optionally; the block invoked when the user profile change has finished.
-     Invoked asynchronously on the main thread in the future.
-     
-     @remarks Possible error codes:
-     
-     + `AuthErrorCodeRequiresRecentLogin` - Updating a user’s phone number is a security
-     sensitive operation that requires a recent login from the user. This error indicates
-     the user has not signed in recently enough. To resolve, reauthenticate the user by
-     calling `reauthenticate(with:)`.
-     
-     @remarks See `AuthErrors` for a list of error codes that are common to all `User` methods.
-     */
-    
-    public func updatePhoneNumber(_ credential: PhoneAuthCredential,
-                                  completion: ((Error?) -> Void)? = nil) {
-        kAuthGlobalWorkQueue.async {
-            self.internalUpdateOrLinkPhoneNumber(credential: credential,
-                                                 isLinkOperation: false) { error in
-                User.callInMainThreadWithError(callback: completion, error: error)
-            }
-        }
-    }
-    
-    /** @fn updatePhoneNumberCredential
-     @brief Updates the phone number for the user. On success, the cached user profile data is
-     updated.
-     This method is available on iOS only.
-     
-     @param phoneNumberCredential The new phone number credential corresponding to the phone number
-     to be added to the Firebase account, if a phone number is already linked to the account this
-     new phone number will replace it.
-     @throws an error.
-     
-     @remarks Possible error codes:
-     
-     + `AuthErrorCodeRequiresRecentLogin` - Updating a user’s phone number is a security
-     sensitive operation that requires a recent login from the user. This error indicates
-     the user has not signed in recently enough. To resolve, reauthenticate the user by
-     calling `reauthenticate(with:)`.
-     
-     @remarks See `AuthErrors` for a list of error codes that are common to all `User` methods.
-     */
-    @available(iOS 13, tvOS 13, macOS 10.15, macCatalyst 13, watchOS 7, *)
+    /// Updates the phone number for the user. On success, the cached user profile data is
+    /// updated. This method is available on iOS only.
+    ///
+    /// - Parameter credential: The new phone number credential corresponding to the phone number
+    ///   to be added to the Firebase account. If a phone number is already linked to the account,
+    ///   this new phone number replaces it.
+    /// - Throws: `AuthErrorCode.requiresRecentLogin` if the user hasn't signed in recently enough;
+    ///   reauthenticate with `reauthenticate(with:)`.
     public func updatePhoneNumber(_ credential: PhoneAuthCredential) async throws {
-        return try await withCheckedThrowingContinuation { continuation in
-            self.updatePhoneNumber(credential) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
+        try await internalUpdateOrLinkPhoneNumber(credential: credential, isLinkOperation: false)
     }
 #endif
     
@@ -452,59 +399,17 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
   
     
 #if os(iOS)
-    /** @fn reauthenticateWithProvider:UIDelegate:completion:
-     @brief Renews the user's authentication using the provided auth provider instance.
-     This method is available on iOS only.
-     
-     @param provider An instance of an auth provider used to initiate the reauthenticate flow.
-     @param UIDelegate Optionally an instance of a class conforming to the `AuthUIDelegate`
-     protocol, used for presenting the web context. If nil, a default `AuthUIDelegate`
-     will be used.
-     @param completion Optionally; a block which is invoked when the reauthenticate flow finishes, or
-     is canceled. Invoked asynchronously on the main thread in the future.
-     */
-    
-    public func reauthenticate(with provider: FederatedAuthProvider,
-                               uiDelegate: AuthUIDelegate?,
-                               completion: ((AuthDataResult?, Error?) -> Void)? = nil) {
-        kAuthGlobalWorkQueue.async {
-            provider.getCredentialWith(uiDelegate) { credential, error in
-                if let error {
-                    if let completion {
-                        completion(nil, error)
-                    }
-                    return
-                }
-                if let credential {
-                    self.reauthenticate(with: credential, completion: completion)
-                }
-            }
-        }
-    }
-    
-    /** @fn reauthenticateWithProvider:UIDelegate
-     @brief Renews the user's authentication using the provided auth provider instance.
-     This method is available on iOS only.
-     
-     @param provider An instance of an auth provider used to initiate the reauthenticate flow.
-     @param UIDelegate Optionally an instance of a class conforming to the `AuthUIDelegate`
-     protocol, used for presenting the web context. If nil, a default `AuthUIDelegate`
-     will be used.
-     @returns An AuthDataResult.
-     */
-    @available(iOS 13, tvOS 13, macOS 10.15, macCatalyst 13, watchOS 7, *)
+    /// Renews the user's authentication using the provided auth provider instance. This method
+    /// is available on iOS only.
+    ///
+    /// - Parameter provider: An auth provider used to initiate the reauthenticate flow.
+    /// - Parameter uiDelegate: Optionally, an `AuthUIDelegate` used to present the web context.
+    ///   If nil, a default one is used.
     @discardableResult
     public func reauthenticate(with provider: FederatedAuthProvider,
                                uiDelegate: AuthUIDelegate?) async throws -> AuthDataResult {
-        return try await withCheckedThrowingContinuation { continuation in
-            self.reauthenticate(with: provider, uiDelegate: uiDelegate) { result, error in
-                if let result {
-                    continuation.resume(returning: result)
-                } else if let error {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        let credential = try await provider.credential(with: uiDelegate)
+        return try await reauthenticate(with: credential)
     }
 #endif
     
@@ -700,60 +605,17 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
      @remarks See `AuthErrors` for a list of error codes that are common to all `User` methods.
      */
 #if os(iOS)
-    /** @fn linkWithProvider:UIDelegate:completion:
-     @brief link the user with the provided auth provider instance.
-     This method is available on iOSonly.
-     
-     @param provider An instance of an auth provider used to initiate the link flow.
-     @param UIDelegate Optionally an instance of a class conforming to the `AuthUIDelegate`
-     protocol used for presenting the web context. If nil, a default `AuthUIDelegate`
-     will be used.
-     @param completion Optionally; a block which is invoked when the link flow finishes, or
-     is canceled. Invoked asynchronously on the main thread in the future.
-     */
-    
-    public func link(with provider: FederatedAuthProvider,
-                     uiDelegate: AuthUIDelegate?,
-                     completion: ((AuthDataResult?, Error?) -> Void)? = nil) {
-        kAuthGlobalWorkQueue.async {
-            provider.getCredentialWith(uiDelegate) { credential, error in
-                if let error {
-                    if let completion {
-                        completion(nil, error)
-                    }
-                } else {
-                    guard let credential else {
-                        fatalError("Failed to get credential for link withProvider")
-                    }
-                    self.link(with: credential, completion: completion)
-                }
-            }
-        }
-    }
-    
-    /** @fn linkWithProvider:UIDelegate:
-     @brief link the user with the provided auth provider instance.
-     This method is available on iOS, macOS Catalyst, and tvOS only.
-     
-     @param provider An instance of an auth provider used to initiate the link flow.
-     @param UIDelegate Optionally an instance of a class conforming to the `AuthUIDelegate`
-     protocol used for presenting the web context. If nil, a default `AuthUIDelegate`
-     will be used.
-     @returns An AuthDataResult.
-     */
-    @available(iOS 13, tvOS 13, macOS 10.15, macCatalyst 13, watchOS 7, *)
+    /// Links the user with the provided auth provider instance. This method is available on iOS
+    /// only.
+    ///
+    /// - Parameter provider: An auth provider used to initiate the link flow.
+    /// - Parameter uiDelegate: Optionally, an `AuthUIDelegate` used to present the web context.
+    ///   If nil, a default one is used.
     @discardableResult
     public func link(with provider: FederatedAuthProvider,
                      uiDelegate: AuthUIDelegate?) async throws -> AuthDataResult {
-        return try await withCheckedThrowingContinuation { continuation in
-            self.link(with: provider, uiDelegate: uiDelegate) { result, error in
-                if let result {
-                    continuation.resume(returning: result)
-                } else if let error {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        let credential = try await provider.credential(with: uiDelegate)
+        return try await link(with: credential)
     }
 #endif
     
@@ -806,7 +668,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
             // After successfully unlinking a phone auth provider, remove the phone number
             // from the cached user info.
             if provider == PhoneAuthProvider.id {
-                self.phoneNumber = nil
+                self.userdata.phoneNumber = nil
             }
 #endif
             if let idToken = response.idToken,
@@ -1324,84 +1186,48 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
             }
         }
         userdata.providerDataRaw = providerData
-#if os(iOS)
-        if let enrollments = user.mfaEnrollments {
-            userdata.multiFactor = MultiFactor(withMFAEnrollments: enrollments)
-        }
-        userdata.multiFactor.user = self
-#endif
+        userdata.mfaEnrollments = user.mfaEnrollments ?? []
     }
     
 #if os(iOS)
-    /** @fn internalUpdateOrLinkPhoneNumber
-     @brief Updates the phone number for the user. On success, the cached user profile data is
-     updated.
-     
-     @param phoneAuthCredential The new phone number credential corresponding to the phone number
-     to be added to the Firebase account, if a phone number is already linked to the account this
-     new phone number will replace it.
-     @param isLinkOperation Boolean value indicating whether or not this is a link operation.
-     @param completion Optionally; the block invoked when the user profile change has finished.
-     Invoked asynchronously on the global work queue in the future.
-     */
+    /// Updates or links the user's phone number. On success, the cached user profile data is
+    /// updated.
     private func internalUpdateOrLinkPhoneNumber(credential: PhoneAuthCredential,
-                                                 isLinkOperation: Bool,
-                                                 completion: @escaping (Error?) -> Void) {
-        internalGetToken { accessToken, error in
-            if let error {
-                completion(error)
-                return
-            }
-            guard let accessToken = accessToken else {
-                fatalError("Auth Internal Error: Both accessToken and error are nil")
-            }
-            guard let configuration = self.auth?.requestConfiguration else {
-                fatalError("Auth Internal Error: nil value for VerifyPhoneNumberRequest initializer")
-            }
-            switch credential.credentialKind {
-            case .phoneNumber: fatalError("Internal Error: Missing verificationCode")
-            case let .verification(verificationID, code):
-                let operation = isLinkOperation ? AuthOperationType.link : AuthOperationType.update
-                let request = VerifyPhoneNumberRequest(verificationID: verificationID,
-                                                       verificationCode: code,
-                                                       operation: operation,
-                                                       requestConfiguration: configuration)
-                request.accessToken = accessToken
-                AuthBackend.post(withRequest: request) { response, error in
-                    if let error {
-                        self.signOutIfTokenIsInvalid(withError: error)
-                        completion(error)
-                        return
-                    }
-                    // Update the new token and refresh user info again.
-                    if let verifyResponse = response as? VerifyPhoneNumberResponse {
-                        if let idToken = verifyResponse.idToken,
-                           let refreshToken = verifyResponse.refreshToken {
-                            self.tokenService = SecureTokenService(
-                                withRequestConfiguration: configuration,
-                                accessToken: idToken,
-                                accessTokenExpirationDate: verifyResponse.approximateExpirationDate,
-                                refreshToken: refreshToken
-                            )
-                        }
-                    }
-                    // Get account info to update cached user info.
-                    self.getAccountInfoRefreshingCache { user, error in
-                        if let error {
-                            self.signOutIfTokenIsInvalid(withError: error)
-                            completion(error)
-                            return
-                        }
-                        self.isAnonymous = false
-                        if let error = self.updateKeychain() {
-                            completion(error)
-                            return
-                        }
-                        completion(nil)
-                    }
-                }
-            }
+                                                 isLinkOperation: Bool) async throws {
+        let accessToken = try await internalGetToken()
+        guard let configuration = auth?.requestConfiguration else {
+            throw AuthErrorUtils.nullUserError(message: nil)
         }
+        guard case let .verification(verificationID, code) = credential.credentialKind else {
+            throw AuthErrorUtils.error(code: .internalError,
+                                       message: "A phone credential needs a verification code.")
+        }
+        var request = VerifyPhoneNumberRequest(
+            verificationID: verificationID,
+            verificationCode: code,
+            operation: isLinkOperation ? .link : .update,
+            requestConfiguration: configuration
+        )
+        request.accessToken = accessToken
+        let response: VerifyPhoneNumberResponse
+        do {
+            response = try await AuthBackend.post(withRequest: request)
+        } catch {
+            await signOutIfSessionIsInvalid(afterIDTokenRequestError: error)
+            throw error
+        }
+        // Update the token, then refresh the user's info.
+        if let idToken = response.idToken, let refreshToken = response.refreshToken {
+            try await setTokenService(tokenService: SecureTokenService(
+                withRequestConfiguration: configuration,
+                accessToken: idToken,
+                accessTokenExpirationDate: response.approximateExpirationDate,
+                refreshToken: refreshToken
+            ))
+        }
+        _ = try await getAccountInfoRefreshingCache()
+        userdata.isAnonymous = false
+        try updateKeychain()
     }
 #endif
     
@@ -1487,25 +1313,10 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
   #endif
 
   #if os(iOS)
-    private func link(withPhoneCredential phoneCredential: PhoneAuthCredential,
-                      completion: ((AuthDataResult?, Error?) -> Void)?) {
-      internalUpdateOrLinkPhoneNumber(credential: phoneCredential,
-                                      isLinkOperation: true) { error in
-        if let error {
-          User.callInMainThreadWithAuthDataResultAndError(
-            callback: completion,
-            result: nil,
-            error: error
-          )
-        } else {
-          let result = AuthDataResult(withUser: self, additionalUserInfo: nil)
-          User.callInMainThreadWithAuthDataResultAndError(
-            callback: completion,
-            result: result,
-            error: nil
-          )
-        }
-      }
+    private func link(withPhoneCredential phoneCredential: PhoneAuthCredential) async throws
+      -> AuthDataResult {
+      try await internalUpdateOrLinkPhoneNumber(credential: phoneCredential, isLinkOperation: true)
+      return AuthDataResult(withUser: self, additionalUserInfo: nil)
     }
   #endif
 
@@ -1674,6 +1485,8 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
 }
 
 struct UserData: Codable, Equatable, Sendable {
+    /// The user's second factors, as the backend lists them (`MultiFactor` presents them).
+    var mfaEnrollments: [AuthProtoMFAEnrollment]
     var isAnonymous: Bool
     var uid: String
     var displayName: String?
@@ -1715,9 +1528,7 @@ struct UserData: Codable, Equatable, Sendable {
         try container.encode(requestConfiguration.apiKey, forKey: .APIKey)
         try container.encode(requestConfiguration.appID, forKey: .appID)
         try container.encode(tokenService, forKey: .tokenService)
-#if os(iOS)
-        try container.encode(multiFactor, forKey: .multiFactor)
-#endif
+        try container.encode(mfaEnrollments, forKey: .multiFactor)
     }
     
     public init(from decoder: Decoder) throws {
@@ -1747,12 +1558,8 @@ struct UserData: Codable, Equatable, Sendable {
         // The `heartbeatLogger` and `appCheck` will be set later via a property update.
         self.requestConfiguration = AuthRequestConfiguration(apiKey: apiKey, appID: appID)
 //        self.taskQueue = AuthSerialTaskQueue()
-#if os(iOS)
-        // XXX TODO: Is this correct?
-        let multiFactor = MultiFactor()
-        self.multiFactor = multiFactor
-        multiFactor.user = self
-#endif
+        self.mfaEnrollments = try container.decodeIfPresent([AuthProtoMFAEnrollment].self,
+                                                            forKey: .multiFactor) ?? []
     }
 
     init(withTokenService tokenService: SecureTokenService) {
@@ -1762,9 +1569,7 @@ struct UserData: Codable, Equatable, Sendable {
         isEmailVerified = false
         metadata = UserMetadata(withCreationDate: nil, lastSignInDate: nil)
         tenantID = nil
-#if os(iOS)
-        multiFactor = MultiFactor(withMFAEnrollments: [])
-#endif
+        mfaEnrollments = []
         uid = ""
         hasEmailPasswordCredential = false
         requestConfiguration = AuthRequestConfiguration(apiKey: "", appID: "")

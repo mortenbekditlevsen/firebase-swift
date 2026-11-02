@@ -4,5 +4,6 @@
 .vscode/
 .build-linux/
 .build-linux-clean/
+.build-ios-packages/
 *-debug.log
 node_modules/

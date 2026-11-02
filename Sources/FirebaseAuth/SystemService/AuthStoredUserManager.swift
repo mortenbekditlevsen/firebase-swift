@@ -205,6 +205,12 @@ import Foundation
     ]
     query[kSecUseDataProtectionKeychain as String] = true
 
+    // Entries shared across devices are iCloud keychain items, which queries only find with
+    // `kSecAttrSynchronizable`.
+    if shareAuthStateAcrossDevices {
+      query[kSecAttrSynchronizable as String] = true
+    }
+
     return query
       #endif
   }

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import Synchronization
 //import FirebaseCoreExtension
 
 /** @var kAccountPrefix
@@ -26,6 +27,40 @@ private let kAccountPrefix = "firebase_auth_1_"
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 final class AuthKeychainServices: AuthStorage {
+  #if !os(Linux) && !os(Android)
+    /// Whether this process can use the data protection keychain. Signed apps can; unsigned
+    /// binaries, such as command line tools and `swift test` runners, get
+    /// `errSecMissingEntitlement`. Checked once per process, with a write: lookups of missing
+    /// items succeed without the entitlement.
+    static let isAvailable: Bool = {
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "firebase_auth_keychain_availability_check",
+        kSecAttrAccount as String: "firebase_auth_keychain_availability_check",
+        kSecUseDataProtectionKeychain as String: true,
+      ]
+      var item = query
+      item[kSecValueData as String] = Data([0])
+      let status = SecItemAdd(item as CFDictionary, nil)
+      SecItemDelete(query as CFDictionary)
+      return status != errSecMissingEntitlement
+    }()
+
+    /// Whether the keychain can be read right now: it can't while an iOS device is locked.
+    private func isKeychainAccessible() -> Bool {
+      let key = "firebase_auth_keychain_accessibility_check"
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrAccount as String: key,
+        kSecAttrService as String: service,
+        kSecValueData as String: Data([0]),
+        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        kSecUseDataProtectionKeychain as String: true,
+      ]
+      return SecItemAdd(query as CFDictionary, nil) != errSecInteractionNotAllowed
+    }
+  #endif
+
   /** @var _service
       @brief The name of the keychain service.
    */
@@ -37,7 +72,7 @@ final class AuthKeychainServices: AuthStorage {
       @remarks This dictionary is to avoid unecessary keychain operations against legacy items.
    */
 
-  private var legacyEntryDeletedForKey: Set<String> = []
+  private let legacyEntryDeletedForKey = Mutex<Set<String>>([])
 
   static func storage(identifier: String) -> Self {
     return Self(service: identifier)
@@ -56,7 +91,7 @@ final class AuthKeychainServices: AuthStorage {
     }
 
     // Check for legacy form.
-    if legacyEntryDeletedForKey.contains(key) {
+    if legacyEntryDeletedForKey.withLock({ $0.contains(key) }) {
       return nil
     }
     if let data = try item(query: legacyGenericPasswordQuery(key: key)) {
@@ -66,7 +101,7 @@ final class AuthKeychainServices: AuthStorage {
       return data
     } else {
       // Mark legacy data as non-existing so we don't have to query it again.
-      legacyEntryDeletedForKey.insert(key)
+      legacyEntryDeletedForKey.withLock { _ = $0.insert(key) }
       return nil
     }
   }
@@ -143,6 +178,12 @@ final class AuthKeychainServices: AuthStorage {
     }
 
     if status == errSecItemNotFound {
+      // iOS can report "not found" instead of errSecInteractionNotAllowed while the device is
+      // locked (e.g. during prewarming). Treating that as "no user" signs the user out.
+      guard isKeychainAccessible() else {
+        throw AuthErrorUtils.keychainError(function: "SecItemCopyMatching",
+                                           status: errSecInteractionNotAllowed)
+      }
       return nil
     } else {
       throw AuthErrorUtils.keychainError(function: "SecItemCopyMatching", status: status)
@@ -194,12 +235,12 @@ return
 return
 #else
 
-    if legacyEntryDeletedForKey.contains(key) {
+    if legacyEntryDeletedForKey.withLock({ $0.contains(key) }) {
       return
     }
     let query = legacyGenericPasswordQuery(key: key)
     SecItemDelete(query as CFDictionary)
-    legacyEntryDeletedForKey.insert(key)
+    legacyEntryDeletedForKey.withLock { _ = $0.insert(key) }
       #endif
   }
 

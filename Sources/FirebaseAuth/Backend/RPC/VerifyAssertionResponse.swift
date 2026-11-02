@@ -336,7 +336,8 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
          self.fullName = try container.decodeIfPresent(String.self, forKey: .fullName)
          self.nickName = try container.decodeIfPresent(String.self, forKey: .nickName)
          self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
-         self.idToken = try container.decode(String.self, forKey: .idToken)
+         // No ID token until a second factor is resolved (see AuthMFAResponse).
+         self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken) ?? ""
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
          self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
          self.action = try container.decodeIfPresent(String.self, forKey: .action)

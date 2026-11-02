@@ -21,12 +21,12 @@ public struct VerifyPhoneNumberResponse:
    access token from Secure Token Service, depending on whether @c returnSecureToken is set
    on the request.
    */
-   public var idToken: String
+   public var idToken: String?
 
   /** @property refreshToken
    @brief The refresh token from Secure Token Service.
    */
-  public var refreshToken: String
+  public var refreshToken: String?
 
   /** @property localID
    @brief The Firebase Auth user ID.
@@ -67,12 +67,12 @@ public struct VerifyPhoneNumberResponse:
     
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.idToken = try container.decode(String.self, forKey: .idToken)
-        self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
+        self.idToken = try container.decodeIfPresent(String.self, forKey: .idToken)
+        self.refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
         self.localID = try container.decodeIfPresent(String.self, forKey: .localID)
         self.phoneNumber = try container.decodeIfPresent(String.self, forKey: .phoneNumber)
         self.temporaryProof = try container.decodeIfPresent(String.self, forKey: .temporaryProof)
-        self.isNewUser = try container.decode(Bool.self, forKey: .isNewUser)
+        self.isNewUser = try container.decodeIfPresent(Bool.self, forKey: .isNewUser) ?? false
         self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
     }
 }

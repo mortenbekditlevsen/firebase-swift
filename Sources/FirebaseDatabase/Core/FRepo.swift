@@ -578,7 +578,11 @@ class FRepo: FPersistentConnectionDelegate {
     private func setupNotifications() {
 #if canImport(UIKit)
         FFLog("I-RDB038015", "Registering for background notification.")
-        NotificationCenter.default.addObserver(self, selector: #selector(didEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        // UIKit posts it on the main thread.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didEnterBackground() }
+        }
 #else
         FFLog("I-RDB038016",
               "Skipped registering for background notification.")
@@ -586,37 +590,42 @@ class FRepo: FPersistentConnectionDelegate {
     }
 
 #if canImport(UIKit)
-    @objc func didEnterBackground() {
+    /// Keeps the app running in the background until the database actor has worked
+    /// through what's queued, so outstanding sets get persisted.
+    @MainActor
+    private func didEnterBackground() {
         guard config.persistenceEnabled else {
             return
         }
 
-// Targetted compilation is ONLY for testing. UIKit is weak-linked in actual
-// release build.
         // The idea is to wait until any outstanding sets get written to disk. Since
-        // the sets might still be in our dispatch queue, we wait for the dispatch
-        // queue to catch up and for persistence to catch up. This may be
-        // undesirable though.  The dispatch queue might just be processing a bunch
-        // of incoming data or something.  We might want to keep track of whether
-        // there are any unpersisted sets or something.
+        // the sets might still be queued on the database actor, we wait for it to
+        // catch up and for persistence to catch up. This may be undesirable though.
+        // The actor might just be processing a bunch of incoming data or something.
+        // We might want to keep track of whether there are any unpersisted sets or
+        // something.
         FFLog("I-RDB038017",
               "Entering background.  Starting background task to finish work.")
 
-        var bgTask: UIBackgroundTaskIdentifier?
-        bgTask = UIApplication.shared.beginBackgroundTask {
-            if let bgTask = bgTask {
-                UIApplication.shared.endBackgroundTask(bgTask)
-            }
+        let application = UIApplication.shared
+        let backgroundTask = BackgroundTask()
+        backgroundTask.id = application.beginBackgroundTask {
+            application.endBackgroundTask(backgroundTask.id)
         }
 
         let start = Date()
-        dispatchQueue.async {
+        Task { @DatabaseActor in
             let finishTime = start.timeIntervalSinceNow * -1
             FFLog("I-RDB038018", "Background task completed.  Queue time: \(finishTime)")
-            if let bgTask = bgTask {
-                UIApplication.shared.endBackgroundTask(bgTask)
+            await MainActor.run {
+                application.endBackgroundTask(backgroundTask.id)
             }
         }
+    }
+
+    @MainActor
+    private final class BackgroundTask {
+        var id = UIBackgroundTaskIdentifier.invalid
     }
 #endif
 
