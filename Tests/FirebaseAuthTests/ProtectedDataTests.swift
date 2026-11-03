@@ -56,10 +56,10 @@
   @Suite(.serialized)
   struct ProtectedDataTests {
     private func makeApp(_ name: String) -> FirebaseApp {
-      FirebaseApp(options: FirebaseApp.Options(projectID: "project", googleAppID: "1:1:ios:1",
-                                               apiKey: "key", clientID: nil,
-                                               storageBucket: nil),
-                  name: name)
+      var options = FirebaseOptions(googleAppID: "1:1:ios:1", gcmSenderID: "1")
+      options.projectID = "project"
+      options.apiKey = "key"
+      return FirebaseApp(options: options, name: name)
     }
 
     @Test func theSavedUserIsLoadedOnceTheDeviceIsUnlocked() async throws {

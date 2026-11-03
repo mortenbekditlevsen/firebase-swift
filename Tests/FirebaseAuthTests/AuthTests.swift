@@ -46,13 +46,10 @@ final class AuthTests: RPCBaseTests {
       current += 1
       return current
     }
-    let options = FirebaseApp.Options(
-      projectID: "myProjectID",
-      googleAppID: AuthTests.kFakeGoogleAppID,
-      apiKey: AuthTests.kFakeAPIKey,
-      clientID: nil,
-      storageBucket: nil
-    )
+    var options = FirebaseOptions(googleAppID: AuthTests.kFakeGoogleAppID,
+                                  gcmSenderID: "00000000000000000-00000000000-000000000")
+    options.apiKey = AuthTests.kFakeAPIKey
+    options.projectID = "myProjectID"
     testApp = FirebaseApp(options: options, name: "test-AuthTests-\(n)")
     auth = Auth(app: testApp, keychainStorageProvider: FakeAuthKeychainServices.self)
   }

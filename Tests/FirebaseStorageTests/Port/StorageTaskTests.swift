@@ -18,8 +18,10 @@ import Foundation
 import Testing
 
 private func rootReference() -> StorageReference {
-  let options = FirebaseApp.Options(projectID: "project", googleAppID: "1:123:ios:123ab",
-                                    apiKey: "key", clientID: nil, storageBucket: "bucket")
+  var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
+  options.projectID = "project"
+  options.apiKey = "key"
+  options.storageBucket = "bucket"
   let app = FirebaseApp(options: options, name: "storage-\(UUID().uuidString)")
   return Storage.storage(app: app).reference()
 }

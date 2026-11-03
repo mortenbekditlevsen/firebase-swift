@@ -107,13 +107,8 @@ private final class FakeAppCheck: AppCheckInterop {
 // MARK: - Helpers
 
 private func makeFirestore(auth: AuthInterop?, appCheck: AppCheckInterop?) -> Firestore {
-  let options = FirebaseApp.Options(
-    projectID: "credentials-test",
-    googleAppID: "1:123:ios:123ab",
-    apiKey: nil,
-    clientID: nil,
-    storageBucket: nil
-  )
+  var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
+  options.projectID = "credentials-test"
   let app = FirebaseApp(options: options, name: "credentials-\(UUID().uuidString)")
   app.auth = auth
   app.appCheck = appCheck

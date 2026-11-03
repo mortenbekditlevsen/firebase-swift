@@ -51,11 +51,11 @@ class FunctionsTests: XCTestCase {
   }
 
   func testFunctionsInstanceIsStablePerApp() throws {
-    // Port note: FirebaseCore has FirebaseApp.Options (a struct) and no
-    // registry of named apps, so the apps are created directly.
-    let options = FirebaseApp.Options(projectID: "myProjectID",
-                                      googleAppID: "0:0000000000000:ios:0000000000000000",
-                                      apiKey: nil, clientID: nil, storageBucket: nil)
+    // Port note: FirebaseOptions is a struct, and the test targets share a
+    // process on macOS, where another suite may have configured the default app.
+    var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+                                  gcmSenderID: "00000000000000000-00000000000-000000000")
+    options.projectID = "myProjectID"
     if !FirebaseApp.isDefaultAppConfigured {
       FirebaseApp.configure(options: options)
     }
@@ -63,7 +63,8 @@ class FunctionsTests: XCTestCase {
     var functions2 = Functions.functions(app: FirebaseApp.app()!)
     XCTAssertEqual(functions1, functions2)
 
-    let app2 = FirebaseApp(options: options, name: "test")
+    FirebaseApp.configure(name: "test", options: options)
+    let app2 = try XCTUnwrap(FirebaseApp.app(name: "test"))
     functions2 = Functions.functions(app: app2, region: "us-central2")
     XCTAssertNotEqual(functions1, functions2)
 
@@ -117,12 +118,12 @@ class FunctionsTests: XCTestCase {
   func testFunctionsLifecycle() throws {
     weak var weakApp: FirebaseApp?
     weak var weakFunctions: Functions?
-    // Port note: no autoreleasepool (Objective-C only) or
-    // FirebaseApp(instanceWithName:options:); the app is created directly.
+    // Port note: no autoreleasepool (Objective-C only); upstream's
+    // FirebaseApp(instanceWithName:options:) is FirebaseApp(options:name:).
     do {
-      let options = FirebaseApp.Options(projectID: "myProjectID",
-                                        googleAppID: "0:0000000000000:ios:0000000000000000",
-                                        apiKey: nil, clientID: nil, storageBucket: nil)
+      var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+                                    gcmSenderID: "00000000000000000-00000000000-000000000")
+      options.projectID = "myProjectID"
       let app1 = FirebaseApp(options: options, name: "transitory app")
       weakApp = app1
       let functions = Functions(app: app1, region: "transitory-region", customDomain: nil)

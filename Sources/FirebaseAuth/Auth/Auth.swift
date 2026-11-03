@@ -137,27 +137,22 @@ extension Auth: AuthInterop {
    @return The `Auth` instance associated with the given app.
    */
   public class func auth(app: FirebaseApp) -> Auth {
-      // XXX TODO
-//      fatalError()
-//    let provider = ComponentType<AuthProvider>.instance(for: AuthProvider.self,
-//                                                        in: app.container)
-//    return provider.auth()
-      #if os(Linux) || os(Android)
-        let auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
-      #else
-        // The keychain, as upstream, where this process may use it. Unsigned binaries (command
-        // line tools, test runners) can't, and keep the user in UserDefaults instead.
-        let auth: Auth
-        if AuthKeychainServices.isAvailable {
-          auth = Auth(app: app, keychainStorageProvider: AuthKeychainServices.self)
-        } else {
-          Auth.logKeychainUnavailableOnce()
-          auth = Auth(app: app, keychainStorageProvider: AuthUserDefaults.self)
-        }
-      #endif
-      app.auth = auth
+    app.component(AuthComponent.self).auth(app: app)
+  }
 
-      return auth
+  /// Where Auth keeps the signed-in user: the keychain, as upstream, where this process may use
+  /// it. Unsigned binaries (command line tools, test runners) can't, and keep the user in
+  /// UserDefaults instead.
+  static var storageProvider: AuthStorage.Type {
+    #if os(Linux) || os(Android)
+      AuthUserDefaults.self
+    #else
+      if AuthKeychainServices.isAvailable {
+        return AuthKeychainServices.self
+      }
+      Auth.logKeychainUnavailableOnce()
+      return AuthUserDefaults.self
+    #endif
   }
 
   #if !os(Linux) && !os(Android)

@@ -14,23 +14,14 @@
 
 import Foundation
 import FirebaseCore
+import Synchronization
 
-/// This protocol is used in the interop registration process to register an
-/// instance provider for individual FIRApps.
-protocol DatabaseProvider {
-    /// Gets a FirebaseDatabase instance for the specified URL, using the specified
-    /// FirebaseApp.
-    func databaseForApp(_ app: FirebaseApp, URL url: String) -> Database
-}
+/// Database's state for an app: its instances by database URL, as upstream's
+/// `FIRDatabaseComponent`.
+final class DatabaseComponent: FirebaseAppComponent {
+    private let instances = Mutex<[String: Database]>([:])
 
-/// A concrete implementation for FIRDatabaseProvider to create Database
-/// instances.
-
-class DatabaseComponent: DatabaseProvider {
-    var lock: NSLock = NSLock()
-    internal init(app: FirebaseApp) {
-        self.app = app
-    }
+    init() {}
 
     func databaseForApp(_ app: FirebaseApp, URL url: String) -> Database {
         guard let databaseUrl = URL(string: url) else {
@@ -39,52 +30,42 @@ class DatabaseComponent: DatabaseProvider {
         guard databaseUrl.path == "" || databaseUrl.path == "/" else {
             fatalError("Configured Database URL '\(databaseUrl)' is invalid. It should point to the root of a Firebase Database but it includes a path: \(databaseUrl.path)")
         }
-        // NOTE: Using an NSLock is a replacement for objc @synchronized
-        // Perhaps switch to a non-NS-prefixed alternative later
-        lock.lock()
-        defer { lock.unlock() }
+        return instances.withLock { instances in
+            let parsedUrl = FUtilities.parseUrl(databaseUrl.absoluteString)
+            let urlIndex = "\(parsedUrl.repoInfo.host):\(parsedUrl.path)"
+            if let database = instances[urlIndex] {
+                return database
+            }
+            // XXX TODO: Inject auth and app check interop
+            let contextProvider = DatabaseConnectionContextProvider.contextProvider(auth: app.auth, appCheck: nil)
 
-        let parsedUrl = FUtilities.parseUrl(databaseUrl.absoluteString)
-        let urlIndex = "\(parsedUrl.repoInfo.host):\(parsedUrl.path)"
-        if let database = instances[urlIndex] {
+            // If this is the default app, don't set the session persistence key
+            // so that we use our default ("default") instead of the FIRApp
+            // default ("__FIRAPP_DEFAULT") so that we preserve the default location
+            // used by the legacy Firebase SDK.
+            let sessionIdentifier = app.isDefaultApp ? "default" : app.name
+            let config = DatabaseConfig(sessionIdentifier: sessionIdentifier,
+                                        googleAppID: app.options.googleAppID,
+                                        contextProvider: contextProvider)
+            let database = Database(app: app, repoInfo: parsedUrl.repoInfo, config: config)
+            instances[urlIndex] = database
             return database
         }
-        // XXX TODO: Inject auth and app check interop
-        let contextProvider = DatabaseConnectionContextProvider.contextProvider(auth: app.auth, appCheck: nil)
-
-        // If this is the default app, don't set the session persistence key
-        // so that we use our default ("default") instead of the FIRApp
-        // default ("[DEFAULT]") so that we preserve the default location
-        // used by the legacy Firebase SDK.
-        var sessionIdentifier = "default"
-        if !FirebaseApp.isDefaultAppConfigured || app != FirebaseApp.defaultApp {
-            sessionIdentifier = app.name
-        }
-        let config = DatabaseConfig(sessionIdentifier: sessionIdentifier,
-                                    googleAppID: app.options.googleAppID,
-                                    contextProvider: contextProvider)
-        let database = Database(app: app, repoInfo: parsedUrl.repoInfo, config: config)
-        instances[urlIndex] = database
-        return database
     }
 
     // MARK: - Instance management.
-    func appWillBeDeleted(_ app: FirebaseApp) {
-        // NOTE: Using an NSLock is a replacement for objc @synchronized
-        // Perhaps switch to a non-NS-prefixed alternative later
-        lock.lock()
-        defer { lock.unlock() }
+    func appWillBeDeleted(_ app: FirebaseApp) async {
         // Clean up the deleted instance in an effort to remove any resources
         // still in use. Note: Any leftover instances of this exact database
         // will be invalid.
-        for database in instances.values {
+        let databases = instances.withLock { instances in
+            defer { instances.removeAll() }
+            return Array(instances.values)
+        }
+        for database in databases {
             FRepoManager.disposeRepos(database.config)
         }
-        instances.removeAll()
     }
-
-    private var app: FirebaseApp
-    private var instances: [String: Database] = [:]
 
     /*
      #pragma mark - Lifecycle
