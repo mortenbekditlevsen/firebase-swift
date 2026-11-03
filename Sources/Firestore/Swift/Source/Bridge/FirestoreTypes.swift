@@ -529,16 +529,12 @@ private func requestAppCheckToken(
   let source = Unmanaged<CredentialsSource>.fromOpaque(context).takeUnretainedValue()
   let pending = PendingTokenRequest(pointer: request)
   Task {
-    do {
-      let token = try await source.appCheck?.getToken(forcingRefresh: forceRefresh)
-      firebase.firestore.swift_bridge.CompleteAppCheckTokenRequest(
-        pending.pointer, std.string(token ?? ""), std.string()
-      )
-    } catch {
-      firebase.firestore.swift_bridge.CompleteAppCheckTokenRequest(
-        pending.pointer, std.string(), std.string(error.localizedDescription)
-      )
-    }
+    // As upstream, the token is used even when getting it failed: it's then the placeholder.
+    let result = await source.appCheck?.getToken(forcingRefresh: forceRefresh)
+    firebase.firestore.swift_bridge.CompleteAppCheckTokenRequest(
+      pending.pointer, std.string(result?.token ?? ""),
+      std.string(result?.error?.localizedDescription ?? "")
+    )
   }
 }
 
@@ -578,6 +574,9 @@ public final class Firestore: @unchecked Sendable {
   /// provider's current user up to date.
   private var authObserver: (any NSObjectProtocol)?
 
+  /// Observes App Check's token notification, as upstream's App Check credentials provider does.
+  private var appCheckObserver: (any NSObjectProtocol)?
+
   private let _settings = Mutex(FirestoreSettings())
 
   private let _indexManager = Mutex<PersistentCacheIndexManager?>(nil)
@@ -585,6 +584,9 @@ public final class Firestore: @unchecked Sendable {
   deinit {
     if let authObserver {
       NotificationCenter.default.removeObserver(authObserver)
+    }
+    if let appCheckObserver {
+      NotificationCenter.default.removeObserver(appCheckObserver)
     }
   }
 
@@ -667,6 +669,22 @@ public final class Firestore: @unchecked Sendable {
       // The user may have changed between reading the initial UID and
       // registering the observer.
       bridge.SetAuthUser(std.string(auth.getUserID() ?? ""))
+      if let appCheck {
+        let appName = app.name
+        let tokenKey = appCheck.notificationTokenKey
+        let appNameKey = appCheck.notificationAppNameKey
+        instance.appCheckObserver = NotificationCenter.default.addObserver(
+          forName: Notification.Name(appCheck.tokenDidChangeNotificationName),
+          object: nil,
+          queue: nil
+        ) { [weak instance] notification in
+          // Only notify for this app, as upstream.
+          let userInfo = notification.userInfo
+          guard userInfo?[appNameKey] as? String == appName,
+                let token = userInfo?[tokenKey] as? String else { return }
+          instance?.cppBridge.SetAppCheckToken(std.string(token))
+        }
+      }
       instances[database] = instance
       return instance
     }

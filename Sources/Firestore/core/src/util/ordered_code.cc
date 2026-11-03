@@ -525,7 +525,10 @@ bool OrderedCode::ReadNumDecreasing(absl::string_view* src, uint64_t* result) {
     return false;  // Not enough bytes
   }
 
-  const size_t len = static_cast<size_t>(~(*src)[0]);
+  // firebase-swift: invert as an unsigned byte. `~` promotes the char to int,
+  // so where char is unsigned (Linux on arm64, Android) the result was negative
+  // and the length huge, and every decreasing number failed to decode.
+  const size_t len = static_cast<unsigned char>(~(*src)[0]);
 
   // If len > 0 and src is longer than 1, the first byte of "payload"
   // must be non-~zero (otherwise the encoding is not minimal).

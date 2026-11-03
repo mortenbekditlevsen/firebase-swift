@@ -715,8 +715,8 @@ class SwiftAuthCredentialsProvider
 };
 
 /// App Check credentials backed by Swift's `AppCheckInterop`. Mirrors
-/// firebase_app_check_credentials_provider_apple.mm, except that token-change
-/// notifications aren't wired up yet (AppCheckInterop has none).
+/// firebase_app_check_credentials_provider_apple.mm: token changes are pushed
+/// in via `TokenChanged`.
 class SwiftAppCheckCredentialsProvider
     : public credentials::AppCheckCredentialsProvider,
       public std::enable_shared_from_this<SwiftAppCheckCredentialsProvider> {
@@ -739,6 +739,13 @@ class SwiftAppCheckCredentialsProvider
       }
       completion(std::move(token));  // Always return token
     });
+  }
+
+  void TokenChanged(const std::string& token) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (change_listener_) {
+      change_listener_(token);
+    }
   }
 
   void SetCredentialChangeListener(
@@ -786,11 +793,14 @@ void CompleteAppCheckTokenRequest(void* request,
 
 struct FirestoreBridge::Impl {
   Impl(std::shared_ptr<Firestore> firestore,
-       std::shared_ptr<SwiftAuthCredentialsProvider> auth_provider)
+       std::shared_ptr<SwiftAuthCredentialsProvider> auth_provider,
+       std::shared_ptr<SwiftAppCheckCredentialsProvider> app_check_provider)
       : firestore_(std::move(firestore)),
-        auth_provider_(std::move(auth_provider)) {}
+        auth_provider_(std::move(auth_provider)),
+        app_check_provider_(std::move(app_check_provider)) {}
   std::shared_ptr<Firestore> firestore_;
   std::shared_ptr<SwiftAuthCredentialsProvider> auth_provider_;
+  std::shared_ptr<SwiftAppCheckCredentialsProvider> app_check_provider_;
 };
 
 FirestoreBridge::FirestoreBridge() noexcept = default;
@@ -829,7 +839,7 @@ FirestoreBridge FirestoreBridge::Create(
       DatabaseId{project_id, database_id},
       persistence_key,
       auth_credentials,
-      std::move(app_check_credentials),
+      app_check_credentials,
       std::move(worker_queue),
       std::move(metadata_provider),
       /*extension=*/nullptr);
@@ -839,14 +849,21 @@ FirestoreBridge FirestoreBridge::Create(
       util::Executor::CreateSerial("com.google.firebase.firestore.callback"));
 
   FirestoreBridge result;
-  result.impl_ =
-      std::make_shared<Impl>(std::move(firestore), std::move(auth_credentials));
+  result.impl_ = std::make_shared<Impl>(std::move(firestore),
+                                        std::move(auth_credentials),
+                                        std::move(app_check_credentials));
   return result;
 }
 
 void FirestoreBridge::SetAuthUser(const std::string& uid) const noexcept {
   if (impl_ && impl_->auth_provider_) {
     impl_->auth_provider_->UserChanged(uid);
+  }
+}
+
+void FirestoreBridge::SetAppCheckToken(const std::string& token) const noexcept {
+  if (impl_ && impl_->app_check_provider_) {
+    impl_->app_check_provider_->TokenChanged(token);
   }
 }
 

@@ -26,10 +26,35 @@ public func FirebaseVersion() -> String {
 /// conforms to it yet.
 public protocol FIRHeartbeatLoggerProtocol: Sendable {}
 
-/// Gives SDKs App Check tokens. App Check isn't ported yet; until it is, an
-/// app can set `FirebaseApp.appCheck` to its own provider.
-public protocol AppCheckInterop: Sendable {
-  func getToken(forcingRefresh: Bool) async throws -> String
+/// An App Check token for the SDKs, as upstream's `AppCheckTokenResultInterop`.
+public protocol AppCheckTokenResultInterop: Sendable {
+  /// The token. When getting it failed, a placeholder, which SDKs send anyway, as upstream does,
+  /// so the backend can tell an App Check failure from a client without App Check.
+  var token: String { get }
+
+  /// Why getting the token failed, if it did.
+  var error: Error? { get }
+}
+
+/// Gives SDKs App Check tokens, as upstream's `AppCheckInterop`. FirebaseAppCheck's `AppCheck`
+/// implements it.
+public protocol AppCheckInterop: AnyObject, Sendable {
+  /// A cached token, or a new one if there's none or `forcingRefresh` is true.
+  func getToken(forcingRefresh: Bool) async -> AppCheckTokenResultInterop
+
+  /// A new limited-use token, which isn't cached.
+  func getLimitedUseToken() async -> AppCheckTokenResultInterop
+
+  /// The notification posted (to `NotificationCenter.default`) each time the token changes. Its
+  /// `userInfo` has the token and the app's name under `notificationTokenKey` and
+  /// `notificationAppNameKey`.
+  var tokenDidChangeNotificationName: String { get }
+
+  /// The `userInfo` key for the token in `tokenDidChangeNotificationName` notifications.
+  var notificationTokenKey: String { get }
+
+  /// The `userInfo` key for the app's name in `tokenDidChangeNotificationName` notifications.
+  var notificationAppNameKey: String { get }
 }
 
 /// An SDK's state for one app, standing in for upstream's component
@@ -176,11 +201,30 @@ public final class FirebaseApp: Equatable, Sendable {
   /// SDK. With no Auth there's no user, so no token.
   package var lazyAuth: AuthInterop { LazyAuth(app: self) }
 
-  /// The App Check provider the SDKs get tokens from. App Check isn't ported yet; until it is, an
-  /// app can set its own provider here, before it gets any SDK instances for this app.
-  public var appCheck: AppCheckInterop? {
-    get { _appCheck.withLock { $0 } }
-    set { _appCheck.withLock { $0 = newValue } }
+  /// App Check's instance for this app, for the other SDKs. Upstream creates it when the app is
+  /// configured; here it's created on first use, by the factory FirebaseAppCheck registers in
+  /// `appCheckFactory` when the app sets its provider factory.
+  package var appCheck: AppCheckInterop? {
+    get {
+      _appCheck.withLock { appCheck in
+        if case let .created(instance) = appCheck {
+          return instance
+        }
+        let instance = Self.appCheckFactory.withLock { $0 }?(self)
+        appCheck = .created(instance)
+        return instance
+      }
+    }
+    set { _appCheck.withLock { $0 = .created(newValue) } }
+  }
+
+  /// Creates App Check's instance for an app, or nil if it has none. Set by FirebaseAppCheck. It's
+  /// called with the app's App Check lock held, so it must not read `appCheck`.
+  package static let appCheckFactory = Mutex<(@Sendable (FirebaseApp) -> AppCheckInterop?)?>(nil)
+
+  private enum AppCheckState {
+    case notCreated
+    case created(AppCheckInterop?)
   }
 
   package var heartbeatLogger: FIRHeartbeatLoggerProtocol? {
@@ -217,7 +261,7 @@ public final class FirebaseApp: Equatable, Sendable {
   }
 
   private let _auth: Mutex<AuthInterop?> = .init(nil)
-  private let _appCheck: Mutex<AppCheckInterop?> = .init(nil)
+  private let _appCheck = Mutex(AppCheckState.notCreated)
   private let _heartbeatLogger: Mutex<FIRHeartbeatLoggerProtocol?> = .init(nil)
   private let _components = Mutex(Components())
 

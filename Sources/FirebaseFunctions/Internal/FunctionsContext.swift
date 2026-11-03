@@ -68,14 +68,13 @@ struct FunctionsContextProvider: Sendable {
 
   private func getAppCheckToken(options: HTTPSCallableOptions?) async -> String? {
     guard options?.requireLimitedUseAppCheckTokens != true, let appCheck else { return nil }
-    // Upstream sends App Check's placeholder token when getting a token fails;
-    // the port's AppCheckInterop throws instead, so no token is sent, as in
-    // Storage and Firestore.
-    return try? await appCheck.getToken(forcingRefresh: false)
+    // The placeholder token should be used in the case of App Check error.
+    return await appCheck.getToken(forcingRefresh: false).token
   }
 
   private func getLimitedUseAppCheckToken(options: HTTPSCallableOptions?) async -> String? {
-    // The port's AppCheckInterop has no limited-use tokens yet.
-    nil
+    guard options?.requireLimitedUseAppCheckTokens == true, let appCheck else { return nil }
+    // The placeholder token should be used in the case of App Check error.
+    return await appCheck.getLimitedUseToken().token
   }
 }

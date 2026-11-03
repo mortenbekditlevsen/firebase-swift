@@ -9,3 +9,8 @@
 .build-android-linux/
 *-debug.log
 node_modules/
+.build-firestore-core/
+.build-firestore-core-linux/
+.ccache/
+.build-firestore-core-linux-gcc/
+__pycache__/

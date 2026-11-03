@@ -310,9 +310,19 @@ public struct PhoneAuthProvider: Sendable {
       if let languageCode = requestConfiguration.languageCode {
         queryItems.append(URLQueryItem(name: "hl", value: languageCode))
       }
-      // Upstream adds an App Check token as the fragment; App Check isn't ported.
       var components = URLComponents(string: "https://\(authDomain)/__/auth/handler")
       components?.queryItems = queryItems
+
+      if let appCheck = auth.requestConfiguration.appCheck {
+        let tokenResult = await appCheck.getToken(forcingRefresh: false)
+        if let error = tokenResult.error {
+          AuthLog.logWarning(code: "I-AUT000018",
+                             message: "Error getting App Check token; using placeholder " +
+                               "token instead. Error: \(error)")
+        }
+        let appCheckTokenFragment = "fac=\(tokenResult.token)"
+        components?.fragment = appCheckTokenFragment
+      }
       guard let url = components?.url else {
         throw AuthErrorUtils.appVerificationUserInteractionFailure(
           reason: "Invalid reCAPTCHA URL for auth domain \(authDomain)"

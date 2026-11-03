@@ -75,28 +75,13 @@ private final class FAuthStateListenerWrapper: @unchecked Sendable {
 //    func getTokenForcingRefresh(_ forceRefresh: Bool, withCallback callback: (String?, Error?) -> Void)
 //}
 
-protocol DatabaseAppCheckTokenResultInterop {
-    var token: String? { get }
-    var error: Error? { get }
-}
-
-protocol DatabaseAppCheckInterop: Sendable {
-    func getTokenForcingRefresh(_ forceRefresh: Bool) async throws -> String
-    var notificationTokenKey: String { get }
-    var tokenDidChangeNotificationName: Notification.Name { get }
-}
-
-// TODO: Make FIRAppCheckInterop conform to FIRDatabaseAppCheckInterop
-// TODO: Make FIRAppCheckTokenResultInterop conform to FIRDatabaseAppCheckTokenResultInterop
-// TODO: Make FIRAuthInterop conform to FIRDatabaseAuthInterop
-
 struct SendableObserver: @unchecked Sendable {
     let observer: Any
 }
 
 final class DatabaseConnectionContextProvider: DatabaseConnectionContextProviderProtocol {
 
-    let appCheck: DatabaseAppCheckInterop? // FIRAppCheckInterop
+    let appCheck: AppCheckInterop?
     let auth: AuthInterop? // FIRAuthInterop
     /// The app whose Auth notifications this provider follows.
     private let app: FirebaseApp
@@ -111,7 +96,7 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
     let appCheckNotificationObservers: Mutex<[SendableObserver]> = .init([])
 
     private init(app: FirebaseApp,
-                 appCheck: DatabaseAppCheckInterop?) {
+                 appCheck: AppCheckInterop?) {
         self.appCheck = appCheck
         self.auth = app.lazyAuth
         self.app = app
@@ -131,14 +116,14 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
         // Use dispatch group to call the callback when both Auth and FAC operations
         // finished.
         let authToken = try await auth?.getToken(forcingRefresh: forceRefresh)
-        let appCheckToken: String?
-            
-        do {
-            appCheckToken = try await appCheck?.getTokenForcingRefresh(forceRefresh)
-        } catch {
+        let appCheckResult = await appCheck?.getToken(forcingRefresh: forceRefresh)
+        if let error = appCheckResult?.error {
             FFLog("I-RDB096001", "Failed to fetch App Check token: \(error)")
-            appCheckToken = nil
         }
+        // As upstream, the token is used even when getting it failed: it's then the placeholder.
+        // App Check errors don't change the database SDK's behavior, as the App Check
+        // enforcement is controlled on the backend.
+        let appCheckToken = appCheckResult?.token
         return DatabaseConnectionContext(authToken: authToken, appCheckToken: appCheckToken)
     }
 
@@ -158,7 +143,7 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
         // pure Swift class, so filter by identity in the block instead.
         let sender = ObjectIdentifier(appCheck as AnyObject)
         let observer = NotificationCenter.default
-            .addObserver(forName: appCheck.tokenDidChangeNotificationName,
+            .addObserver(forName: Notification.Name(appCheck.tokenDidChangeNotificationName),
                          object: nil,
                          queue: nil) { notification in
                 guard let object = notification.object,
@@ -176,7 +161,7 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
         }
     }
 
-    class func contextProvider(app: FirebaseApp, appCheck: DatabaseAppCheckInterop?) -> DatabaseConnectionContextProviderProtocol {
+    class func contextProvider(app: FirebaseApp, appCheck: AppCheckInterop?) -> DatabaseConnectionContextProviderProtocol {
         DatabaseConnectionContextProvider(app: app, appCheck: appCheck)
     }
 }

@@ -1,7 +1,7 @@
 # Local patches to vendored upstream code
 
-Code copied verbatim from upstream (the Firestore C++ core and the
-`FirebaseDataEncoder` third-party file) is changed as little as possible so
+Code copied verbatim from upstream (the Firestore C++ core, the
+`FirebaseDataEncoder` third-party file and AppCheckCore) is changed as little as possible so
 upstream updates can be applied as patches. Every local change is marked with a
 `firebase-swift:` comment, so `grep -rn "firebase-swift:" Sources` lists them.
 Re-apply these after pulling in a new upstream version.
@@ -35,6 +35,23 @@ directories, as FirebaseAuth's file storage also expects.
 
 `src/api/firestore_bridge.cc` and `include/FirestoreBridge.h` are ours (the
 Swift bridge), not upstream code.
+
+`src/util/ordered_code.cc`: `ReadNumDecreasing` inverts the length byte as an
+`unsigned char`. Upstream inverts the `char`, which `~` promotes to `int`; where
+`char` is unsigned (Linux on arm64, Android) that gives a negative number, so
+the length is huge and every decreasing number fails to decode. Found by
+`OrderedCodeUint64.EncodeDecode` (`scripts/test-firestore-core.sh` on arm64
+Linux). Firestore itself only reads `ReadSignedNumIncreasing`, which already
+uses `unsigned char`, so no stored data was affected. Worth reporting upstream.
+
+## C++ core tests
+
+`scripts/test-firestore-core.sh` builds and runs the core's GoogleTest suites
+(`Sources/Firestore/core/test/unit`) with upstream's own CMake build: it checks
+out upstream's root `CMakeLists.txt` and `cmake/` at the release Firestore is
+synced to, puts `Sources/Firestore` in place of upstream's `Firestore`, and
+builds the tests with their dependencies. The `firestore-core` CI job runs it
+on Linux.
 
 ## Firestore Swift layer (`Sources/Firestore/Swift`)
 
@@ -71,6 +88,39 @@ them; `Swift/Tests/API/BasicCompileTests.swift` has them too.
 - **Booleans aren't decoded as numbers.** Upstream compares against
   `kCFBooleanTrue`/`kCFBooleanFalse`; that's kept on Darwin, and elsewhere a
   Swift `Bool` is recognized by its dynamic type.
+
+## AppCheckCore (`Sources/FirebaseAppCheck/AppCheckCore`)
+
+Vendored from [google/app-check](https://github.com/google/app-check)
+12.0.0 as part of the `FirebaseAppCheck` target (upstream builds it as its
+own `AppCheckCore` module). `grep -rn "firebase-swift:"
+Sources/FirebaseAppCheck/AppCheckCore` lists the changes:
+
+- **No GoogleUtilities.** The token and App Attest artifact go to the app's
+  `AppCheckKeychain` (passed to `AppCheck.setAppCheckProviderFactory(_:keychain:)`)
+  instead of `GULKeychainStorage`; the storages archive the objects
+  themselves, as `GULKeychainStorage` did, so the stored bytes are the same.
+  `GULUserDefaults` is replaced by `UserDefaults`.
+- **Archived class names.** Upstream keeps `GACAppCheckStoredToken` and
+  `GACAppAttestStoredArtifact` as the archived names with `@objc(…)`; here
+  they're registered with `NSKeyedArchiver.setClassName` and
+  `NSKeyedUnarchiver.setClass`, so archives stay readable both ways. (On
+  Linux and Android, corelibs ignores `setClassName` when encoding, so
+  archives written there carry the Swift name; reading upstream's works.)
+- **Linux.** SHA-256 from swift-crypto instead of CommonCrypto;
+  FoundationNetworking imports; DeviceCheck and App Attest behind
+  `#if canImport(DeviceCheck)`; `NSErrorPointer` and Objective-C block
+  request hooks behind `#if canImport(ObjectiveC)`.
+- **Delivery queue.** Completion handlers and the token delegate are called
+  on a serial queue (`AppCheckCore.deliveryQueue`), not the main queue, which
+  never runs in servers and command line tools.
+- `NSLock.execute`, which upstream defines in the App Attest provider, is in
+  `Port/NSLock+Execute.swift`, since the provider is Apple-only.
+
+The tests in `Tests/FirebaseAppCheckTests/AppCheckCore` are upstream's, with
+`Port note` comments where they differ: the keychain storage tests run
+against an in-memory `AppCheckKeychain` (upstream needs a host app), and the
+main-thread delivery tests are skipped.
 
 ## Dependencies
 

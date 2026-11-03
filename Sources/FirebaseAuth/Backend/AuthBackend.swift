@@ -156,22 +156,16 @@ struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
        languageCode.count > 0 {
       request.setValue(languageCode, forHTTPHeaderField: "X-Firebase-Locale")
     }
-         // XXX TODO: Check if app check can be injected by other means than through the requestConfiguration
-         return request
-//    if let appCheck = requestConfiguration.appCheck {
-//        do {
-//            let token = try await appCheck.getToken(forcingRefresh: false)
-//            request.setValue(token, forHTTPHeaderField: "X-Firebase-AppCheck")
-//            return request
-//        } catch {
-//            AuthLog.logWarning(code: "I-AUT000018",
-//                               message: "Error getting App Check token; using placeholder " +
-//                               "token instead. Error: \(error)")
-//            throw error
-//        }
-//    } else {
-//      return request
-//    }
+    if let appCheck = requestConfiguration.appCheck {
+      let tokenResult = await appCheck.getToken(forcingRefresh: false)
+      if let error = tokenResult.error {
+        AuthLog.logWarning(code: "I-AUT000018",
+                           message: "Error getting App Check token; using placeholder " +
+                             "token instead. Error: \(error)")
+      }
+      request.setValue(tokenResult.token, forHTTPHeaderField: "X-Firebase-AppCheck")
+    }
+    return request
   }
 }
 

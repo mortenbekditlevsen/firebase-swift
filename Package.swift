@@ -25,6 +25,7 @@ let package = Package(
     ],
     products: [
         .library(name: "FirebaseCore", targets: ["FirebaseCore"]),
+        .library(name: "FirebaseAppCheck", targets: ["FirebaseAppCheck"]),
         .library(name: "FirebaseAuth", targets: ["FirebaseAuth"]),
         .library(name: "FirebaseDatabase", targets: ["FirebaseDatabase"]),
         .library(name: "FirebaseFunctions", targets: ["FirebaseFunctions"]),
@@ -74,6 +75,20 @@ let package = Package(
                 "third_party/FirebaseDataEncoder/LICENSE",
                 "third_party/FirebaseDataEncoder/METADATA",
             ]
+        ),
+        // FirebaseAppCheck, with a port of Google's AppCheckCore
+        // (github.com/google/app-check) in AppCheckCore/, as upstream builds on it.
+        .target(
+            name: "FirebaseAppCheck",
+            dependencies: [
+                "FirebaseCore",
+                "FirebaseShared",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
+            path: "Sources/FirebaseAppCheck",
+            // AppCheckCore is written for Swift 5 mode, as upstream builds it.
+            swiftSettings: [.swiftLanguageMode(SwiftLanguageMode.v5)]
         ),
         .target(
             name: "FirebaseAuth",
@@ -267,6 +282,15 @@ let package = Package(
           ]
         ),
 
+        // AppCheckCore's unit tests (github.com/google/app-check), adapted where
+        // marked "firebase-swift:", and FirebaseAppCheck's.
+        .testTarget(
+            name: "FirebaseAppCheckTests",
+            dependencies: ["FirebaseAppCheck"],
+            path: "Tests/FirebaseAppCheckTests",
+            resources: [.process("Fixture")],
+            swiftSettings: [.swiftLanguageMode(SwiftLanguageMode.v5)]
+        ),
         .testTarget(
             name: "FirebaseCoreTests",
             dependencies: ["FirebaseCore"],

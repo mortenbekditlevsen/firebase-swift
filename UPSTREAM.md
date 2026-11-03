@@ -80,6 +80,20 @@ and URLs). The RPC types were rewritten as `Codable` and the managers around
 are the same in every release), and every upstream change since 11.2.0 has
 been triaged. Its *Closest releases* stay meaningless for the same reason.
 
+**FirebaseAppCheck: 13.1.1, not in the table yet.** It has two parts:
+
+- `Sources/FirebaseAppCheck/AppCheckCore` is vendored from
+  [google/app-check](https://github.com/google/app-check) 12.0.0 (the
+  release firebase-ios-sdk 13.1.1 depends on, already Swift), with the
+  local changes in [Docs/UpstreamPatches.md](Docs/UpstreamPatches.md).
+- The rest is a Swift rewrite of firebase-ios-sdk 13.1.1's Objective-C
+  `FirebaseAppCheck` (`FIRAppCheck`, its providers and settings).
+
+The tests in `Tests/FirebaseAppCheckTests/AppCheckCore` are app-check
+12.0.0's. app-check is a separate repository, so the scripts in
+`scripts/upstream` don't cover it; compare it by hand with the next release
+that firebase-ios-sdk adopts.
+
 ## The version the SDK reports
 
 `FirebaseVersion()` (FirebaseCore) and `firebaseVersion` (Package.swift) are

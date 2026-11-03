@@ -54,11 +54,11 @@ struct AuthRequestConfiguration: Sendable, Equatable {
 //
 //  /// The heartbeat logger used to add heartbeats to the corresponding request's header.
 //  public var heartbeatLogger: FIRHeartbeatLoggerProtocol?
-//
-//  /** @property appCheck
-//      @brief The appCheck is used to generate a token.
-//   */
-//  public var appCheck: AppCheckInterop?
+
+  /** @property appCheck
+      @brief The appCheck is used to generate a token.
+   */
+  let appCheck: AppCheckInterop?
 
   /** @property additionalFrameworkMarker
    @brief Additional framework marker that will be added as part of the header of every request.
@@ -82,6 +82,6 @@ struct AuthRequestConfiguration: Sendable, Equatable {
       self.tenantId = tenantId
 //    self.auth = auth
 //    self.heartbeatLogger = heartbeatLogger
-//    self.appCheck = appCheck
+    self.appCheck = appCheck
   }
 }
