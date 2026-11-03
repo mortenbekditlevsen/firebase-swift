@@ -71,6 +71,30 @@ typedef void (*TokenRequestCallback)(
 /// Releases a `context` that was passed to `FirestoreBridge::Create`.
 typedef void (*ContextReleaseCallback)(void* context);
 
+/// Reads up to `max_length` bytes of a bundle into `buffer`. Returns the
+/// number of bytes read, 0 at the end, or -1 on an error.
+typedef int64_t (*BundleReadCallback)(
+    void* context,
+    uint8_t* buffer,
+    size_t max_length);
+
+/// Reports the progress of loading a bundle. `state`: 0 = error,
+/// 1 = in progress, 2 = success (upstream's `LoadBundleTaskState`).
+typedef void (*LoadBundleProgressCallback)(
+    void* context,
+    int32_t state,
+    uint32_t documents_loaded,
+    uint32_t total_documents,
+    uint64_t bytes_loaded,
+    uint64_t total_bytes,
+    int32_t error_code,
+    const char* error_message);
+
+/// Callback for a named query.
+/// query: opaque pointer to a heap-allocated QueryBridge (caller owns), or
+/// null if there's no query by that name.
+typedef void (*NamedQueryCallback)(void* context, void* query);
+
 // Forward declarations of internal API types (not exposed to Swift).
 namespace firebase {
 namespace firestore {
@@ -361,6 +385,36 @@ class ListenerRegistrationBridge {
  private:
   friend class DocumentReferenceBridge;
   friend class QueryBridge;
+  friend class FirestoreBridge;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+// ---------------------------------------------------------------------------
+// LoadBundleTaskBridge
+// ---------------------------------------------------------------------------
+/// Wraps api::LoadBundleTask: observers of a bundle being loaded.
+class LoadBundleTaskBridge {
+ public:
+  LoadBundleTaskBridge() noexcept;
+  ~LoadBundleTaskBridge() noexcept;
+
+  LoadBundleTaskBridge(const LoadBundleTaskBridge&) noexcept;
+  LoadBundleTaskBridge& operator=(const LoadBundleTaskBridge&) noexcept;
+  LoadBundleTaskBridge(LoadBundleTaskBridge&&) noexcept;
+  LoadBundleTaskBridge& operator=(LoadBundleTaskBridge&&) noexcept;
+
+  /// Calls `callback` with each later progress update, until the observer is
+  /// removed; `release_context` is called then. Returns a handle for
+  /// `RemoveObserver`.
+  int64_t Observe(void* context,
+                  ContextReleaseCallback release_context,
+                  LoadBundleProgressCallback callback) const noexcept;
+
+  void RemoveObserver(int64_t handle) const noexcept;
+  void RemoveAllObservers() const noexcept;
+
+ private:
   friend class FirestoreBridge;
   struct Impl;
   std::shared_ptr<Impl> impl_;
@@ -788,6 +842,23 @@ class FirestoreBridge {
       void* context,
       ContextReleaseCallback release_context,
       ErrorCallback callback) const noexcept;
+
+  /// Loads a bundle from a stream that `read` reads; `release_stream` is
+  /// called when the stream is no longer needed. If `completion` is given, it
+  /// is the task's last observer, registered before the stream is first read,
+  /// so it sees the final progress.
+  LoadBundleTaskBridge LoadBundle(
+      void* stream_context,
+      BundleReadCallback read,
+      ContextReleaseCallback release_stream,
+      void* completion_context,
+      ContextReleaseCallback release_completion,
+      LoadBundleProgressCallback completion) const noexcept;
+
+  /// Looks up a query that a loaded bundle named.
+  void GetNamedQuery(const std::string& name,
+                     void* context,
+                     NamedQueryCallback callback) const noexcept;
 
   /// Terminates the Firestore instance.
   void Terminate(void* context, ErrorCallback callback) const noexcept;

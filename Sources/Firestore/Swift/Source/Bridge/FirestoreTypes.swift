@@ -313,7 +313,7 @@ func retainedContext<Handler>(_ handler: Handler) -> UnsafeMutableRawPointer {
   Unmanaged.passRetained(CallbackBox(handler)).toOpaque()
 }
 
-private func releaseCallbackBox(context: UnsafeMutableRawPointer?) {
+func releaseCallbackBox(context: UnsafeMutableRawPointer?) {
   guard let context else { return }
   Unmanaged<AnyObject>.fromOpaque(context).release()
 }
@@ -617,16 +617,6 @@ public final class Firestore: @unchecked Sendable {
 
   public func collectionGroup(_ collectionID: String) -> Query {
     Query(cppBridge: cppBridge.GetCollectionGroup(std.string(collectionID)), firestore: self)
-  }
-
-  public func loadBundle(_ bundleData: Data,
-                         completion: @escaping (LoadBundleTaskProgress?, Error?) -> Void) {
-    // TODO: Implement via C++ interop
-  }
-
-  public func loadBundle(_ bundleStream: InputStream,
-                         completion: @escaping (LoadBundleTaskProgress?, Error?) -> Void) {
-    // TODO: Implement via C++ interop
   }
 
   /// Connects to the emulated Firestore at `host:port` instead of the real
@@ -1765,14 +1755,6 @@ public final class SnapshotListenOptions: Sendable {
   public func withSource(_ source: ListenSource) -> SnapshotListenOptions {
     SnapshotListenOptions(includeMetadataChanges: includeMetadataChanges, source: source)
   }
-}
-
-/// Progress of bundle loading.
-public final class LoadBundleTaskProgress: @unchecked Sendable {
-  public var totalDocuments: Int { 0 }
-  public var documentsLoaded: Int { 0 }
-  public var totalBytes: Int { 0 }
-  public var bytesLoaded: Int { 0 }
 }
 
 /// GeoPoint for geographic data.
