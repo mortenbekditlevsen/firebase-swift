@@ -23,20 +23,20 @@ private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 struct WithdrawMFARequest: IdentityToolkitRequest, AuthRPCRequest {
-    public typealias Response = WithdrawMFAResponse
+    typealias Response = WithdrawMFAResponse
 
   public var idToken: String?
-  public var mfaEnrollmentID: String?
+  var mfaEnrollmentID: String?
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-    public var useStaging: Bool { false }
+    var useStaging: Bool { false }
     // A v2 (Identity Platform) endpoint; the port sent it to v1, which 404s.
-    public var useIdentityPlatform: Bool { true }
-    public var endpoint: String { kWithdrawMFAEndPoint }
-    public var requestConfiguration: AuthRequestConfiguration
+    var useIdentityPlatform: Bool { true }
+    var endpoint: String { kWithdrawMFAEndPoint }
+    var requestConfiguration: AuthRequestConfiguration
 
   public init(idToken: String?,
                     mfaEnrollmentID: String?,

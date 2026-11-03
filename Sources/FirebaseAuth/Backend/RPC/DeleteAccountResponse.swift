@@ -18,5 +18,5 @@ import Foundation
     @brief Represents the response from the deleteAccount endpoint.
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/deleteAccount
  */
- public struct DeleteAccountResponse: AuthRPCResponse {
+ struct DeleteAccountResponse: AuthRPCResponse {
 }

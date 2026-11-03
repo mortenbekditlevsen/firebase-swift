@@ -38,15 +38,17 @@ import Foundation
 //  }
 //}
 
-actor AuthSerialTaskQueue<T: Sendable> {
-    private var previousTask: Task<T, Error>?
-    
-    func enqueue(block: @Sendable @escaping () async throws -> T) async throws -> T {
+/// Runs blocks one at a time, in the order they're enqueued, as upstream's
+/// serial task queue does. Each block can return its own type.
+actor AuthSerialTaskQueue {
+    private var previousTask: Task<Void, Never>?
+
+    func enqueue<T: Sendable>(block: @Sendable @escaping () async throws -> T) async throws -> T {
         let task = Task { [previousTask] in
-            let _ = await previousTask?.result
+            await previousTask?.value
             return try await block()
         }
-        previousTask = task
+        previousTask = Task { _ = await task.result }
         return try await task.value
     }
 }

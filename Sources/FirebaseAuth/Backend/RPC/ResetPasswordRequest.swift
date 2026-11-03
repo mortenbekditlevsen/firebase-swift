@@ -35,20 +35,20 @@ private let kCurrentPasswordKey = "newPassword"
 private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct ResetPasswordRequest: IdentityToolkitRequest,
+ struct ResetPasswordRequest: IdentityToolkitRequest,
   AuthRPCRequest, Encodable {
-     public typealias Response = ResetPasswordResponse
+     typealias Response = ResetPasswordResponse
 
   /** @property oobCode
       @brief The oobCode sent in the request.
    */
      
-  public let oobCode: String
+  let oobCode: String
 
   /** @property updatedPassword
       @brief The new password sent in the request.
    */
-  public let updatedPassword: String?
+  let updatedPassword: String?
 
   /** @var response
       @brief The corresponding response for this request
@@ -61,10 +61,10 @@ private let kTenantIDKey = "tenantId"
       @param requestConfiguration An object containing configurations to be added to the request.
    */
      
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kResetPasswordEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kResetPasswordEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
   public init(oobCode: String, newPassword: String?,
                     requestConfiguration: AuthRequestConfiguration) {

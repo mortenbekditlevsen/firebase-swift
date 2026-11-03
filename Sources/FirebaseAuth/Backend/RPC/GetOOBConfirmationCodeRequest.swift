@@ -134,9 +134,9 @@ private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 
-public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
+struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
   AuthRPCRequest, Encodable {
-    public typealias Response = GetOOBConfirmationCodeResponse
+    typealias Response = GetOOBConfirmationCodeResponse
 
   /** @property requestType
       @brief The types of OOB Confirmation Code to request.
@@ -153,7 +153,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
       @brief The new email to be updated.
       @remarks For verifyBeforeUpdateEmail.
    */
-  public var updatedEmail: String?
+  var updatedEmail: String?
 
   /** @property accessToken
       @brief The STS Access Token of the authenticated user.
@@ -184,7 +184,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
   /** @property androidInstallIfNotAvailable
       @brief Indicates whether or not the Android app should be installed if not already available.
    */
-  public var androidInstallApp: Bool
+  var androidInstallApp: Bool
 
   /** @property handleCodeInApp
       @brief Indicates whether the action code link will open the app directly or after being
@@ -207,10 +207,10 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
    */
     
     
-    public var useStaging: Bool { false }
-    public var useIdentityPlatform: Bool { false }
-    public var endpoint: String { kGetOobConfirmationCodeEndpoint }
-    public var requestConfiguration: AuthRequestConfiguration
+    var useStaging: Bool { false }
+    var useIdentityPlatform: Bool { false }
+    var endpoint: String { kGetOobConfirmationCodeEndpoint }
+    var requestConfiguration: AuthRequestConfiguration
 
     init(requestType: GetOOBConfirmationCodeRequestType,
                 email: String?,
@@ -232,7 +232,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
         self.requestConfiguration = requestConfiguration
   }
 
-  public static func passwordResetRequest(email: String,
+  static func passwordResetRequest(email: String,
                                                 actionCodeSettings: ActionCodeSettings?,
                                                 requestConfiguration: AuthRequestConfiguration) ->
     GetOOBConfirmationCodeRequest {
@@ -244,7 +244,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
          requestConfiguration: requestConfiguration)
   }
 
-  public static func verifyEmailRequest(accessToken: String,
+  static func verifyEmailRequest(accessToken: String,
                                               actionCodeSettings: ActionCodeSettings?,
                                               requestConfiguration: AuthRequestConfiguration) ->
     GetOOBConfirmationCodeRequest {
@@ -256,7 +256,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
          requestConfiguration: requestConfiguration)
   }
 
-  public static func signInWithEmailLinkRequest(_ email: String,
+  static func signInWithEmailLinkRequest(_ email: String,
                                                       actionCodeSettings: ActionCodeSettings?,
                                                       requestConfiguration: AuthRequestConfiguration)
     -> Self {
@@ -268,7 +268,7 @@ public struct GetOOBConfirmationCodeRequest: IdentityToolkitRequest,
          requestConfiguration: requestConfiguration)
   }
 
-  public static func verifyBeforeUpdateEmail(accessToken: String,
+  static func verifyBeforeUpdateEmail(accessToken: String,
                                                    newEmail: String,
                                                    actionCodeSettings: ActionCodeSettings?,
                                                    requestConfiguration: AuthRequestConfiguration)

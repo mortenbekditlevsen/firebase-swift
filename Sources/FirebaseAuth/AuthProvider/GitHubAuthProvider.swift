@@ -33,7 +33,7 @@ import Foundation
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-struct GitHubAuthCredential: AuthCredential, Codable {
+struct GitHubAuthCredential: PreparableAuthCredential, Codable {
   let token: String
     var provider: String { GitHubAuthProvider.id }
   init(withToken token: String) {

@@ -46,8 +46,8 @@ private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 
-public struct SendVerificationCodeRequest: IdentityToolkitRequest, AuthRPCRequest {
-    public typealias Response = SendVerificationCodeResponse
+struct SendVerificationCodeRequest: IdentityToolkitRequest, AuthRPCRequest {
+    typealias Response = SendVerificationCodeResponse
 
   /** @property phoneNumber
       @brief The phone number to which the verification code should be sent.
@@ -57,22 +57,22 @@ public struct SendVerificationCodeRequest: IdentityToolkitRequest, AuthRPCReques
   /** @property appCredential
       @brief The credential to prove the identity of the app in order to send the verification code.
    */
-  public let appCredential: AuthAppCredential?
+  let appCredential: AuthAppCredential?
 
   /** @property reCAPTCHAToken
       @brief The reCAPTCHA token to prove the identity of the app in order to send the verification
           code.
    */
-  public let reCAPTCHAToken: String?
+  let reCAPTCHAToken: String?
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-    public var useStaging: Bool { false }
-    public var useIdentityPlatform: Bool { false }
-    public var endpoint: String { kSendVerificationCodeEndPoint }
-    public var requestConfiguration: AuthRequestConfiguration
+    var useStaging: Bool { false }
+    var useIdentityPlatform: Bool { false }
+    var endpoint: String { kSendVerificationCodeEndPoint }
+    var requestConfiguration: AuthRequestConfiguration
 
   public init(phoneNumber: String, appCredential: AuthAppCredential?,
                     reCAPTCHAToken: String?, requestConfiguration: AuthRequestConfiguration) {

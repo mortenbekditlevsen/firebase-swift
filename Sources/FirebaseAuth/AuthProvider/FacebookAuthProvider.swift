@@ -33,7 +33,7 @@ public enum FacebookAuthProvider {
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-struct FacebookAuthCredential: AuthCredential, Codable {
+struct FacebookAuthCredential: PreparableAuthCredential, Codable {
   let accessToken: String
     var provider: String { FacebookAuthProvider.id }
     

@@ -14,9 +14,9 @@
 
 import Foundation
 
-public struct SendVerificationCodeResponse:
+struct SendVerificationCodeResponse:
   AuthRPCResponse {
-  public var verificationID: String?
+  var verificationID: String?
 
     enum CodingKeys: String, CodingKey {
         case verificationID = "sessionInfo"
@@ -26,6 +26,6 @@ public struct SendVerificationCodeResponse:
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.verificationID = try container.decodeIfPresent(String.self, forKey: .verificationID)
     }
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

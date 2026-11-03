@@ -37,7 +37,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
   "Failed to parse JWT. Check the userInfo dictionary for the full token."
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct AuthErrorUtils {
+ struct AuthErrorUtils {
   static let errorDomain = "FIRAuthErrorDomain"
   static let internalErrorDomain = "FIRAuthInternalErrorDomain"
   static let userInfoDeserializedResponseKey = "FIRAuthErrorUserInfoDeserializedResponseKey"
@@ -90,11 +90,11 @@ private let kFIRAuthErrorMessageMalformedJWT =
     error(code: SharedErrorCode.public(code), underlyingError: underlyingError)
   }
 
-  public static func error(code: AuthErrorCode, userInfo: [String: Any]? = nil) -> Error {
+  static func error(code: AuthErrorCode, userInfo: [String: Any]? = nil) -> Error {
     error(code: SharedErrorCode.public(code), userInfo: userInfo)
   }
 
-  public static func error(code: AuthErrorCode, message: String?) -> Error {
+  static func error(code: AuthErrorCode, message: String?) -> Error {
     let userInfo: [String: Any]?
     if let message {
       userInfo = [NSLocalizedDescriptionKey: message]
@@ -104,71 +104,71 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: SharedErrorCode.public(code), userInfo: userInfo)
   }
 
-  public static func userDisabledError(message: String?) -> Error {
+  static func userDisabledError(message: String?) -> Error {
     error(code: .userDisabled, message: message)
   }
 
-  public static func wrongPasswordError(message: String?) -> Error {
+  static func wrongPasswordError(message: String?) -> Error {
     error(code: .wrongPassword, message: message)
   }
 
-  public static func tooManyRequestsError(message: String?) -> Error {
+  static func tooManyRequestsError(message: String?) -> Error {
     error(code: .tooManyRequests, message: message)
   }
 
-  public static func invalidCustomTokenError(message: String?) -> Error {
+  static func invalidCustomTokenError(message: String?) -> Error {
     error(code: .invalidCustomToken, message: message)
   }
 
-  public static func customTokenMismatchError(message: String?) -> Error {
+  static func customTokenMismatchError(message: String?) -> Error {
     error(code: .customTokenMismatch, message: message)
   }
 
-  public static func invalidCredentialError(message: String?) -> Error {
+  static func invalidCredentialError(message: String?) -> Error {
     error(code: .invalidCredential, message: message)
   }
 
-  public static func requiresRecentLoginError(message: String?) -> Error {
+  static func requiresRecentLoginError(message: String?) -> Error {
     error(code: .requiresRecentLogin, message: message)
   }
 
-  public static func invalidUserTokenError(message: String?) -> Error {
+  static func invalidUserTokenError(message: String?) -> Error {
     error(code: .invalidUserToken, message: message)
   }
 
-  public static func invalidEmailError(message: String?) -> Error {
+  static func invalidEmailError(message: String?) -> Error {
     error(code: .invalidEmail, message: message)
   }
 
-  public static func providerAlreadyLinkedError() -> Error {
+  static func providerAlreadyLinkedError() -> Error {
     error(code: .providerAlreadyLinked)
   }
 
-  public static func noSuchProviderError() -> Error {
+  static func noSuchProviderError() -> Error {
     error(code: .noSuchProvider)
   }
 
-  public static func userTokenExpiredError(message: String?) -> Error {
+  static func userTokenExpiredError(message: String?) -> Error {
     error(code: .userTokenExpired, message: message)
   }
 
-  public static func userNotFoundError(message: String?) -> Error {
+  static func userNotFoundError(message: String?) -> Error {
     error(code: .userNotFound, message: message)
   }
 
-  public static func invalidAPIKeyError() -> Error {
+  static func invalidAPIKeyError() -> Error {
     error(code: .invalidAPIKey)
   }
 
-  public static func userMismatchError() -> Error {
+  static func userMismatchError() -> Error {
     error(code: .userMismatch)
   }
 
-  public static func operationNotAllowedError(message: String?) -> Error {
+  static func operationNotAllowedError(message: String?) -> Error {
     error(code: .operationNotAllowed, message: message)
   }
 
-  public static func weakPasswordError(serverResponseReason reason: String?) -> Error {
+  static func weakPasswordError(serverResponseReason reason: String?) -> Error {
     let userInfo: [String: Any]?
     if let reason, !reason.isEmpty {
       userInfo = [
@@ -180,123 +180,123 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .weakPassword, userInfo: userInfo)
   }
 
-  public static func appNotAuthorizedError() -> Error {
+  static func appNotAuthorizedError() -> Error {
     error(code: .appNotAuthorized)
   }
 
-  public static func expiredActionCodeError(message: String?) -> Error {
+  static func expiredActionCodeError(message: String?) -> Error {
     error(code: .expiredActionCode, message: message)
   }
 
-  public static func invalidActionCodeError(message: String?) -> Error {
+  static func invalidActionCodeError(message: String?) -> Error {
     error(code: .invalidActionCode, message: message)
   }
 
-  public static func invalidMessagePayloadError(message: String?) -> Error {
+  static func invalidMessagePayloadError(message: String?) -> Error {
     error(code: .invalidMessagePayload, message: message)
   }
 
-  public static func invalidSenderError(message: String?) -> Error {
+  static func invalidSenderError(message: String?) -> Error {
     error(code: .invalidSender, message: message)
   }
 
-  public static func invalidRecipientEmailError(message: String?) -> Error {
+  static func invalidRecipientEmailError(message: String?) -> Error {
     error(code: .invalidRecipientEmail, message: message)
   }
 
-  public static func missingIosBundleIDError(message: String?) -> Error {
+  static func missingIosBundleIDError(message: String?) -> Error {
     error(code: .missingIosBundleID, message: message)
   }
 
-  public static func missingAndroidPackageNameError(message: String?) -> Error {
+  static func missingAndroidPackageNameError(message: String?) -> Error {
     error(code: .missingAndroidPackageName, message: message)
   }
 
-  public static func unauthorizedDomainError(message: String?) -> Error {
+  static func unauthorizedDomainError(message: String?) -> Error {
     error(code: .unauthorizedDomain, message: message)
   }
 
-  public static func invalidContinueURIError(message: String?) -> Error {
+  static func invalidContinueURIError(message: String?) -> Error {
     error(code: .invalidContinueURI, message: message)
   }
 
-  public static func missingContinueURIError(message: String?) -> Error {
+  static func missingContinueURIError(message: String?) -> Error {
     error(code: .missingContinueURI, message: message)
   }
 
-  public static func missingEmailError(message: String?) -> Error {
+  static func missingEmailError(message: String?) -> Error {
     error(code: .missingEmail, message: message)
   }
 
-  public static func missingPhoneNumberError(message: String?) -> Error {
+  static func missingPhoneNumberError(message: String?) -> Error {
     error(code: .missingPhoneNumber, message: message)
   }
 
-  public static func invalidPhoneNumberError(message: String?) -> Error {
+  static func invalidPhoneNumberError(message: String?) -> Error {
     error(code: .invalidPhoneNumber, message: message)
   }
 
-  public static func missingVerificationCodeError(message: String?) -> Error {
+  static func missingVerificationCodeError(message: String?) -> Error {
     error(code: .missingVerificationCode, message: message)
   }
 
-  public static func invalidVerificationCodeError(message: String?) -> Error {
+  static func invalidVerificationCodeError(message: String?) -> Error {
     error(code: .invalidVerificationCode, message: message)
   }
 
-  public static func missingVerificationIDError(message: String?) -> Error {
+  static func missingVerificationIDError(message: String?) -> Error {
     error(code: .missingVerificationID, message: message)
   }
 
-  public static func invalidVerificationIDError(message: String?) -> Error {
+  static func invalidVerificationIDError(message: String?) -> Error {
     error(code: .invalidVerificationID, message: message)
   }
 
-  public static func sessionExpiredError(message: String?) -> Error {
+  static func sessionExpiredError(message: String?) -> Error {
     error(code: .sessionExpired, message: message)
   }
 
-  public static func missingAppCredential(message: String?) -> Error {
+  static func missingAppCredential(message: String?) -> Error {
     error(code: .missingAppCredential, message: message)
   }
 
-  public static func invalidAppCredential(message: String?) -> Error {
+  static func invalidAppCredential(message: String?) -> Error {
     error(code: .invalidAppCredential, message: message)
   }
 
-  public static func quotaExceededError(message: String?) -> Error {
+  static func quotaExceededError(message: String?) -> Error {
     error(code: .quotaExceeded, message: message)
   }
 
-  public static func missingAppTokenError(underlyingError: Error?) -> Error {
+  static func missingAppTokenError(underlyingError: Error?) -> Error {
     error(code: .missingAppToken, underlyingError: underlyingError)
   }
 
-  public static func localPlayerNotAuthenticatedError() -> Error {
+  static func localPlayerNotAuthenticatedError() -> Error {
     error(code: .localPlayerNotAuthenticated)
   }
 
-  public static func gameKitNotLinkedError() -> Error {
+  static func gameKitNotLinkedError() -> Error {
     error(code: .gameKitNotLinked)
   }
 
-  public static func RPCRequestEncodingError(underlyingError: Error) -> Error {
+  static func RPCRequestEncodingError(underlyingError: Error) -> Error {
     error(code: .internal(.RPCRequestEncodingError), underlyingError: underlyingError)
   }
 
-  public static func JSONSerializationErrorForUnencodableType() -> Error {
+  static func JSONSerializationErrorForUnencodableType() -> Error {
     error(code: .internal(.JSONSerializationError))
   }
 
-  public static func JSONSerializationError(underlyingError: Error) -> Error {
+  static func JSONSerializationError(underlyingError: Error) -> Error {
     error(code: .internal(.JSONSerializationError), underlyingError: underlyingError)
   }
 
-  public static func networkError(underlyingError: Error) -> Error {
+  static func networkError(underlyingError: Error) -> Error {
     error(code: .networkError, underlyingError: underlyingError)
   }
 
-  public static func emailAlreadyInUseError(email: String?) -> Error {
+  static func emailAlreadyInUseError(email: String?) -> Error {
     var userInfo: [String: Any]?
     if let email, !email.isEmpty {
       userInfo = [userInfoEmailKey: email]
@@ -304,7 +304,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .emailAlreadyInUse, userInfo: userInfo)
   }
 
-  public static func credentialAlreadyInUseError(message: String?,
+  static func credentialAlreadyInUseError(message: String?,
                                                        credential: AuthCredential?,
                                                        email: String?) -> Error {
     var userInfo: [String: Any] = [:]
@@ -320,15 +320,15 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .credentialAlreadyInUse, message: message)
   }
 
-  public static func webContextAlreadyPresentedError(message: String?) -> Error {
+  static func webContextAlreadyPresentedError(message: String?) -> Error {
     error(code: .webContextAlreadyPresented, message: message)
   }
 
-  public static func webContextCancelledError(message: String?) -> Error {
+  static func webContextCancelledError(message: String?) -> Error {
     error(code: .webContextCancelled, message: message)
   }
 
-  public static func appVerificationUserInteractionFailure(reason: String?) -> Error {
+  static func appVerificationUserInteractionFailure(reason: String?) -> Error {
     let userInfo: [String: Any]?
     if let reason, !reason.isEmpty {
       userInfo = [NSLocalizedFailureReasonErrorKey: reason]
@@ -338,7 +338,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .appVerificationUserInteractionFailure, userInfo: userInfo)
   }
 
-  public static func webSignInUserInteractionFailure(reason: String?) -> Error {
+  static func webSignInUserInteractionFailure(reason: String?) -> Error {
     let userInfo: [String: Any]?
     if let reason, !reason.isEmpty {
       userInfo = [NSLocalizedFailureReasonErrorKey: reason]
@@ -348,7 +348,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .webSignInUserInteractionFailure, userInfo: userInfo)
   }
 
-  public static func urlResponseError(code: String, message: String?) -> Error {
+  static func urlResponseError(code: String, message: String?) -> Error {
     let errorCode: AuthErrorCode
     switch code {
     case kURLResponseErrorCodeInvalidClientID:
@@ -363,15 +363,15 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: errorCode, message: message)
   }
 
-  public static func nullUserError(message: String?) -> Error {
+  static func nullUserError(message: String?) -> Error {
     error(code: .nullUser, message: message)
   }
 
-  public static func invalidProviderIDError(message: String?) -> Error {
+  static func invalidProviderIDError(message: String?) -> Error {
     error(code: .invalidProviderID, message: message)
   }
 
-  public static func invalidHostingLinkDomainError(message: String?) -> Error {
+  static func invalidHostingLinkDomainError(message: String?) -> Error {
     error(code: .invalidHostingLinkDomain, message: message)
   }
 
@@ -379,12 +379,12 @@ private let kFIRAuthErrorMessageMalformedJWT =
     error(code: .passwordDoesNotMeetRequirements, message: message)
   }
 
-  public static func missingOrInvalidNonceError(message: String?) -> Error {
+  static func missingOrInvalidNonceError(message: String?) -> Error {
     error(code: .missingOrInvalidNonce, message: message)
   }
 
   /// `status` is an `OSStatus` on Apple platforms.
-  public static func keychainError(function: String, status: Int32) -> Error {
+  static func keychainError(function: String, status: Int32) -> Error {
     #if canImport(Security)
       let message = SecCopyErrorMessageString(status, nil) as String? ?? ""
       let reason = "\(function) (\(status)) \(message)"
@@ -394,31 +394,31 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .keychainError, userInfo: [NSLocalizedFailureReasonErrorKey: reason])
   }
 
-  public static func tenantIDMismatchError() -> Error {
+  static func tenantIDMismatchError() -> Error {
     error(code: .tenantIDMismatch)
   }
 
-  public static func unsupportedTenantOperationError() -> Error {
+  static func unsupportedTenantOperationError() -> Error {
     error(code: .unsupportedTenantOperation)
   }
 
-  public static func notificationNotForwardedError() -> Error {
+  static func notificationNotForwardedError() -> Error {
     error(code: .notificationNotForwarded)
   }
 
-  public static func appNotVerifiedError(message: String?) -> Error {
+  static func appNotVerifiedError(message: String?) -> Error {
     error(code: .appNotVerified, message: message)
   }
 
-  public static func missingClientIdentifierError(message: String?) -> Error {
+  static func missingClientIdentifierError(message: String?) -> Error {
     error(code: .missingClientIdentifier, message: message)
   }
 
-  public static func captchaCheckFailedError(message: String?) -> Error {
+  static func captchaCheckFailedError(message: String?) -> Error {
     error(code: .captchaCheckFailed, message: message)
   }
 
-  public static func unexpectedResponse(data: Data?, underlyingError: Error?) -> Error {
+  static func unexpectedResponse(data: Data?, underlyingError: Error?) -> Error {
     var userInfo: [String: Any] = [:]
     if let data {
       userInfo[userInfoDataKey] = data
@@ -429,7 +429,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .internal(.unexpectedResponse), userInfo: userInfo)
   }
 
-  public static func unexpectedErrorResponse(data: Data?,
+  static func unexpectedErrorResponse(data: Data?,
                                                    underlyingError: Error?) -> Error {
     var userInfo: [String: Any] = [:]
     if let data {
@@ -441,7 +441,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .internal(.unexpectedErrorResponse), userInfo: userInfo)
   }
 
-  public static func unexpectedErrorResponse(deserializedResponse: Any?) -> Error {
+  static func unexpectedErrorResponse(deserializedResponse: Any?) -> Error {
     var userInfo: [String: Any]?
     if let deserializedResponse {
       userInfo = [userInfoDeserializedResponseKey: deserializedResponse]
@@ -449,7 +449,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .internal(.unexpectedErrorResponse), userInfo: userInfo)
   }
 
-  public static func unexpectedResponse(deserializedResponse: Any?) -> Error {
+  static func unexpectedResponse(deserializedResponse: Any?) -> Error {
     var userInfo: [String: Any]?
     if let deserializedResponse {
       userInfo = [userInfoDeserializedResponseKey: deserializedResponse]
@@ -457,7 +457,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .internal(.unexpectedResponse), userInfo: userInfo)
   }
 
-  public static func unexpectedResponse(deserializedResponse: Any?,
+  static func unexpectedResponse(deserializedResponse: Any?,
                                               underlyingError: Error?) -> Error {
     var userInfo: [String: Any] = [:]
     if let deserializedResponse {
@@ -469,7 +469,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .internal(.unexpectedResponse), userInfo: userInfo)
   }
 
-  public static func unexpectedErrorResponse(deserializedResponse: Any?,
+  static func unexpectedErrorResponse(deserializedResponse: Any?,
                                                    underlyingError: Error?) -> Error {
     var userInfo: [String: Any] = [:]
     if let deserializedResponse {
@@ -484,7 +484,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     )
   }
 
-  public static func malformedJWTError(token: String, underlyingError: Error?) -> Error {
+  static func malformedJWTError(token: String, underlyingError: Error?) -> Error {
     var userInfo: [String: Any] = [
       NSLocalizedDescriptionKey: kFIRAuthErrorMessageMalformedJWT,
       userInfoDataKey: token,
@@ -495,7 +495,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .malformedJWT, userInfo: userInfo)
   }
 
-  public static func RPCResponseDecodingError(deserializedResponse: Any?,
+  static func RPCResponseDecodingError(deserializedResponse: Any?,
                                                     underlyingError: Error?) -> Error {
     var userInfo: [String: Any] = [:]
     if let deserializedResponse {
@@ -507,7 +507,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .internal(.RPCResponseDecodingError), userInfo: userInfo)
   }
 
-  public static func accountExistsWithDifferentCredentialError(email: String?,
+  static func accountExistsWithDifferentCredentialError(email: String?,
                                                                      updatedCredential: AuthCredential?)
     -> Error {
     var userInfo: [String: Any] = [:]
@@ -520,7 +520,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
     return error(code: .accountExistsWithDifferentCredential, userInfo: userInfo)
   }
 
-  public static func blockingCloudFunctionServerResponse(message: String?) -> Error {
+  static func blockingCloudFunctionServerResponse(message: String?) -> Error {
     guard let message else {
       return error(code: .blockingCloudFunctionError, message: message)
     }
@@ -558,7 +558,7 @@ private let kFIRAuthErrorMessageMalformedJWT =
   }
 
     // TODO(ncooke3): Address the optionality of these arguments.
-    public static func secondFactorRequiredError(pendingCredential: String?,
+    static func secondFactorRequiredError(pendingCredential: String?,
                                                        hints: [MultiFactorInfo]?,
                                                        auth: Auth)
       -> Error {
@@ -572,4 +572,4 @@ private let kFIRAuthErrorMessageMalformedJWT =
     }
 }
 
-public protocol MultiFactorResolverWrapper {}
+protocol MultiFactorResolverWrapper {}

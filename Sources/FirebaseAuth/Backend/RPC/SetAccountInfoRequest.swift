@@ -115,9 +115,9 @@ private let kTenantIDKey = "tenantId"
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/setAccountInfo
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct SetAccountInfoRequest: IdentityToolkitRequest,
+ struct SetAccountInfoRequest: IdentityToolkitRequest,
   AuthRPCRequest, Encodable {
-     public typealias Response = SetAccountInfoResponse
+     typealias Response = SetAccountInfoResponse
 
   /** @property accessToken
       @brief The STS Access Token of the authenticated user.
@@ -132,7 +132,7 @@ private let kTenantIDKey = "tenantId"
   /** @property localID
       @brief The local ID of the user.
    */
-  public var localID: String?
+  var localID: String?
 
   /** @property email
       @brief The email of the user.
@@ -147,17 +147,17 @@ private let kTenantIDKey = "tenantId"
   /** @property password
       @brief The new password of the user.
    */
-  public var password: String?
+  var password: String?
 
   /** @property providers
       @brief The associated identity providers of the user.
    */
-  public var providers: [String]?
+  var providers: [String]?
 
   /** @property OOBCode
       @brief The out-of-band code of the change email request.
    */
-   public var oobCode: String?
+   var oobCode: String?
 
   /** @property emailVerified
       @brief Whether to mark the email as verified or not.
@@ -167,44 +167,44 @@ private let kTenantIDKey = "tenantId"
   /** @property upgradeToFederatedLogin
       @brief Whether to mark the user to upgrade to federated login.
    */
-  public var upgradeToFederatedLogin: Bool = false
+  var upgradeToFederatedLogin: Bool = false
 
   /** @property captchaChallenge
       @brief The captcha challenge.
    */
-  public var captchaChallenge: String?
+  var captchaChallenge: String?
 
   /** @property captchaResponse
       @brief Response to the captcha.
    */
-  public var captchaResponse: String?
+  var captchaResponse: String?
 
   /** @property deleteAttributes
       @brief The list of user attributes to delete.
       @remarks Every element of the list must be one of the predefined constant starts with
           "FIRSetAccountInfoUserAttribute".
    */
-  public var deleteAttributes: [String]?
+  var deleteAttributes: [String]?
 
   /** @property deleteProviders
       @brief The list of identity providers to delete.
    */
-  public var deleteProviders: [String]?
+  var deleteProviders: [String]?
 
   /** @property returnSecureToken
       @brief Whether the response should return access token and refresh token directly.
       @remarks The default value is @c YES .
    */
-  public var returnSecureToken: Bool = false
+  var returnSecureToken: Bool = false
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kSetAccountInfoEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kSetAccountInfoEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
      
 
   public init(requestConfiguration: AuthRequestConfiguration) {

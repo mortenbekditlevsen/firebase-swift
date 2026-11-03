@@ -14,17 +14,17 @@
 
 import Foundation
 
-public struct GetProjectConfigResponse:
+struct GetProjectConfigResponse:
   AuthRPCResponse {
   /** @property projectID
       @brief The unique ID pertaining to the current project.
    */
-  public var projectID: String?
+  var projectID: String?
 
   /** @property authorizedDomains
       @brief A list of domains allowlisted for the current project.
    */
-  public var authorizedDomains: [String]?
+  var authorizedDomains: [String]?
 
     enum CodingKeys: String, CodingKey {
         case projectID = "projectId"
@@ -48,6 +48,6 @@ public struct GetProjectConfigResponse:
             }
         }
     }
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

@@ -33,7 +33,7 @@ enum SharedErrorCode {
   case `internal`(AuthInternalErrorCode)
 }
 
- public enum AuthInternalErrorCode: Int {
+ enum AuthInternalErrorCode: Int {
   case networkError = 17020
 
   /** @var FIRAuthInternalErrorCodeRPCRequestEncodingError

@@ -21,12 +21,12 @@ import Foundation
        - FIRAuthInternalErrorCodeEmailNotFound
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/verifyPassword
  */
- public struct VerifyPasswordResponse: AuthRPCResponse {
+ struct VerifyPasswordResponse: AuthRPCResponse {
   /** @property localID
       @brief The RP local ID if it's already been mapped to the IdP account identified by the
           federated ID.
    */
-  public var localID: String?
+  var localID: String?
 
   /** @property email
       @brief The email returned by the IdP. NOTE: The federated login user may not own the email.
@@ -48,7 +48,7 @@ import Foundation
   /** @property approximateExpirationDate
       @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
   /** @property refreshToken
       @brief The refresh token from Secure Token Service.
@@ -60,9 +60,9 @@ import Foundation
    */
   public var photoURL: URL?
 
-   public var mfaPendingCredential: String?
+   var mfaPendingCredential: String?
 
-   public var mfaInfo: [AuthProtoMFAEnrollment]?
+   var mfaInfo: [AuthProtoMFAEnrollment]?
 
      enum CodingKeys: String, CodingKey {
          case localID = "localId"
@@ -76,7 +76,7 @@ import Foundation
          case mfaInfo
      }
   
-     public func setFields(dictionary: [String : Any]) throws {
+     func setFields(dictionary: [String : Any]) throws {
          
      }
      

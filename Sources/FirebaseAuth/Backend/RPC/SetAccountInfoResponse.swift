@@ -19,7 +19,7 @@ import Foundation
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/setAccountInfo
  */
 
-public struct SetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
+struct SetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
   /** @property providerID
       @brief The ID of the identity provider.
    */
@@ -46,7 +46,7 @@ public struct SetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
     @brief Represents the response from the setAccountInfo endpoint.
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/setAccountInfo
  */
- public struct SetAccountInfoResponse: AuthRPCResponse, Decodable {
+ struct SetAccountInfoResponse: AuthRPCResponse, Decodable {
   /** @property email
       @brief The email or the user.
    */
@@ -60,7 +60,7 @@ public struct SetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
   /** @property providerUserInfo
       @brief The user's profiles at the associated identity providers.
    */
-  public var providerUserInfo: [SetAccountInfoResponseProviderUserInfo]?
+  var providerUserInfo: [SetAccountInfoResponseProviderUserInfo]?
 
   /** @property idToken
       @brief Either an authorization code suitable for performing an STS token exchange, or the
@@ -72,7 +72,7 @@ public struct SetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
   /** @property approximateExpirationDate
       @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
   /** @property refreshToken
       @brief The refresh token from Secure Token Service.
@@ -97,6 +97,6 @@ public struct SetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
          self.refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
      }
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

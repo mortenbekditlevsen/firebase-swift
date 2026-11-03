@@ -24,7 +24,7 @@ import Foundation
        - FIRAuthErrorCodeInvalidActionCode
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/resetPassword
  */
- public struct ResetPasswordResponse: AuthRPCResponse, Decodable {
+ struct ResetPasswordResponse: AuthRPCResponse, Decodable {
   /** @property email
    @brief The email address corresponding to the reset password request. The backend doesn't
    return one for email sign-in codes.
@@ -34,12 +34,12 @@ import Foundation
   /** @property verifiedEmail
    @brief The verified email returned from the backend.
    */
-  public var verifiedEmail: String?
+  var verifiedEmail: String?
 
   /** @property requestType
    @brief The type of request as returned by the backend.
    */
-  public var requestType: String?
+  var requestType: String?
 
      enum CodingKeys: String, CodingKey {
          case email

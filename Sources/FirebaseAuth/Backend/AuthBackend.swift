@@ -30,7 +30,7 @@ import FoundationNetworking
 
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public protocol AuthBackendRPCIssuer: Sendable {
+protocol AuthBackendRPCIssuer: Sendable {
   /** @fn
       @brief Asynchronously sends a POST request.
       @param requestConfiguration The request to be made.
@@ -46,7 +46,7 @@ public protocol AuthBackendRPCIssuer: Sendable {
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
+struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
   let fetcherService: URLSession
 
     init() {
@@ -64,7 +64,7 @@ public struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
         // XXX TODO: LOOK AT REUSE ISSUE
   }
 
-    public func asyncPostToURL<T: AuthRPCRequest>(withRequest request: T,
+    func asyncPostToURL<T: AuthRPCRequest>(withRequest request: T,
                              body: Data?,
                              contentType: String) async throws -> Data {
     let requestConfiguration = request.requestConfiguration
@@ -85,7 +85,7 @@ public struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public final class AuthBackend: Sendable {
+ final class AuthBackend: Sendable {
   static func authUserAgent() -> String {
       // XXX TODO:
       // GTMUseragent is bundle id followed by a space and
@@ -122,12 +122,12 @@ public struct AuthBackendRPCIssuerImplementation: AuthBackendRPCIssuer {
       @param request The request.
       @param callback The callback for both success and failure.
    */
-     public class func post<T: AuthRPCRequest>(withRequest request: T) async throws -> T.Response {
+     class func post<T: AuthRPCRequest>(withRequest request: T) async throws -> T.Response {
     try await implementation().post(withRequest: request)
   }
 
   // TODO: Why does this need to be public to be visible by unit tests?
-  public class func request(withURL url: URL,
+  class func request(withURL url: URL,
                             contentType: String,
                             requestConfiguration: AuthRequestConfiguration) async throws -> URLRequest
      {

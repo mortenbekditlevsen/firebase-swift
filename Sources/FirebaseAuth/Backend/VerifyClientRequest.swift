@@ -52,7 +52,7 @@ struct VerifyClientRequest: IdentityToolkitRequest, AuthRPCRequest, Encodable {
   /// The flag that denotes if the appToken  pertains to Sandbox or Production.
   public private(set) var isSandbox: Bool
     
-    public var requestConfiguration: AuthRequestConfiguration
+    var requestConfiguration: AuthRequestConfiguration
     
     var endpoint: String {
         Self.verifyClientEndpoint

@@ -122,19 +122,19 @@ private let kLastNameKey = "lastName"
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/verifyAssertion
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct VerifyAssertionRequest: IdentityToolkitRequest,
+ struct VerifyAssertionRequest: IdentityToolkitRequest,
   AuthRPCRequest {
-     public typealias Response = VerifyAssertionResponse
+     typealias Response = VerifyAssertionResponse
   /** @property requestURI
       @brief The URI to which the IDP redirects the user back. It may contain federated login result
           params added by the IDP.
    */
-  public var requestURI: String?
+  var requestURI: String?
 
   /** @property pendingToken
       @brief The Firebase ID Token for the IDP pending to be confirmed by the user.
    */
-  public var pendingToken: String?
+  var pendingToken: String?
 
   /** @property accessToken
       @brief The STS Access Token for the authenticated user, only needed for linking the user.
@@ -145,7 +145,7 @@ private let kLastNameKey = "lastName"
       @brief Whether the response should return access token and refresh token directly.
       @remarks The default value is @c YES .
    */
-  public var returnSecureToken: Bool = false
+  var returnSecureToken: Bool = false
 
   // MARK: - Components of "postBody"
 
@@ -157,56 +157,56 @@ private let kLastNameKey = "lastName"
   /** @property providerAccessToken
       @brief An access token from the IDP.
    */
-  public var providerAccessToken: String?
+  var providerAccessToken: String?
 
   /** @property providerIDToken
       @brief An ID Token from the IDP.
    */
-  public var providerIDToken: String?
+  var providerIDToken: String?
 
   /** @property providerRawNonce
       @brief An raw nonce from the IDP.
    */
-  public var providerRawNonce: String?
+  var providerRawNonce: String?
 
   /** @property returnIDPCredential
       @brief Whether the response should return the IDP credential directly.
    */
-  public var returnIDPCredential: Bool = false
+  var returnIDPCredential: Bool = false
 
   /** @property providerOAuthTokenSecret
       @brief A session ID used to map this request to a headful-lite flow.
    */
-  public var sessionID: String?
+  var sessionID: String?
 
   /** @property providerOAuthTokenSecret
       @brief An OAuth client secret from the IDP.
    */
-  public var providerOAuthTokenSecret: String?
+  var providerOAuthTokenSecret: String?
 
   /** @property inputEmail
       @brief The originally entered email in the UI.
    */
-  public var inputEmail: String?
+  var inputEmail: String?
 
   /** @property autoCreate
       @brief A flag that indicates whether or not the user should be automatically created.
    */
-  public var autoCreate: Bool = false
+  var autoCreate: Bool = false
 
   /** @property fullName
       @brief A full name from the IdP.
    */
-  public var fullName: PersonNameComponents?
+  var fullName: PersonNameComponents?
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kVerifyAssertionEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kVerifyAssertionEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
   public init(providerID: String, requestConfiguration: AuthRequestConfiguration) {
     self.providerID = providerID

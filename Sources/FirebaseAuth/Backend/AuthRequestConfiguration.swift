@@ -24,7 +24,7 @@ import FirebaseCore
    @brief Defines configurations to be added to a request to Firebase Auth's backend.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public struct AuthRequestConfiguration: Sendable, Equatable {
+struct AuthRequestConfiguration: Sendable, Equatable {
     
   /** @property APIKey
    @brief The Firebase Auth API key used in the request.
@@ -39,7 +39,7 @@ public struct AuthRequestConfiguration: Sendable, Equatable {
   /// ** @property appID
   //    @brief The Firebase appID used in the request.
   // */
-  public var appID: String
+  var appID: String
 
   /// The `Auth` instance the requests are for. Errors that need it, such as a second factor
   /// being required, get it from here. It's a back-reference, not configuration, so it isn't
@@ -63,14 +63,14 @@ public struct AuthRequestConfiguration: Sendable, Equatable {
   /** @property additionalFrameworkMarker
    @brief Additional framework marker that will be added as part of the header of every request.
    */
-  public var additionalFrameworkMarker: String?
+  var additionalFrameworkMarker: String?
 
   /** @property emulatorHostAndPort
    @brief If set, the local emulator host and port to point to instead of the remote backend.
    */
-  public var emulatorHostAndPort: String?
+  var emulatorHostAndPort: String?
 
-    public var tenantId: String?
+    var tenantId: String?
   
   public init(apiKey: String,
               appID: String,

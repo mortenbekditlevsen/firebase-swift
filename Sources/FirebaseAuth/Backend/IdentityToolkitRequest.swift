@@ -74,14 +74,14 @@ extension IdentityToolkitRequest {
     public var tenantID: String? { requestConfiguration.tenantId }
     public var apiKey: String { requestConfiguration.apiKey }
     
-    public func containsPostBody() -> Bool {
+    func containsPostBody() -> Bool {
         true
     }
 
   /** @fn requestURL
    @brief Gets the request's full URL.
    */
-  public func requestURL() -> URL {
+  func requestURL() -> URL {
     let apiProtocol: String
     let apiHostAndPathPrefix: String
     let urlString: String

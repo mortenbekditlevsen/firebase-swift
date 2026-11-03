@@ -25,9 +25,9 @@ private let kGetAccountInfoEndpoint = "getAccountInfo"
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/getAccountInfo
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct GetAccountInfoRequest: IdentityToolkitRequest,
+ struct GetAccountInfoRequest: IdentityToolkitRequest,
                                       AuthRPCRequest, Encodable {
-     public typealias Response = GetAccountInfoResponse
+     typealias Response = GetAccountInfoResponse
      
      /** @property accessToken
       @brief The STS Access Token for the authenticated user.
@@ -44,10 +44,10 @@ private let kGetAccountInfoEndpoint = "getAccountInfo"
       @param accessToken The Access Token of the authenticated user.
       @param requestConfiguration An object containing configurations to be added to the request.
       */
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kGetAccountInfoEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kGetAccountInfoEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
      
      public init(accessToken: String, requestConfiguration: AuthRequestConfiguration) {
          self.accessToken = accessToken

@@ -24,7 +24,7 @@ private let kErrorKey = "error"
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/getAccountInfo
  */
 
-public struct GetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
+struct GetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
   /** @property providerID
    @brief The ID of the identity provider.
    */
@@ -43,7 +43,7 @@ public struct GetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
   /** @property federatedID
    @brief The user's identifier at the identity provider.
    */
-  public let federatedID: String?
+  let federatedID: String?
 
   /** @property email
    @brief The user's email at the identity provider.
@@ -69,11 +69,11 @@ public struct GetAccountInfoResponseProviderUserInfo: Decodable, Sendable {
     @brief Represents the firebase user info part of the response from the getAccountInfo endpoint.
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/getAccountInfo
  */
-public struct GetAccountInfoResponseUser: Decodable, Sendable {
+struct GetAccountInfoResponseUser: Decodable, Sendable {
   /** @property localID
    @brief The ID of the user.
    */
-  public let localID: String?
+  let localID: String?
 
   /** @property email
    @brief The email or the user.
@@ -103,26 +103,26 @@ public struct GetAccountInfoResponseUser: Decodable, Sendable {
   /** @property lastSignInDate
    @brief The user's last login date.
    */
-  public let lastLoginDate: Date?
+  let lastLoginDate: Date?
 
   /** @property providerUserInfo
    @brief The user's profiles at the associated identity providers.
    */
-  public let providerUserInfo: [GetAccountInfoResponseProviderUserInfo]?
+  let providerUserInfo: [GetAccountInfoResponseProviderUserInfo]?
 
   /** @property passwordHash
    @brief Information about user's password.
    @remarks This is not necessarily the hash of user's actual password.
    */
 
-  public let passwordHash: String?
+  let passwordHash: String?
 
   /** @property phoneNumber
    @brief A phone number associated with the user.
    */
   public let phoneNumber: String?
 
-   public let mfaEnrollments: [AuthProtoMFAEnrollment]?
+   let mfaEnrollments: [AuthProtoMFAEnrollment]?
 
   /** @fn initWithAPIKey:
    @brief Designated initializer.
@@ -171,7 +171,7 @@ public struct GetAccountInfoResponseUser: Decodable, Sendable {
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/getAccountInfo
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct GetAccountInfoResponse: AuthRPCResponse {
+ struct GetAccountInfoResponse: AuthRPCResponse {
   /** @property providerUserInfo
    @brief The requested users' profiles.
    */

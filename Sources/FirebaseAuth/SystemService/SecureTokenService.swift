@@ -30,11 +30,11 @@ private let kFiveMinutes = 5 * 60.0
     @brief A class represents a credential that proves the identity of the app.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct SecureTokenService: Codable, Sendable, Equatable {
+ struct SecureTokenService: Codable, Sendable, Equatable {
   /** @property requestConfiguration
       @brief The configuration for making requests to server.
    */
-  public var requestConfiguration: AuthRequestConfiguration?
+  var requestConfiguration: AuthRequestConfiguration?
 
   /** @property accessToken
       @brief The cached access token.
@@ -53,7 +53,7 @@ private let kFiveMinutes = 5 * 60.0
   /** @property accessTokenExpirationDate
       @brief The expiration date of the cached access token.
    */
-  public var accessTokenExpirationDate: Date?
+  var accessTokenExpirationDate: Date?
 
   /** @fn initWithRequestConfiguration:accessToken:accessTokenExpirationDate:refreshToken
       @brief Creates a @c FIRSecureTokenService with access and refresh tokens.
@@ -81,7 +81,7 @@ private let kFiveMinutes = 5 * 60.0
           Invoked asyncronously on the auth global work queue in the future.
    */
           
-  public mutating func fetchAccessToken(forcingRefresh forceRefresh: Bool) async throws -> (String, Bool) {
+  mutating func fetchAccessToken(forcingRefresh forceRefresh: Bool) async throws -> (String, Bool) {
 
       // XXX TODO mutable self capture in concurrent code...
 //      try await taskQueue.enqueue {

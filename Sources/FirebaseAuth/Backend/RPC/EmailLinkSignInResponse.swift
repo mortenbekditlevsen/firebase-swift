@@ -17,7 +17,7 @@ import Foundation
 /** @class FIRVerifyAssertionResponse
     @brief Represents the response from the emailLinkSignin endpoint.
  */
- public struct EmailLinkSignInResponse: AuthRPCResponse {
+ struct EmailLinkSignInResponse: AuthRPCResponse {
   /** @property IDToken
    @brief The ID token in the email link sign-in response.
    */
@@ -36,7 +36,7 @@ import Foundation
   /** @property approximateExpirationDate
    @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
   /** @property isNewUser
    @brief Flag indicating that the user signing in is a new user and not a returning user.
@@ -47,12 +47,12 @@ import Foundation
        @brief An opaque string that functions as proof that the user has successfully passed the first
       factor check.
    */
-  public var MFAPendingCredential: String?
+  var MFAPendingCredential: String?
 
   /** @property MFAInfo
        @brief Info on which multi-factor authentication providers are enabled.
    */
-  public var MFAInfo: [AuthProtoMFAEnrollment]?
+  var MFAInfo: [AuthProtoMFAEnrollment]?
 
      enum CodingKeys: String, CodingKey {
          case idToken

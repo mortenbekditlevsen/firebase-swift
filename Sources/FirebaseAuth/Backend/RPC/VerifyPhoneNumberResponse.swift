@@ -14,7 +14,7 @@
 
 import Foundation
 
-public struct VerifyPhoneNumberResponse:
+struct VerifyPhoneNumberResponse:
   AuthRPCResponse {
   /** @property IDToken
    @brief Either an authorization code suitable for performing an STS token exchange, or the
@@ -31,7 +31,7 @@ public struct VerifyPhoneNumberResponse:
   /** @property localID
    @brief The Firebase Auth user ID.
    */
-  public var localID: String?
+  var localID: String?
 
   /** @property phoneNumber
    @brief The verified phone number.
@@ -41,7 +41,7 @@ public struct VerifyPhoneNumberResponse:
   /** @property temporaryProof
    @brief The temporary proof code returned by the backend.
    */
-  public var temporaryProof: String?
+  var temporaryProof: String?
 
   /** @property isNewUser
    @brief Flag indicating that the user signing in is a new user and not a returning user.
@@ -52,7 +52,7 @@ public struct VerifyPhoneNumberResponse:
   /** @property approximateExpirationDate
    @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
     
     enum CodingKeys: String, CodingKey {

@@ -36,7 +36,7 @@ import Foundation
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- struct GoogleAuthCredential: AuthCredential, Codable {
+ struct GoogleAuthCredential: PreparableAuthCredential, Codable {
   let idToken: String
   let accessToken: String
 

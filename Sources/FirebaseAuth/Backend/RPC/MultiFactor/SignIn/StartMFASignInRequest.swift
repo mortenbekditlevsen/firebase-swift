@@ -17,9 +17,9 @@ import Foundation
 private let kStartMFASignInEndPoint = "accounts/mfaSignIn:start"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct StartMFASignInRequest: IdentityToolkitRequest,
+ struct StartMFASignInRequest: IdentityToolkitRequest,
   AuthRPCRequest {
-     public typealias Response = StartMFASignInResponse
+     typealias Response = StartMFASignInResponse
   var MFAPendingCredential: String?
   var MFAEnrollmentID: String?
   var signInInfo: AuthProtoStartMFAPhoneRequestInfo?
@@ -28,10 +28,10 @@ private let kStartMFASignInEndPoint = "accounts/mfaSignIn:start"
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { true }
-     public var endpoint: String { kStartMFASignInEndPoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { true }
+     var endpoint: String { kStartMFASignInEndPoint }
+     var requestConfiguration: AuthRequestConfiguration
 
   init(MFAPendingCredential: String?, MFAEnrollmentID: String?,
        signInInfo: AuthProtoStartMFAPhoneRequestInfo?,
