@@ -115,9 +115,9 @@ let cities = try await Firestore.firestore().collection("cities")
 - **No swizzling.** On iOS, phone auth needs the app to hand Auth its APNs
   token (`setAPNSToken(_:type:)`), remote notifications
   (`canHandleNotification(_:)`) and opened URLs (`canHandle(_:)`).
-- **Get Auth first.** Upstream creates Auth when the app is configured. Here
-  it's created by the first `Auth.auth()`, and Database, Firestore, Functions
-  and Storage only see the signed-in user if Auth exists when they're created.
+- **Auth is created on first use.** Upstream creates Auth when the app is
+  configured; here the first `Auth.auth()` does. The other SDKs pick up its
+  user whenever that happens, so the order doesn't matter.
 - **Not ported:** the data collection flag, heartbeats, and limited-use App
   Check tokens.
 

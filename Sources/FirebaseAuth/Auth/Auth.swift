@@ -1489,6 +1489,20 @@ extension Auth: AuthInterop {
     // assigned to the previous user waits until that user signs in again.)
     // Observers run while the state lock is held, so they must not call back
     // into this Auth instance; upstream has the same rule for its work queue.
+    _postInternalAuthStateNotification(token: token, state: state)
+  }
+
+  /// Tells SDKs created before this Auth instance about the saved user it started with.
+  /// Upstream creates Auth when the app is configured, so they always see it.
+  func postInternalAuthStateNotificationForSavedUser() {
+    _state.withLock { state in
+      guard state.currentUser != nil else { return }
+      _postInternalAuthStateNotification(token: state.currentUser?.rawAccessToken(), state: state)
+    }
+  }
+
+  private func _postInternalAuthStateNotification(token: String?, state: State) {
+    let center = NotificationCenter.default
     var userInfo: [String: Any] = [:]
     if let app = self.app {
       userInfo[FIRAuthStateDidChangeInternalNotificationAppKey] = app
@@ -1501,7 +1515,7 @@ extension Auth: AuthInterop {
     }
     center.post(
       name: .FIRAuthStateDidChangeInternalNotification,
-      object: auth,
+      object: self,
       userInfo: userInfo
     )
   }

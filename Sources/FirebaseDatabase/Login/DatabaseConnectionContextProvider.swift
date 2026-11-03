@@ -45,15 +45,17 @@ protocol DatabaseConnectionContextProviderProtocol: Sendable {
 
 private final class FAuthStateListenerWrapper: @unchecked Sendable {
     private let listener: @DatabaseActor (String?) -> Void
-    private weak var auth: AuthInterop?
+    private weak var app: FirebaseApp?
     private var observer: (any NSObjectProtocol)?
 
-    init(listener: @escaping @DatabaseActor (String?) -> Void, auth: AuthInterop) {
+    init(listener: @escaping @DatabaseActor (String?) -> Void, app: FirebaseApp) {
         self.listener = listener
-        self.auth = auth
+        self.app = app
         observer = NotificationCenter.default.addObserver(forName: .FIRAuthStateDidChangeInternalNotification, object: nil, queue: nil) { [weak self] notification in
             let userInfo = notification.userInfo
-            guard (notification.object as? AnyObject) === self?.auth else { return }
+            guard let app = self?.app,
+                  userInfo?[FIRAuthStateDidChangeInternalNotificationAppKey] as? FirebaseApp === app
+            else { return }
             // No token means the user signed out; the connection then unauthenticates.
             let token = userInfo?[FIRAuthStateDidChangeInternalNotificationTokenKey] as? String
             Task { @DatabaseActor in
@@ -96,6 +98,8 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
 
     let appCheck: DatabaseAppCheckInterop? // FIRAppCheckInterop
     let auth: AuthInterop? // FIRAuthInterop
+    /// The app whose Auth notifications this provider follows.
+    private let app: FirebaseApp
 
     /// Strong references to the auth listeners as they are only weak in
     /// FIRFirebaseApp.
@@ -106,10 +110,11 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
     /// method. Required to cleanup the observers on dealloc.
     let appCheckNotificationObservers: Mutex<[SendableObserver]> = .init([])
 
-    private init(auth: AuthInterop?,
+    private init(app: FirebaseApp,
                  appCheck: DatabaseAppCheckInterop?) {
         self.appCheck = appCheck
-        self.auth = auth
+        self.auth = app.lazyAuth
+        self.app = app
     }
 
     deinit {
@@ -138,11 +143,7 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
     }
 
     func listenForAuthTokenChanges(_ listener: @escaping @DatabaseActor (String?) -> Void) {
-        guard let auth = auth else {
-            return
-        }
-
-        let wrapper = FAuthStateListenerWrapper(listener: listener, auth: auth)
+        let wrapper = FAuthStateListenerWrapper(listener: listener, app: app)
         authListeners.withLock({
             $0.append(wrapper)
         })
@@ -175,7 +176,7 @@ final class DatabaseConnectionContextProvider: DatabaseConnectionContextProvider
         }
     }
 
-    class func contextProvider(auth: AuthInterop?, appCheck: DatabaseAppCheckInterop?) -> DatabaseConnectionContextProviderProtocol {
-        DatabaseConnectionContextProvider(auth: auth, appCheck: appCheck)
+    class func contextProvider(app: FirebaseApp, appCheck: DatabaseAppCheckInterop?) -> DatabaseConnectionContextProviderProtocol {
+        DatabaseConnectionContextProvider(app: app, appCheck: appCheck)
     }
 }

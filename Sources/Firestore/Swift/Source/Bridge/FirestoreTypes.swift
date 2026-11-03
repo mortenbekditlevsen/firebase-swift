@@ -629,43 +629,44 @@ public final class Firestore: @unchecked Sendable {
         return existing
       }
       let projectID = app.options.projectID ?? ""
-      let auth = app.auth
+      // Auth may not exist yet (it's created by the first `Auth.auth(app:)`), so tokens and
+      // user changes come from whichever Auth the app has.
+      let auth = app.lazyAuth
       let appCheck = app.appCheck
       let source = CredentialsSource(auth: auth, appCheck: appCheck)
-      let authContext = auth.map { _ in Unmanaged.passRetained(source).toOpaque() }
+      let authContext = Unmanaged.passRetained(source).toOpaque()
       let appCheckContext = appCheck.map { _ in Unmanaged.passRetained(source).toOpaque() }
-      let authCallback: TokenRequestCallback? = auth == nil ? nil : requestAuthToken
       let appCheckCallback: TokenRequestCallback? = appCheck == nil ? nil : requestAppCheckToken
       let bridge = CppFirestoreBridge.Create(
         std.string(projectID),
         std.string(database),
         std.string(app.name),
         authContext,
-        authCallback,
-        std.string(auth?.getUserID() ?? ""),
+        requestAuthToken,
+        std.string(auth.getUserID() ?? ""),
         appCheckContext,
         appCheckCallback,
         releaseCredentialsSource
       )
       let instance = Firestore(app: app, cppBridge: bridge, component: component,
                                databaseID: database)
-      if let auth {
-        // swift-corelibs-foundation never matches an `object:` filter that is a
-        // pure Swift class, so filter by identity in the block instead.
-        instance.authObserver = NotificationCenter.default.addObserver(
-          forName: .FIRAuthStateDidChangeInternalNotification,
-          object: nil,
-          queue: nil
-        ) { [weak instance, weak auth] notification in
-          guard let auth, (notification.object as AnyObject?) === auth else { return }
-          let uid = notification.userInfo?[FIRAuthStateDidChangeInternalNotificationUIDKey]
-            as? String
-          instance?.cppBridge.SetAuthUser(std.string(uid ?? ""))
-        }
-        // The user may have changed between reading the initial UID and
-        // registering the observer.
-        bridge.SetAuthUser(std.string(auth.getUserID() ?? ""))
+      // swift-corelibs-foundation never matches an `object:` filter that is a
+      // pure Swift class, so filter by app in the block instead.
+      instance.authObserver = NotificationCenter.default.addObserver(
+        forName: .FIRAuthStateDidChangeInternalNotification,
+        object: nil,
+        queue: nil
+      ) { [weak instance, weak app] notification in
+        let userInfo = notification.userInfo
+        guard let app,
+              userInfo?[FIRAuthStateDidChangeInternalNotificationAppKey] as? FirebaseApp === app
+        else { return }
+        let uid = userInfo?[FIRAuthStateDidChangeInternalNotificationUIDKey] as? String
+        instance?.cppBridge.SetAuthUser(std.string(uid ?? ""))
       }
+      // The user may have changed between reading the initial UID and
+      // registering the observer.
+      bridge.SetAuthUser(std.string(auth.getUserID() ?? ""))
       instances[database] = instance
       return instance
     }
