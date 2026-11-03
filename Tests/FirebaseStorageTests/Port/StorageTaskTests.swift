@@ -104,4 +104,15 @@ struct StorageTaskTests {
       return
     }
   }
+
+  @Test func appsWithTheSameNameGetTheirOwnFetcherServices() async {
+    // Upstream keys the services by app name, so a second app with the name (such as one
+    // configured again after `delete()`) would send requests with the first app's credentials.
+    let first = rootReference().storage
+    let second = Storage.storage(app: FirebaseApp(options: first.app.options,
+                                                  name: first.app.name))
+    let firstService = await StorageFetcherService.shared.service(first)
+    #expect(await StorageFetcherService.shared.service(first) === firstService)
+    #expect(await StorageFetcherService.shared.service(second) !== firstService)
+  }
 }

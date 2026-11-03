@@ -887,6 +887,9 @@ class FirestoreBridge {
   /// empty when signed out.
   void SetAuthUser(const std::string& uid) const noexcept;
 
+  /// Tells Firestore that the App Check token changed.
+  void SetAppCheckToken(const std::string& token) const noexcept;
+
   /// Get a collection reference by path.
   CollectionReferenceBridge GetCollection(
       const std::string& collection_path) const noexcept;

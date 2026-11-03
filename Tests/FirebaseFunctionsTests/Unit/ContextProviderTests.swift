@@ -127,9 +127,8 @@ class ContextProviderTests: XCTestCase {
 
     XCTAssertNil(context.authToken)
     XCTAssertNil(context.fcmToken)
-    // Port note: upstream sends App Check's placeholder token on an error;
-    // the port's AppCheckInterop throws instead, so there's no token.
-    XCTAssertNil(context.appCheckToken)
+    // Expect placeholder token in the case of App Check error.
+    XCTAssertEqual(context.appCheckToken, appCheckFake.tokenResult.token)
   }
 
   func testAsyncContextWithAppCheckOnlyError_LimitedUseToken() async throws {
@@ -140,8 +139,8 @@ class ContextProviderTests: XCTestCase {
 
     XCTAssertNil(context.authToken)
     XCTAssertNil(context.fcmToken)
-    // Port note: the port's AppCheckInterop has no limited-use tokens yet.
-    XCTAssertNil(context.limitedUseAppCheckToken)
+    // Expect placeholder token in the case of App Check error.
+    XCTAssertEqual(context.limitedUseAppCheckToken, appCheckFake.limitedUseTokenResult.token)
   }
 
   func testContextWithAppCheckOnlyError() async throws {
@@ -150,9 +149,8 @@ class ContextProviderTests: XCTestCase {
     let context = try await provider.context(options: nil)
     XCTAssertNil(context.authToken)
     XCTAssertNil(context.fcmToken)
-    // Port note: upstream sends App Check's placeholder token on an error;
-    // the port's AppCheckInterop throws instead, so there's no token.
-    XCTAssertNil(context.appCheckToken)
+    // Expect placeholder token in the case of App Check error.
+    XCTAssertEqual(context.appCheckToken, appCheckFake.tokenResult.token)
   }
 
   func testContextWithAppCheckOnlyError_LimitedUseToken() async throws {
@@ -162,11 +160,15 @@ class ContextProviderTests: XCTestCase {
       .context(options: HTTPSCallableOptions(requireLimitedUseAppCheckTokens: true))
     XCTAssertNil(context.authToken)
     XCTAssertNil(context.fcmToken)
-    // Port note: the port's AppCheckInterop has no limited-use tokens yet.
-    XCTAssertNil(context.limitedUseAppCheckToken)
+    // Expect placeholder token in the case of App Check error.
+    XCTAssertEqual(context.limitedUseAppCheckToken, appCheckFake.limitedUseTokenResult.token)
   }
 
   func testAsyncContextWithAppCheckWithoutOptionalMethods() async throws {
+    // Port note: getLimitedUseToken() is required in the port's AppCheckInterop
+    // (FirebaseAppCheck's AppCheck implements it), so there's no App Check
+    // without it.
+    throw XCTSkip("getLimitedUseToken() is required")
     let appCheck = AppCheckFakeWithoutOptionalMethods(tokenResult: appCheckTokenSuccess)
     let provider = FunctionsContextProvider(auth: nil, appCheck: appCheck)
 
@@ -180,6 +182,10 @@ class ContextProviderTests: XCTestCase {
   }
 
   func testContextWithAppCheckWithoutOptionalMethods() async throws {
+    // Port note: getLimitedUseToken() is required in the port's AppCheckInterop
+    // (FirebaseAppCheck's AppCheck implements it), so there's no App Check
+    // without it.
+    throw XCTSkip("getLimitedUseToken() is required")
     let appCheck = AppCheckFakeWithoutOptionalMethods(tokenResult: appCheckTokenSuccess)
     let provider = FunctionsContextProvider(auth: nil, appCheck: appCheck)
     let context = try await provider.context(options: .init(requireLimitedUseAppCheckTokens: true))
@@ -270,8 +276,8 @@ class ContextProviderTests: XCTestCase {
 
 // MARK: - Utilities
 
-// Port note: the port's AppCheckInterop has only `getToken`, which is all this
-// fake implements upstream too.
+// Port note: the port's AppCheckInterop requires getLimitedUseToken(), which
+// upstream's fake leaves out; the tests using this fake are skipped.
 private final class AppCheckFakeWithoutOptionalMethods: AppCheckInterop, @unchecked Sendable {
   let tokenResult: FIRAppCheckTokenResultFake
 
@@ -279,8 +285,15 @@ private final class AppCheckFakeWithoutOptionalMethods: AppCheckInterop, @unchec
     self.tokenResult = tokenResult
   }
 
-  func getToken(forcingRefresh: Bool) async throws -> String {
-    if let error = tokenResult.error { throw error }
-    return tokenResult.token
+  func getToken(forcingRefresh: Bool) async -> AppCheckTokenResultInterop {
+    tokenResult
   }
+
+  func getLimitedUseToken() async -> AppCheckTokenResultInterop {
+    tokenResult
+  }
+
+  let tokenDidChangeNotificationName = "AppCheckFakeTokenDidChangeNotification"
+  let notificationTokenKey = "AppCheckFakeTokenNotificationKey"
+  let notificationAppNameKey = "AppCheckFakeAppNameNotificationKey"
 }

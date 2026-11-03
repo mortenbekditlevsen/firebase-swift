@@ -2,8 +2,9 @@
 
 A Swift port of the [Firebase Apple SDK](https://github.com/firebase/firebase-ios-sdk)
 (release 13.1.1) that runs on Apple platforms, Linux and Android. There is no
-Objective-C: Auth, Database, Functions and Storage are written in Swift, and
-Firestore wraps upstream's C++ core through Swift's C++ interoperability.
+Objective-C: Auth, Database, Functions, Storage and App Check are written in
+Swift, and Firestore wraps upstream's C++ core through Swift's C++
+interoperability.
 
 It **replaces** the official SDK, so an app can't use both in the same target.
 Nothing has been released yet, and the API can still change.
@@ -12,6 +13,7 @@ Nothing has been released yet, and the API can still change.
 
 | Product | What's there |
 |---|---|
+| `FirebaseAppCheck` | `AppCheck` with the debug provider everywhere, and DeviceCheck and App Attest on Apple platforms; tokens for the other SDKs ([setup](#app-check)) |
 | `FirebaseCore` | `FirebaseApp` (default and named apps, `delete()`), `FirebaseOptions` from `GoogleService-Info.plist`, `google-services.json` or a web app's config |
 | `FirebaseAuth` | Email and password, email links, anonymous, custom tokens, and credentials from Google, Apple, Facebook, GitHub, Twitter, Game Center and other OAuth providers. Also multi-factor auth (phone and TOTP), user management, and listeners. Phone auth and web-based sign-in (`OAuthProvider`) need iOS. |
 | `FirebaseDatabase` | Realtime Database: reads, writes, listeners, queries, transactions, `onDisconnect`, offline persistence |
@@ -19,9 +21,7 @@ Nothing has been released yet, and the API can still change.
 | `FirebaseFunctions` | Callable functions, including `Codable` and streaming calls |
 | `FirebaseStorage` | Uploads, downloads, listing, metadata |
 
-App Check, Analytics, Messaging, Remote Config and the other SDKs aren't
-ported. Until App Check is, you can give the SDKs App Check tokens from your
-own provider through `FirebaseApp.appCheck`.
+Analytics, Messaging, Remote Config and the other SDKs aren't ported.
 
 ## Platforms
 
@@ -103,6 +103,30 @@ let cities = try await Firestore.firestore().collection("cities")
   .getDocuments()
 ```
 
+## App Check
+
+Set a provider factory before configuring the app, as upstream requires. The
+other SDKs then send App Check tokens with their requests.
+
+```swift
+import FirebaseAppCheck
+
+AppCheck.setAppCheckProviderFactory(AppAttestProviderFactory(), keychain: MyKeychain())
+FirebaseApp.configure()
+```
+
+Upstream keeps App Check's token (and App Attest's key artifact) in the
+keychain through GoogleUtilities. This port doesn't include a keychain:
+`keychain:` takes your own `AppCheckKeychain`, three async methods that get,
+set and remove `Data` by service, key and access group. Back it with the
+Keychain on Apple platforms, libsecret or a protected file on Linux, or
+memory if you don't need tokens to outlive the process. If you store items as
+generic passwords with the service as `kSecAttrService` and the key as
+`kSecAttrAccount`, they're the items the upstream SDK stored.
+
+Upstream also sets a default factory when the module loads; here App Check
+is off until you call `setAppCheckProviderFactory(_:keychain:)`.
+
 ## Differences from the upstream SDK
 
 - **Async only.** Methods that take a completion handler upstream are
@@ -118,8 +142,7 @@ let cities = try await Firestore.firestore().collection("cities")
 - **Auth is created on first use.** Upstream creates Auth when the app is
   configured; here the first `Auth.auth()` does. The other SDKs pick up its
   user whenever that happens, so the order doesn't matter.
-- **Not ported:** the data collection flag, heartbeats, and limited-use App
-  Check tokens.
+- **Not ported:** the data collection flag and heartbeats.
 
 ## Android
 

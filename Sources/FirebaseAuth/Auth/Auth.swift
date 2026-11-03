@@ -1274,7 +1274,7 @@ extension Auth: AuthInterop {
       apiKey: apiKey,
       appID: app.options.googleAppID,
       heartbeatLogger: app.heartbeatLogger,
-      appCheck: nil
+      appCheck: app.appCheck
     )
 
     var initialState = State(requestConfiguration: initialRequestConfiguration)

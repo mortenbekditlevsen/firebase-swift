@@ -37,7 +37,7 @@ final class FIRAuthInteropFake: AuthInterop, @unchecked Sendable {
   func getUserID() -> String? { userID }
 }
 
-final class FIRAppCheckTokenResultFake: @unchecked Sendable {
+final class FIRAppCheckTokenResultFake: AppCheckTokenResultInterop, @unchecked Sendable {
   let token: String
   let error: Error?
 
@@ -47,8 +47,6 @@ final class FIRAppCheckTokenResultFake: @unchecked Sendable {
   }
 }
 
-/// The port's AppCheckInterop throws where upstream's returns a result with
-/// an error (and a placeholder token).
 final class FIRAppCheckFake: AppCheckInterop, @unchecked Sendable {
   private let lock = NSLock()
   private var _tokenResult = FIRAppCheckTokenResultFake(token: "fake_valid_token", error: nil)
@@ -66,9 +64,15 @@ final class FIRAppCheckFake: AppCheckInterop, @unchecked Sendable {
     set { lock.withLock { _limitedUseTokenResult = newValue } }
   }
 
-  func getToken(forcingRefresh: Bool) async throws -> String {
-    let result = tokenResult
-    if let error = result.error { throw error }
-    return result.token
+  func getToken(forcingRefresh: Bool) async -> AppCheckTokenResultInterop {
+    tokenResult
   }
+
+  func getLimitedUseToken() async -> AppCheckTokenResultInterop {
+    limitedUseTokenResult
+  }
+
+  let tokenDidChangeNotificationName = "FIRAppCheckFakeTokenDidChangeNotification"
+  let notificationTokenKey = "FIRAppCheckFakeTokenNotificationKey"
+  let notificationAppNameKey = "FIRAppCheckFakeAppNameNotificationKey"
 }

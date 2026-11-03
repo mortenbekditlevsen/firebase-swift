@@ -137,8 +137,6 @@ class FunctionsTests: XCTestCase {
   // MARK: - App Check Integration
 
   @MainActor func testCallFunctionWhenUsingLimitedUseAppCheckTokenThenTokenSuccess() throws {
-    // Port note: the port's AppCheckInterop has no limited-use tokens yet.
-    throw XCTSkip("Needs limited-use App Check tokens")
     // Given
     // Stub returns of two different kinds of App Check tokens. Only the
     // limited use token should be present in Functions's request header.
@@ -220,8 +218,6 @@ class FunctionsTests: XCTestCase {
   }
 
   @MainActor func testCallFunctionWhenLimitedUseAppCheckTokenCannotBeGeneratedThenCallWithPlaceholderToken() throws {
-    // Port note: the port's AppCheckInterop has no limited-use tokens yet.
-    throw XCTSkip("Needs limited-use App Check tokens")
     // Given
     appCheckFake.limitedUseTokenResult = FIRAppCheckTokenResultFake(
       token: "limited use token",

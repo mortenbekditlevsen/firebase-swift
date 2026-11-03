@@ -98,10 +98,23 @@ private final class FakeAppCheck: AppCheckInterop {
 
   var tokenRequests: Int { requests.withLock { $0 } }
 
-  func getToken(forcingRefresh: Bool) async throws -> String {
+  func getToken(forcingRefresh: Bool) async -> AppCheckTokenResultInterop {
     requests.withLock { $0 += 1 }
-    return token
+    return FakeAppCheckTokenResult(token: token, error: nil)
   }
+
+  func getLimitedUseToken() async -> AppCheckTokenResultInterop {
+    FakeAppCheckTokenResult(token: token, error: nil)
+  }
+
+  let tokenDidChangeNotificationName = "FakeAppCheckTokenDidChange"
+  let notificationTokenKey = "token"
+  let notificationAppNameKey = "appName"
+}
+
+private struct FakeAppCheckTokenResult: AppCheckTokenResultInterop {
+  let token: String
+  let error: Error?
 }
 
 // MARK: - Helpers

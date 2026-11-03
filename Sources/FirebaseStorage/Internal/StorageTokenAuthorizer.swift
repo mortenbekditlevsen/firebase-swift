@@ -51,12 +51,12 @@ struct StorageTokenAuthorizer {
         let appCheck = appCheck
         async let appCheckToken: String? = {
             guard let appCheck else { return nil }
-            do {
-                return try await appCheck.getToken(forcingRefresh: false)
-            } catch {
-                print("[FirebaseStorage][I-STR000001] Failed to fetch AppCheck token. Error: \(error)")
-                return nil
+            let tokenResult = await appCheck.getToken(forcingRefresh: false)
+            if let error = tokenResult.error {
+                logger.debug("I-STR000001: Failed to fetch AppCheck token. Error: \(error)")
             }
+            // As upstream, the placeholder token is sent when getting a token failed.
+            return tokenResult.token
         }()
 
         let authTokenValue = try await authToken.get()

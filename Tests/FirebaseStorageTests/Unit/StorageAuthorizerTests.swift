@@ -144,9 +144,6 @@ class StorageAuthorizerTests: StorageTestHelpers {
   }
 
   func testAppCheckError() async throws {
-    // Port note: the port's AppCheckInterop throws instead of returning a
-    // placeholder token with the error, so no App Check header is sent.
-    throw XCTSkip("Needs App Check's placeholder token")
     appCheck?.tokenResult = appCheckTokenError!
 
     setFetcherTestBlock(with: 200) { fetcher in

@@ -277,7 +277,7 @@ public struct OAuthProvider: FederatedAuthProvider, Sendable {
       let appID = auth.app?.options.googleAppID
       let apiKey = auth.requestConfiguration.apiKey
       let tenantID = auth.tenantID
-//      let appCheck = auth.requestConfiguration.appCheck
+      let appCheck = auth.requestConfiguration.appCheck
 
         // Build the query from items, so every value is escaped: values such as custom
         // parameters can contain '&' and '='.
@@ -328,18 +328,16 @@ public struct OAuthProvider: FederatedAuthProvider, Sendable {
             with: "%2B"
           )
         }
-//        if let appCheck {
-//            do {
-//                let token = try await  appCheck.getToken(forcingRefresh: false)
-//                let appCheckTokenFragment = "fac=\(token)"
-//                components?.fragment = appCheckTokenFragment
-//                return components?.url
-//            } catch {
-//                AuthLog.logWarning(code: "I-AUT000018",
-//                                   message: "Error getting App Check token; using placeholder " +
-//                                   "token instead. Error: \(error)")
-//            }
-//        }
+        if let appCheck {
+          let tokenResult = await appCheck.getToken(forcingRefresh: false)
+          if let error = tokenResult.error {
+            AuthLog.logWarning(code: "I-AUT000018",
+                               message: "Error getting App Check token; using placeholder " +
+                                 "token instead. Error: \(error)")
+          }
+          let appCheckTokenFragment = "fac=\(tokenResult.token)"
+          components?.fragment = appCheckTokenFragment
+        }
       return components?.url
   }
 
