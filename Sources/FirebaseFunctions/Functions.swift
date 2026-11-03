@@ -345,7 +345,7 @@ public final class Functions: Equatable, Sendable {
   convenience init(app: FirebaseApp,
                    region: String,
                    customDomain: String?) {
-      let auth = app.auth
+      let auth = app.lazyAuth
       let appCheck = app.appCheck
     guard let projectID = app.options.projectID else {
       fatalError("Firebase Functions requires the projectID to be set in the App's Options.")

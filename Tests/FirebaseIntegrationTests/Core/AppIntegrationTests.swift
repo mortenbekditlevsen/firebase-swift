@@ -40,7 +40,8 @@ struct AppIntegrationTests {
   @Test func deletingAnAppForgetsItsSignedInUser() async throws {
     let name = "deleted-\(UUID().uuidString)"
     let first = try EmulatorApp(name: name, configured: true)
-    try await first.auth.signInAnonymously()
+    let firstAuth = first.auth
+    _ = try await firstAuth.signInAnonymously()
     #expect(await first.app.delete())
     #expect(FirebaseApp.app(name: name) == nil)
     #expect(await first.app.delete() == false)
@@ -48,7 +49,7 @@ struct AppIntegrationTests {
     // As upstream, the stored user is removed, so the next app of this name starts signed out.
     let second = try EmulatorApp(name: name, configured: true)
     #expect(second.app != first.app)
-    #expect(second.auth !== first.auth)
+    #expect(second.auth !== firstAuth)
     #expect(second.auth.currentUser == nil)
     #expect(await second.app.delete())
   }
@@ -74,3 +75,47 @@ struct AppIntegrationTests {
     try await secondDB.clearPersistence()
   }
 }
+
+/// Upstream creates Auth when the app is configured, so the other SDKs always see the signed-in
+/// user. Here Auth is created by the first `Auth.auth(app:)`, which may come after them.
+@Suite(.enabled(if: Emulators.auth != nil && Emulators.firestore != nil
+  && Emulators.database != nil && Emulators.storage != nil && Emulators.functions != nil,
+  "Needs the Auth, Firestore, Database, Storage and Functions emulators"),
+  .timeLimit(.minutes(1)))
+struct AuthCreatedLaterIntegrationTests {
+  private struct EmptyRequest: Encodable, Sendable {}
+  private struct AuthResponse: Decodable { let uid: String? }
+
+  @Test func sdksCreatedBeforeAuthSeeItsSavedUser() async throws {
+    let name = "relaunch-\(UUID().uuidString)"
+    let uid = try await EmulatorApp(name: name).auth.signInAnonymously().user.uid
+
+    // The relaunched app gets every other SDK before Auth restores the saved user.
+    let relaunch = try EmulatorApp(name: name, createsAuth: false)
+    let firestore = try relaunch.firestore()
+    let database = try relaunch.database()
+    let storage = try relaunch.storage()
+    let function = try relaunch.functions()
+      .httpsCallable("authTest", requestAs: EmptyRequest.self, responseAs: AuthResponse.self)
+    #expect(relaunch.startAuth().currentUser?.uid == uid)
+
+    // Each path is writable only by that user.
+    try await firestore.document("users/\(uid)/items/doc").setData(["n": 1])
+    _ = try await database.reference().child("users/\(uid)/n").setValue(1)
+    _ = try await storage.reference().child("users/\(uid)/file.txt").putData(Data("x".utf8))
+    #expect(try await function.call(EmptyRequest()).uid == uid)
+    try relaunch.auth.signOut()
+  }
+
+  @Test func sdksCreatedBeforeAuthSeeSignIns() async throws {
+    let fixture = try EmulatorApp(createsAuth: false)
+    let firestore = try fixture.firestore()
+    let database = try fixture.database()
+    let uid = try await fixture.startAuth().signInAnonymously().user.uid
+
+    try await firestore.document("users/\(uid)/items/doc").setData(["n": 1])
+    _ = try await database.reference().child("users/\(uid)/n").setValue(1)
+    try fixture.auth.signOut()
+  }
+}
+

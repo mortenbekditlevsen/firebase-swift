@@ -72,15 +72,20 @@ enum Emulators {
 /// Each service comes from its own factory, which points it at its emulator.
 struct EmulatorApp {
   let app: FirebaseApp
-  let auth: Auth
+  private let authAddress: Emulators.Address
+
+  /// The app's Auth, which `startAuth()` points at the emulator.
+  var auth: Auth { Auth.auth(app: app) }
 
   /// - Parameters:
   ///   - name: Apps with the same name share Auth's stored user,
   ///     so a second one acts like the app relaunching.
   ///   - configured: Whether to configure the app (`FirebaseApp.configure(name:options:)`), so
   ///     it can be deleted, instead of creating one outside the registry.
-  init(name: String = "integration-\(UUID().uuidString)", configured: Bool = false) throws {
-    let authAddress = try #require(Emulators.auth)
+  ///   - createsAuth: Whether to create Auth now; otherwise call `startAuth()` later.
+  init(name: String = "integration-\(UUID().uuidString)", configured: Bool = false,
+       createsAuth: Bool = true) throws {
+    authAddress = try #require(Emulators.auth)
     var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
     options.projectID = Emulators.projectID
     options.apiKey = "fake-api-key"
@@ -92,10 +97,17 @@ struct EmulatorApp {
       app = FirebaseApp(options: options, name: name)
     }
 
-    // Auth must exist before the other services: they pick up `app.auth`
-    // when they're created.
-    auth = Auth.auth(app: app)
+    if createsAuth {
+      startAuth()
+    }
+  }
+
+  /// Creates the app's Auth and points it at the emulator.
+  @discardableResult
+  func startAuth() -> Auth {
+    let auth = Auth.auth(app: app)
     auth.useEmulator(withHost: authAddress.host, port: authAddress.port)
+    return auth
   }
 
   func firestore(cacheSettings: any LocalCacheSettings = MemoryCacheSettings()) throws -> Firestore {

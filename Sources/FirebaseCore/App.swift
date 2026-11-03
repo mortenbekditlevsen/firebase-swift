@@ -171,6 +171,11 @@ public final class FirebaseApp: Equatable, Sendable {
     set { _auth.withLock { $0 = newValue } }
   }
 
+  /// Forwards to `auth` on each call, for SDKs to hold: upstream creates Auth when the app is
+  /// configured, but here it's created by the first `Auth.auth(app:)`, which may come after the
+  /// SDK. With no Auth there's no user, so no token.
+  package var lazyAuth: AuthInterop { LazyAuth(app: self) }
+
   /// The App Check provider the SDKs get tokens from. App Check isn't ported yet; until it is, an
   /// app can set its own provider here, before it gets any SDK instances for this app.
   public var appCheck: AppCheckInterop? {
@@ -233,6 +238,22 @@ public final class FirebaseApp: Equatable, Sendable {
   }
 }
 
+private final class LazyAuth: AuthInterop {
+  private let app: FirebaseApp
+
+  init(app: FirebaseApp) {
+    self.app = app
+  }
+
+  func getToken(forcingRefresh forceRefresh: Bool) async throws -> String? {
+    try await app.auth?.getToken(forcingRefresh: forceRefresh)
+  }
+
+  func getUserID() -> String? {
+    app.auth?.getUserID()
+  }
+}
+
 public protocol AuthInterop: AnyObject, Sendable {
   func getToken(forcingRefresh forceRefresh: Bool) async throws -> String?
   func getUserID() -> String?
@@ -240,7 +261,8 @@ public protocol AuthInterop: AnyObject, Sendable {
 
 extension Notification.Name {
   /// Posted by Auth whenever the signed-in user or their ID token changes,
-  /// for other Firebase SDKs (Database, Firestore) to refresh credentials.
+  /// and when it's created with a saved user, for other Firebase SDKs
+  /// (Database, Firestore) to refresh credentials.
   /// `object` is the `AuthInterop` instance and `userInfo` holds the
   /// `FIRAuthStateDidChangeInternalNotification…Key` entries. Unlike the
   /// public Auth notification, it is not posted on the main queue.
@@ -248,7 +270,8 @@ extension Notification.Name {
     Notification.Name("FIRAuthStateDidChangeInternalNotification")
 }
 
-/// The `FirebaseApp` the notifying Auth instance belongs to.
+/// The `FirebaseApp` the notifying Auth instance belongs to. SDKs filter by it, since they hold
+/// `FirebaseApp.lazyAuth`, not the Auth instance.
 public let FIRAuthStateDidChangeInternalNotificationAppKey =
   "FIRAuthStateDidChangeInternalNotificationAppKey"
 /// The new ID token; absent when signed out.

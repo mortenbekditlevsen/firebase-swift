@@ -25,15 +25,19 @@ final class AuthComponent: FirebaseAppComponent {
   init() {}
 
   func auth(app: FirebaseApp) -> Auth {
-    instance.withLock { instance in
+    let (auth, isNew) = instance.withLock { instance in
       if let instance {
-        return instance
+        return (instance, false)
       }
       let auth = Auth(app: app, keychainStorageProvider: Auth.storageProvider)
       app.auth = auth
       instance = auth
-      return auth
+      return (auth, true)
     }
+    if isNew {
+      auth.postInternalAuthStateNotificationForSavedUser()
+    }
+    return auth
   }
 
   func appWillBeDeleted(_ app: FirebaseApp) async {

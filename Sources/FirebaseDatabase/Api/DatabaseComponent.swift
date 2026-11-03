@@ -37,7 +37,7 @@ final class DatabaseComponent: FirebaseAppComponent {
                 return database
             }
             // XXX TODO: Inject auth and app check interop
-            let contextProvider = DatabaseConnectionContextProvider.contextProvider(auth: app.auth, appCheck: nil)
+            let contextProvider = DatabaseConnectionContextProvider.contextProvider(app: app, appCheck: nil)
 
             // If this is the default app, don't set the session persistence key
             // so that we use our default ("default") instead of the FIRApp

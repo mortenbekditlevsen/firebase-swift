@@ -294,7 +294,7 @@ public final class Storage: Sendable {
 
   init(app: FirebaseApp, bucket: String) {
     self.app = app
-    auth = app.auth
+    auth = app.lazyAuth
     appCheck = app.appCheck
     storageBucket = bucket
     // Must be a serial queue.
