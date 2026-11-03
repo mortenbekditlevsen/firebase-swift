@@ -18,7 +18,7 @@ import Foundation
  @brief Represents the response from the verifyAssertion endpoint.
  @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/verifyAssertion
  */
-public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
+struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
     internal init(
         federatedID: String? = nil,
         providerID: String? = nil,
@@ -98,7 +98,7 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
   /** @property federatedID
    @brief The unique ID identifies the IdP account.
    */
-  public var federatedID: String?
+  var federatedID: String?
 
   /** @property providerID
    @brief The IdP ID. For white listed IdPs it's a short domain name e.g. google.com, aol.com,
@@ -112,7 +112,7 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
    @brief The RP local ID if it's already been mapped to the IdP account identified by the
    federated ID.
    */
-  public var localID: String?
+  var localID: String?
 
   /** @property email
    @brief The email returned by the IdP. NOTE: The federated login user may not own the email.
@@ -123,43 +123,43 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
    @brief It's the identifier param in the createAuthUri request if the identifier is an email. It
    can be used to check whether the user input email is different from the asserted email.
    */
-  public var inputEmail: String?
+  var inputEmail: String?
 
   /** @property originalEmail
    @brief The original email stored in the mapping storage. It's returned when the federated ID is
    associated to a different email.
    */
-  public var originalEmail: String?
+  var originalEmail: String?
 
   /** @property oauthRequestToken
    @brief The user approved request token for the OpenID OAuth extension.
    */
-  public var oauthRequestToken: String?
+  var oauthRequestToken: String?
 
   /** @property oauthScope
    @brief The scope for the OpenID OAuth extension.
    */
-  public var oauthScope: String?
+  var oauthScope: String?
 
   /** @property firstName
    @brief The first name of the user.
    */
-  public var firstName: String?
+  var firstName: String?
 
   /** @property lastName
    @brief The last name of the user.
    */
-  public var lastName: String?
+  var lastName: String?
 
   /** @property fullName
    @brief The full name of the user.
    */
-  public var fullName: String?
+  var fullName: String?
 
   /** @property nickName
    @brief The nick name of the user.
    */
-  public var nickName: String?
+  var nickName: String?
 
   /** @property displayName
    @brief The display name of the user.
@@ -176,7 +176,7 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
   /** @property approximateExpirationDate
    @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
   /** @property refreshToken
    @brief The refresh token from Secure Token Service.
@@ -186,17 +186,17 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
   /** @property action
    @brief The action code.
    */
-  public var action: String?
+  var action: String?
 
   /** @property language
    @brief The language preference of the user.
    */
-  public var language: String?
+  var language: String?
 
   /** @property timeZone
    @brief The timezone of the user.
    */
-  public var timeZone: String?
+  var timeZone: String?
 
   /** @property photoURL
    @brief The URI of the public accessible profile picture.
@@ -206,28 +206,28 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
   /** @property dateOfBirth
    @brief The birth date of the IdP account.
    */
-  public var dateOfBirth: String?
+  var dateOfBirth: String?
 
   /** @property context
    @brief The opaque value used by the client to maintain context info between the authentication
    request and the IDP callback.
    */
-  public var context: String?
+  var context: String?
 
   /** @property verifiedProvider
    @brief When action is 'map', contains the idps which can be used for confirmation.
    */
-  public var verifiedProvider: [String]?
+  var verifiedProvider: [String]?
 
   /** @property needConfirmation
    @brief Whether the assertion is from a non-trusted IDP and need account linking confirmation.
    */
-  public var needConfirmation: Bool = false
+  var needConfirmation: Bool = false
 
   /** @property emailRecycled
    @brief It's true if the email is recycled.
    */
-  public var emailRecycled: Bool = false
+  var emailRecycled: Bool = false
 
   /** @property emailVerified
    @brief The value is true if the IDP is also the email provider. It means the user owns the
@@ -253,31 +253,31 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
   /** @property oauthIDToken
    @brief The ID token for the OpenID OAuth extension.
    */
-  public var oauthIDToken: String?
+  var oauthIDToken: String?
 
   /** @property oauthExpirationDate
    @brief The approximate expiration date of the oauth access token.
    */
-  public var oauthExpirationDate: Date?
+  var oauthExpirationDate: Date?
 
   /** @property oauthAccessToken
    @brief The access token for the OpenID OAuth extension.
    */
-  public var oauthAccessToken: String?
+  var oauthAccessToken: String?
 
   /** @property oauthSecretToken
    @brief The secret for the OpenID OAuth extention.
    */
-  public var oauthSecretToken: String?
+  var oauthSecretToken: String?
 
   /** @property pendingToken
    @brief The pending ID Token string.
    */
-  public var pendingToken: String?
+  var pendingToken: String?
 
-  public var MFAPendingCredential: String?
+  var MFAPendingCredential: String?
 
-  public var MFAInfo: [AuthProtoMFAEnrollment]?
+  var MFAInfo: [AuthProtoMFAEnrollment]?
 
      enum CodingKeys: String, CodingKey {
          case federatedID = "federatedId"
@@ -389,7 +389,7 @@ public struct VerifyAssertionResponse: AuthRPCResponse, Decodable {
          }
      }
      
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }
 

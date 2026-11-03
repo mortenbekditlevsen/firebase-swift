@@ -82,7 +82,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
      @brief Profile data for each identity provider, if any.
      @remarks This data is cached on sign-in and updated when linking or unlinking.
      */
-    public var providerData: [UserInfoImpl] {
+    public var providerData: [UserInfo] {
         Array(providerDataRaw.values)
     }
     
@@ -541,7 +541,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
         }
 #endif
         
-        let user = try await self.taskQueue.enqueue {
+        return try await self.taskQueue.enqueue {
             let accessToken = try await self.internalGetToken()
             guard let requestConfiguration = self.auth?.requestConfiguration else {
                 fatalError("Internal Error: Unexpected nil requestConfiguration.")
@@ -574,10 +574,9 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
                 result: result,
                 requestConfiguration: requestConfiguration
             )
-            return updatedResult.user
+            // The additional user info and the provider's credential, as upstream.
+            return updatedResult
         }
-        // XXX TODO: THIS IS WRONG, BUT QUEUE IS A USER QUEUE
-        return AuthDataResult(withUser: user, additionalUserInfo: nil)
     }
     
     /** @fn linkWithCredential:
@@ -877,11 +876,11 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
      @throws on failure.
      */
     
-    public func rawAccessToken() -> String {
+    func rawAccessToken() -> String {
         tokenService.accessToken
     }
     
-    public func accessTokenExpirationDate() -> Date? {
+    func accessTokenExpirationDate() -> Date? {
         tokenService.accessTokenExpirationDate
     }
     
@@ -899,7 +898,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
     
     // TODO: internal Swift
     @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-    public static func retrieveUser(withAuth auth: Auth,
+    static func retrieveUser(withAuth auth: Auth,
                                    accessToken: String,
                                    accessTokenExpirationDate: Date?,
                                    refreshToken: String,
@@ -985,13 +984,13 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
     /** @var _taskQueue
      @brief Used to serialize the update profile calls.
      */
-    private let taskQueue: AuthSerialTaskQueue<User>
+    private let taskQueue: AuthSerialTaskQueue
     
     /** @property requestConfiguration
      @brief A strong reference to a requestConfiguration instance associated with this user instance.
      */
     // TODO: internal
-    public var requestConfiguration: AuthRequestConfiguration {
+    var requestConfiguration: AuthRequestConfiguration {
         get {
             userdata.requestConfiguration
         }
@@ -1005,7 +1004,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
      refreshing access tokens.
      */
     // TODO: internal
-    public var tokenService: SecureTokenService {
+    var tokenService: SecureTokenService {
         userdata.tokenService
     }
     
@@ -1413,7 +1412,7 @@ public final class User: UserInfo, Sendable, Codable, Equatable {
    */
   // TODO: internal
   
-    public func internalGetToken(forceRefresh: Bool = false) async throws -> String {
+    func internalGetToken(forceRefresh: Bool = false) async throws -> String {
         do {
             let (token, tokenUpdated) = try await fetchAccessToken(forcingRefresh: forceRefresh)
             if tokenUpdated {

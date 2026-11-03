@@ -17,7 +17,7 @@ import Foundation
     @brief Indicates the type of operation performed for RPCs that support the operation
         parameter.
  */
- public enum AuthOperationType: Int, Sendable {
+ enum AuthOperationType: Int, Sendable {
   /** Indicates that the operation type is uspecified.
    */
   case unspecified = 0

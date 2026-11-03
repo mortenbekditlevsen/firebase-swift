@@ -14,12 +14,12 @@
 
 import Foundation
 
-public struct GetOOBConfirmationCodeResponse:
+struct GetOOBConfirmationCodeResponse:
     AuthRPCResponse, Decodable {
-    public var OOBCode: String?
+    var OOBCode: String?
     enum CodingKeys: String, CodingKey {
         case OOBCode = "oobCode"
     }
-    public func setFields(dictionary: [String: Any]) throws {
+    func setFields(dictionary: [String: Any]) throws {
     }
 }

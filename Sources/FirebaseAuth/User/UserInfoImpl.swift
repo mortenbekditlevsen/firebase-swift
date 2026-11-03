@@ -14,7 +14,7 @@
 
 import Foundation
 
- public struct UserInfoImpl: UserInfo, Codable, Equatable, Sendable {
+ struct UserInfoImpl: UserInfo, Codable, Equatable, Sendable {
   /** @fn userInfoWithGetAccountInfoResponseProviderUserInfo:
       @brief A convenience factory method for constructing a @c FIRUserInfo instance from data
           returned by the getAccountInfo endpoint.
@@ -22,7 +22,7 @@ import Foundation
       @return A new instance of @c FIRUserInfo using data from the getAccountInfo endpoint, or
           `nil` if the response entry has no `providerID`.
    */
-  public static func userInfo(withGetAccountInfoResponseProviderUserInfo providerUserInfo: GetAccountInfoResponseProviderUserInfo)
+  static func userInfo(withGetAccountInfoResponseProviderUserInfo providerUserInfo: GetAccountInfoResponseProviderUserInfo)
     -> UserInfoImpl? {
     guard let providerID = providerUserInfo.providerID else {
       return nil

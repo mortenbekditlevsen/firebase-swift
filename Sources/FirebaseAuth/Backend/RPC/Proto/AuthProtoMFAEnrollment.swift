@@ -14,17 +14,17 @@
 
 import Foundation
 
-public struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
-    public var phoneInfo: String?
+struct AuthProtoMFAEnrollment: Codable, Equatable, Sendable {
+    var phoneInfo: String?
 
     /// Whether this is a TOTP enrollment. The backend sends `totpInfo` as an empty object.
-    public var isTOTP: Bool = false
+    var isTOTP: Bool = false
     
-    public var mfaEnrollmentID: String?
+    var mfaEnrollmentID: String?
     
     public var displayName: String?
     
-    public var enrolledAt: Date?
+    var enrolledAt: Date?
     
     enum CodingKeys: String, CodingKey {
         case phoneInfo

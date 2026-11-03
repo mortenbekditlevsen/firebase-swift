@@ -31,9 +31,9 @@ private let kIDTokenKey = "idToken"
 private let kLocalIDKey = "localId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct DeleteAccountRequest: IdentityToolkitRequest,
+ struct DeleteAccountRequest: IdentityToolkitRequest,
   AuthRPCRequest {
-     public typealias Response = DeleteAccountResponse
+     typealias Response = DeleteAccountResponse
   /** @var _accessToken
       @brief The STS Access Token of the authenticated user.
    */
@@ -42,16 +42,16 @@ private let kLocalIDKey = "localId"
   /** @var _localID
       @brief The localID of the user.
    */
-  public let localID: String
+  let localID: String
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kDeleteAccountEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kDeleteAccountEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
    public init(localID: String,
                                                                        accessToken: String,

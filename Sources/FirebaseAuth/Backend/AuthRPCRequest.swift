@@ -22,7 +22,7 @@ import Foundation
     @brief The generic interface for an RPC request needed by @c FIRAuthBackend.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public protocol AuthRPCRequest: Encodable, Sendable {
+protocol AuthRPCRequest: Encodable, Sendable {
     associatedtype Response: Decodable, AuthRPCResponse
   /** @fn requestURL
       @brief Gets the request's full URL.
@@ -58,7 +58,7 @@ public protocol AuthRPCRequest: Encodable, Sendable {
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public extension AuthRPCRequest {
+extension AuthRPCRequest {
     func containsPostBody() -> Bool {
         false
     }

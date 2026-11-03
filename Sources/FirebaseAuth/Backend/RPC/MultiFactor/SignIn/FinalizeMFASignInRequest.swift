@@ -23,7 +23,7 @@ private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 struct FinalizeMFASignInRequest: IdentityToolkitRequest, AuthRPCRequest {
-    public typealias Response = FinalizeMFASignInResponse
+    typealias Response = FinalizeMFASignInResponse
     
   var mfaPendingCredential: String?
   var verificationInfo: AuthProtoFinalizeMFAPhoneRequestInfo?
@@ -34,10 +34,10 @@ struct FinalizeMFASignInRequest: IdentityToolkitRequest, AuthRPCRequest {
       @brief The corresponding response for this request
    */
 
-    public var useStaging: Bool { false }
-    public var useIdentityPlatform: Bool { true }
-    public var endpoint: String { kFinalizeMFASignInEndPoint }
-    public var requestConfiguration: AuthRequestConfiguration
+    var useStaging: Bool { false }
+    var useIdentityPlatform: Bool { true }
+    var endpoint: String { kFinalizeMFASignInEndPoint }
+    var requestConfiguration: AuthRequestConfiguration
 
   init(mfaPendingCredential: String?,
        verificationInfo: AuthProtoFinalizeMFAPhoneRequestInfo?,

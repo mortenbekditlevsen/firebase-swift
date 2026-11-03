@@ -1237,7 +1237,7 @@ extension Auth: AuthInterop {
 
     /// Fails a pending APNs token request. Call it from
     /// `application(_:didFailToRegisterForRemoteNotificationsWithError:)`.
-    public func apnsTokenRegistrationDidFail(with error: Error) {
+    func apnsTokenRegistrationDidFail(with error: Error) {
       tokenManager?.cancel(withError: error)
     }
 
@@ -1637,7 +1637,7 @@ extension Auth: AuthInterop {
           asynchronously on the global auth work queue in the future.
    */
   // TODO: internal
-  public func completeSignIn(withAccessToken accessToken: String,
+  func completeSignIn(withAccessToken accessToken: String,
                                    accessTokenExpirationDate: Date?,
                                    refreshToken: String,
                                    anonymous: Bool) async throws -> User {
@@ -1880,7 +1880,7 @@ extension Auth: AuthInterop {
           Auth's backend.
    */
   // TODO: internal
-  public var requestConfiguration: AuthRequestConfiguration {
+  var requestConfiguration: AuthRequestConfiguration {
     get { _state.withLock { $0.requestConfiguration } }
     set { _state.withLock { $0.requestConfiguration = newValue } }
   }

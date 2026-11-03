@@ -45,15 +45,15 @@ private let kPostBodyKey = "postBody"
 private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct EmailLinkSignInRequest: IdentityToolkitRequest,
+ struct EmailLinkSignInRequest: IdentityToolkitRequest,
   AuthRPCRequest {
-     public typealias Response = EmailLinkSignInResponse
+     typealias Response = EmailLinkSignInResponse
   public let email: String
 
   /** @property oobCode
       @brief The OOB code used to complete the email link sign-in flow.
    */
-  public let oobCode: String
+  let oobCode: String
 
   /** @property IDToken
       @brief The ID Token code potentially used to complete the email link sign-in flow.
@@ -65,10 +65,10 @@ private let kTenantIDKey = "tenantId"
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kEmailLinkSigninEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kEmailLinkSigninEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
      
   public init(email: String, oobCode: String,

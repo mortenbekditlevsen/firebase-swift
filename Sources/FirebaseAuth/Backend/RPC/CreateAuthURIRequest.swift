@@ -64,24 +64,24 @@ private let kTenantIDKey = "tenantId"
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/createAuthUri
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct CreateAuthURIRequest: IdentityToolkitRequest,
+ struct CreateAuthURIRequest: IdentityToolkitRequest,
   AuthRPCRequest, Encodable {
-     public typealias Response = CreateAuthURIResponse
+     typealias Response = CreateAuthURIResponse
   /** @property identifier
       @brief The email or federated ID of the user.
    */
-  public let identifier: String
+  let identifier: String
 
   /** @property continueURI
       @brief The URI to which the IDP redirects the user after the federated login flow.
    */
-  public let continueURI: String
+  let continueURI: String
 
   /** @property openIDRealm
       @brief Optional realm for OpenID protocol. The sub string "scheme://domain:port" of the param
           "continueUri" is used if this is not set.
    */
-  public var openIDRealm: String?
+  var openIDRealm: String?
 
   /** @property providerID
       @brief The IdP ID. For white listed IdPs it's a short domain name e.g. google.com, aol.com,
@@ -92,27 +92,27 @@ private let kTenantIDKey = "tenantId"
   /** @property clientID
       @brief The relying party OAuth client ID.
    */
-  public var clientID: String?
+  var clientID: String?
 
   /** @property context
       @brief The opaque value used by the client to maintain context info between the authentication
           request and the IDP callback.
    */
-  public var context: String?
+  var context: String?
 
   /** @property appID
       @brief The iOS client application's bundle identifier.
    */
-  public var appID: String?
+  var appID: String?
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kCreateAuthURIEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kCreateAuthURIEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
   public init(identifier: String, continueURI: String,
                     requestConfiguration: AuthRequestConfiguration) {

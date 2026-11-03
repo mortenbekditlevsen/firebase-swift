@@ -78,19 +78,19 @@ extension AuthOperationType {
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct VerifyPhoneNumberRequest: IdentityToolkitRequest,
+ struct VerifyPhoneNumberRequest: IdentityToolkitRequest,
   AuthRPCRequest {
-     public typealias Response = VerifyPhoneNumberResponse
+     typealias Response = VerifyPhoneNumberResponse
 
   /** @property verificationID
        @brief The verification ID obtained from the response of @c sendVerificationCode.
    */
-  public var verificationID: String?
+  var verificationID: String?
 
   /** @property verificationCode
        @brief The verification code provided by the user.
    */
-  public var verificationCode: String?
+  var verificationCode: String?
 
   /** @property accessToken
       @brief The STS Access Token for the authenticated user.
@@ -100,7 +100,7 @@ extension AuthOperationType {
   /** @var temporaryProof
       @brief The temporary proof code, previously returned from the backend.
    */
-  public var temporaryProof: String?
+  var temporaryProof: String?
 
   /** @var phoneNumber
       @brief The phone number to be verified in the request.
@@ -113,10 +113,10 @@ extension AuthOperationType {
   public var operation: AuthOperationType
 
      
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kVerifyPhoneNumberEndPoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kVerifyPhoneNumberEndPoint }
+     var requestConfiguration: AuthRequestConfiguration
   /** @var response
       @brief The corresponding response for this request
    */

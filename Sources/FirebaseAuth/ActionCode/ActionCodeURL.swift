@@ -73,7 +73,7 @@ import Foundation
 
   // TODO: internal below here.
 
-  public static func parseURL(_ urlString: String) -> [String: String] {
+  static func parseURL(_ urlString: String) -> [String: String] {
     guard let linkURL = URLComponents(string: urlString)?.query else {
       return [:]
     }

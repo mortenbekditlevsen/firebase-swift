@@ -23,9 +23,9 @@ private let kVerifyPasswordEndpoint = "verifyPassword"
     @brief Represents the parameters for the verifyPassword endpoint.
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/verifyPassword
  */
- public struct VerifyPasswordRequest: IdentityToolkitRequest,
+ struct VerifyPasswordRequest: IdentityToolkitRequest,
                                       AuthRPCRequest, Encodable {
-     public typealias Response = VerifyPasswordResponse
+     typealias Response = VerifyPasswordResponse
      
      /** @property email
       @brief The email of the user.
@@ -35,37 +35,37 @@ private let kVerifyPasswordEndpoint = "verifyPassword"
      /** @property password
       @brief The password inputed by the user.
       */
-     public var password: String
+     var password: String
      
      /** @property pendingIDToken
       @brief The GITKit token for the non-trusted IDP, which is to be confirmed by the user.
       */
-     public var pendingIDToken: String?
+     var pendingIDToken: String?
      
      /** @property captchaChallenge
       @brief The captcha challenge.
       */
-     public var captchaChallenge: String?
+     var captchaChallenge: String?
      
      /** @property captchaResponse
       @brief Response to the captcha.
       */
-     public var captchaResponse: String?
+     var captchaResponse: String?
      
      /** @property returnSecureToken
       @brief Whether the response should return access token and refresh token directly.
       @remarks The default value is @c YES .
       */
-     public var returnSecureToken: Bool
+     var returnSecureToken: Bool
      
      /** @var response
       @brief The corresponding response for this request
       */
      
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kVerifyPasswordEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kVerifyPasswordEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
      
      public init(
         email: String,

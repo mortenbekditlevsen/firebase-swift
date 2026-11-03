@@ -45,9 +45,9 @@ private let kReturnSecureTokenKey = "returnSecureToken"
 private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct SignUpNewUserRequest: IdentityToolkitRequest,
+ struct SignUpNewUserRequest: IdentityToolkitRequest,
   AuthRPCRequest, Encodable {
-     public typealias Response = SignUpNewUserResponse
+     typealias Response = SignUpNewUserResponse
 
   /** @property email
       @brief The email of the user.
@@ -57,7 +57,7 @@ private let kTenantIDKey = "tenantId"
   /** @property password
       @brief The password inputed by the user.
    */
-  public var password: String?
+  var password: String?
 
   /** @property displayName
       @brief The password inputed by the user.
@@ -68,16 +68,16 @@ private let kTenantIDKey = "tenantId"
       @brief Whether the response should return access token and refresh token directly.
       @remarks The default value is @c YES .
    */
-  public var returnSecureToken: Bool = true
+  var returnSecureToken: Bool = true
 
   /** @var response
       @brief The corresponding response for this request
    */
 
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { false }
-     public var endpoint: String { kSignupNewUserEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { false }
+     var endpoint: String { kSignupNewUserEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
   public init(requestConfiguration: AuthRequestConfiguration) {
       self.requestConfiguration = requestConfiguration

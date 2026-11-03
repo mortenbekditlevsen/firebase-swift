@@ -34,7 +34,7 @@ import Foundation
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-struct TwitterAuthCredential: AuthCredential, Codable {
+struct TwitterAuthCredential: PreparableAuthCredential, Codable {
   let token: String
   let secret: String
     var provider: String { TwitterAuthProvider.id }

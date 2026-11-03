@@ -79,9 +79,9 @@ private let gAPIHost = "securetoken.googleapis.com"
     @brief Represents the parameters for the token endpoint.
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public struct SecureTokenRequest: AuthRPCRequest {
+struct SecureTokenRequest: AuthRPCRequest {
     
-     public typealias Response = SecureTokenResponse
+     typealias Response = SecureTokenResponse
 
   /** @property grantType
       @brief The type of grant requested.
@@ -113,9 +113,9 @@ public struct SecureTokenRequest: AuthRPCRequest {
       @brief The corresponding response for this request
    */
 
-  public let requestConfiguration: AuthRequestConfiguration
+  let requestConfiguration: AuthRequestConfiguration
 
-  public static func authCodeRequest(code: String,
+  static func authCodeRequest(code: String,
                                            requestConfiguration: AuthRequestConfiguration)
     -> SecureTokenRequest {
     SecureTokenRequest(
@@ -127,7 +127,7 @@ public struct SecureTokenRequest: AuthRPCRequest {
     )
   }
 
-  public static func refreshRequest(refreshToken: String,
+  static func refreshRequest(refreshToken: String,
                                           requestConfiguration: AuthRequestConfiguration)
     -> SecureTokenRequest {
     SecureTokenRequest(
@@ -149,7 +149,7 @@ public struct SecureTokenRequest: AuthRPCRequest {
       self.requestConfiguration = requestConfiguration
   }
 
-  public func requestURL() -> URL {
+  func requestURL() -> URL {
     let urlString: String
     if let emulatorHostAndPort = requestConfiguration.emulatorHostAndPort {
       urlString = "http://\(emulatorHostAndPort)/\(gAPIHost)/v1/token?key=\(apiKey)"
@@ -159,7 +159,7 @@ public struct SecureTokenRequest: AuthRPCRequest {
     return URL(string: urlString)!
   }
 
-  public func containsPostBody() -> Bool { true }
+  func containsPostBody() -> Bool { true }
 
   // MARK: Internal API for development
 

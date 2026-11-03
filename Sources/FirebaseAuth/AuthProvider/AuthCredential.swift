@@ -19,11 +19,20 @@ import Foundation
  */
 public protocol AuthCredential: Sendable {
     var provider: String { get }
+}
+
+/// The identity-provider credentials, which fill in a sign-in or link request.
+/// Internal, as upstream's `prepare`.
+protocol PreparableAuthCredential: AuthCredential {
     func prepare(_ request: inout VerifyAssertionRequest)
 }
+
 extension AuthCredential {
-    public func prepare(_ request: inout VerifyAssertionRequest) {
-        fatalError("This method must be overridden by a subclass.")
+    func prepare(_ request: inout VerifyAssertionRequest) {
+        guard let credential = self as? any PreparableAuthCredential else {
+            fatalError("This method must be overridden by a subclass.")
+        }
+        credential.prepare(&request)
     }
 }
 //@available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)

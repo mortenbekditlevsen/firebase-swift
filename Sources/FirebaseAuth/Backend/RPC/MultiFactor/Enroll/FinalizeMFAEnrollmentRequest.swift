@@ -23,7 +23,7 @@ private let kTenantIDKey = "tenantId"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 struct FinalizeMFAEnrollmentRequest: IdentityToolkitRequest, AuthRPCRequest {
-    public typealias Response = FinalizeMFAEnrollmentResponse
+    typealias Response = FinalizeMFAEnrollmentResponse
 
   var idToken: String?
 

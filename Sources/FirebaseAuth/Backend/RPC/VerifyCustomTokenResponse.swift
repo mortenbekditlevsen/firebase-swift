@@ -17,7 +17,7 @@ import Foundation
 /** @class FIRVerifyCustomTokenResponse
     @brief Represents the response from the verifyCustomToken endpoint.
  */
-public struct VerifyCustomTokenResponse: AuthRPCResponse, Decodable {
+struct VerifyCustomTokenResponse: AuthRPCResponse, Decodable {
   /** @property idToken
    @brief Either an authorization code suitable for performing an STS token exchange, or the
    access token from Secure Token Service, depending on whether @c returnSecureToken is set
@@ -28,7 +28,7 @@ public struct VerifyCustomTokenResponse: AuthRPCResponse, Decodable {
   /** @property approximateExpirationDate
    @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
   /** @property refreshToken
    @brief The refresh token from Secure Token Service.
@@ -55,6 +55,6 @@ public struct VerifyCustomTokenResponse: AuthRPCResponse, Decodable {
         self.isNewUser = try container.decode(Bool.self, forKey: .isNewUser)
     }
     
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

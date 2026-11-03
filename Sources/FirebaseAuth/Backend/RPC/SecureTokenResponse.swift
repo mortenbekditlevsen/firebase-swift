@@ -17,11 +17,11 @@ import Foundation
 private let kExpiresInKey = "expires_in"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public struct SecureTokenResponse: AuthRPCResponse, Decodable {
-  public var approximateExpirationDate: Date?
+struct SecureTokenResponse: AuthRPCResponse, Decodable {
+  var approximateExpirationDate: Date?
   public var refreshToken: String?
   public var accessToken: String
-  public var IDToken: String?
+  var IDToken: String?
 
 
     enum CodingKeys: String, CodingKey {
@@ -39,6 +39,6 @@ public struct SecureTokenResponse: AuthRPCResponse, Decodable {
         self.IDToken = try container.decodeIfPresent(String.self, forKey: .IDToken)
         
     }
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

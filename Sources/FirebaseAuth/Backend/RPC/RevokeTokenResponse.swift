@@ -14,8 +14,8 @@
 
 import Foundation
 
- public struct RevokeTokenResponse: AuthRPCResponse {
-  public func setFields(dictionary: [String: Any]) throws {
+ struct RevokeTokenResponse: AuthRPCResponse {
+  func setFields(dictionary: [String: Any]) throws {
     // Nothing to set or throw.
   }
 }

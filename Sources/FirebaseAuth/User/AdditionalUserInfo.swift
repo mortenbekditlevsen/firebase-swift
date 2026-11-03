@@ -45,7 +45,7 @@ import Foundation
     return isNewUser
   }
 
-  public static func userInfo(verifyAssertionResponse: VerifyAssertionResponse)
+  static func userInfo(verifyAssertionResponse: VerifyAssertionResponse)
     -> AdditionalUserInfo {
         AdditionalUserInfo(providerID: verifyAssertionResponse.providerID,
                            profile: verifyAssertionResponse.profile,

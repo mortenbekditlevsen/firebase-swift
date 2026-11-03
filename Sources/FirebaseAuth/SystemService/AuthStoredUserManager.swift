@@ -19,7 +19,7 @@ import Foundation
 // exposed to Objective-C due to convention and meaning of nil values in Objective-C.
 // This wrapper allows us to always return a value, thus allowing us to expose Objective-C api.
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public class UserWrapper {
+ class UserWrapper {
   public let user: User?
   public init(user: User?) {
     self.user = user
@@ -27,7 +27,7 @@ import Foundation
 }
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public class AuthStoredUserManager {
+ class AuthStoredUserManager {
   /// Key of user access group stored in user defaults. Used for retrieve the
   /// user access group at launch.
   private static let storedUserAccessGroupKey = "firebase_auth_stored_user_access_group"
@@ -55,7 +55,7 @@ import Foundation
 
   /// Get the user access group stored locally.
   /// - Returns: The stored user access group; otherwise, `nil`.
-  public func getStoredUserAccessGroup() -> String? {
+  func getStoredUserAccessGroup() -> String? {
     if let data = try? userDefaults.data(forKey: Self.storedUserAccessGroupKey) {
       let userAccessGroup = String(data: data, encoding: .utf8)
       return userAccessGroup
@@ -67,7 +67,7 @@ import Foundation
   /// The setter of the user access group stored locally.
   /// - Parameter accessGroup: The access group to be store.
   
-  public func setStoredUserAccessGroup(accessGroup: String?) {
+  func setStoredUserAccessGroup(accessGroup: String?) {
     if let data = accessGroup?.data(using: .utf8) {
       try? userDefaults.setData(data, forKey: Self.storedUserAccessGroupKey)
     } else {
@@ -122,7 +122,7 @@ import Foundation
   ///   associates with.
   /// - Throws: An error if the operation failed.
   
-  public func setStoredUser(user: User,
+  func setStoredUser(user: User,
                             accessGroup: String,
                             shareAuthStateAcrossDevices: Bool,
                             projectIdentifier: String) throws {
@@ -165,7 +165,7 @@ import Foundation
   ///   associates with.
   /// - Throws: An error if the operation failed.
   
-  public func removeStoredUser(accessGroup: String,
+  func removeStoredUser(accessGroup: String,
                                shareAuthStateAcrossDevices: Bool,
                                projectIdentifier: String) throws {
 #if os(Linux) || os(Android)

@@ -14,15 +14,15 @@
 
 import Foundation
 
-public struct SignInWithGameCenterResponse:
+struct SignInWithGameCenterResponse:
   AuthRPCResponse, Decodable {
    public var idToken: String
   public var refreshToken: String
-  public var localID: String?
-  public var playerID: String?
-  public var teamPlayerID: String?
-  public var gamePlayerID: String?
-  public var approximateExpirationDate: Date?
+  var localID: String?
+  var playerID: String?
+  var teamPlayerID: String?
+  var gamePlayerID: String?
+  var approximateExpirationDate: Date?
   public var isNewUser: Bool = false
   public var displayName: String?
     
@@ -51,6 +51,6 @@ public struct SignInWithGameCenterResponse:
         self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
     }
 
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

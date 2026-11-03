@@ -62,7 +62,7 @@ class AuthSharedKeychainServices {
    @param query The query to query the keychain.
    @return Whether the operation succeed.
    */
-  public func setItem(_ item: Data, withQuery query: [String: Any]) throws {
+  func setItem(_ item: Data, withQuery query: [String: Any]) throws {
 #if os(Linux) || os(Android)
       return
       #else
@@ -92,7 +92,7 @@ class AuthSharedKeychainServices {
    @param query The query to query the keychain.
    @return Whether the operation succeed.
    */
-  public func removeItem(query: [String: Any]) throws {
+  func removeItem(query: [String: Any]) throws {
 #if os(Linux) || os(Android)
       return
       #else

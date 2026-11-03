@@ -99,7 +99,7 @@ private let kClaimsKey = "claims"
        @param token The token string to parse.
        @return A structured token result.
    */
-  public static func tokenResult(token: String) -> AuthTokenResult? {
+  static func tokenResult(token: String) -> AuthTokenResult? {
     let tokenStringArray = token.components(separatedBy: ".")
 
     // The JWT should have three parts, though we only use the second in this method.

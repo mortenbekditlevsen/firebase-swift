@@ -14,6 +14,6 @@
 
 import Foundation
 
-public class AuthProtoFinalizeMFAPhoneResponseInfo: Decodable /* AuthProto */ {
+class AuthProtoFinalizeMFAPhoneResponseInfo: Decodable /* AuthProto */ {
   var phoneNumber: String?
 }

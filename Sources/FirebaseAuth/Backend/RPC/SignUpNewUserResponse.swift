@@ -14,7 +14,7 @@
 
 import Foundation
 
- public struct SignUpNewUserResponse: AuthRPCResponse, Decodable {
+ struct SignUpNewUserResponse: AuthRPCResponse, Decodable {
   /** @property IDToken
       @brief Either an authorization code suitable for performing an STS token exchange, or the
           access token from Secure Token Service, depending on whether @c returnSecureToken is set
@@ -25,7 +25,7 @@ import Foundation
   /** @property approximateExpirationDate
       @brief The approximate expiration date of the access token.
    */
-  public var approximateExpirationDate: Date?
+  var approximateExpirationDate: Date?
 
   /** @property refreshToken
       @brief The refresh token from Secure Token Service.
@@ -44,6 +44,6 @@ import Foundation
          self.approximateExpirationDate = (try container.decodeIfPresent(RelativeDate.self, forKey: .expiresIn))?.date
          self.refreshToken = try container.decode(String.self, forKey: .refreshToken)
      }
-  public func setFields(dictionary: [String: Any]) throws {
+  func setFields(dictionary: [String: Any]) throws {
   }
 }

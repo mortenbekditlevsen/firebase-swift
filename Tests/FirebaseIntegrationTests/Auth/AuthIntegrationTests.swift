@@ -112,6 +112,23 @@ struct AuthIntegrationTests {
     #expect(linked.email == email)
   }
 
+  @Test func linkingAnIdentityProviderReturnsItsUserInfo() async throws {
+    let auth = try EmulatorApp().auth
+    let anonymous = try await auth.signInAnonymously().user
+    let email = newEmail()
+    // The Auth emulator takes unsigned JSON claims as a Google ID token.
+    let claims = #"{"sub": "\#(UUID().uuidString)", "email": "\#(email)", "email_verified": true}"#
+
+    let result = try await anonymous.link(with: GoogleAuthProvider.credential(withIDToken: claims,
+                                                                             accessToken: ""))
+
+    #expect(result.user.uid == anonymous.uid)
+    #expect(result.user.providerData.map(\.providerID) == ["google.com"])
+    // These used to be dropped: link(with:) returned only the user.
+    #expect(result.additionalUserInfo?.providerID == "google.com")
+    #expect(result.credential?.provider == "google.com")
+  }
+
   @Test func profileChangesAreSaved() async throws {
     let auth = try EmulatorApp().auth
     let user = try await auth.createUser(withEmail: newEmail(), password: password).user

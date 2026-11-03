@@ -60,14 +60,14 @@
   // Change to internal
   @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
   
-  public struct GameCenterAuthCredential: AuthCredential, Codable {
-    public let playerID: String
-    public let teamPlayerID: String?
-    public let gamePlayerID: String?
-    public let publicKeyURL: URL?
-    public let signature: Data?
-    public let salt: Data?
-    public let timestamp: UInt64
+  struct GameCenterAuthCredential: AuthCredential, Codable {
+    let playerID: String
+    let teamPlayerID: String?
+    let gamePlayerID: String?
+    let publicKeyURL: URL?
+    let signature: Data?
+    let salt: Data?
+    let timestamp: UInt64
     public let displayName: String
       
       public var provider: String {GameCenterAuthProvider.id}

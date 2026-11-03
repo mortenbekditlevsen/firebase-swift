@@ -18,7 +18,7 @@ import Foundation
 ////import FirebaseCoreExtension
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public protocol AuthProvider {
+ protocol AuthProvider {
   func auth() -> Auth
 }
 

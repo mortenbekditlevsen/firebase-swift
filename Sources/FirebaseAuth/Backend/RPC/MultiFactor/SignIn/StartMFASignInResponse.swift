@@ -14,7 +14,7 @@
 
 import Foundation
 
- public struct StartMFASignInResponse: AuthRPCResponse {
+ struct StartMFASignInResponse: AuthRPCResponse {
      var responseInfo: AuthProtoStartMFAPhoneResponseInfo?
      
      enum CodingKeys: String, CodingKey {

@@ -44,9 +44,9 @@ private let kIDTokenKey = "idToken"
     @see https://developers.google.com/identity/toolkit/web/reference/relyingparty/verifyPassword
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct RevokeTokenRequest: IdentityToolkitRequest,
+ struct RevokeTokenRequest: IdentityToolkitRequest,
   AuthRPCRequest {
-     public typealias Response = RevokeTokenResponse
+     typealias Response = RevokeTokenResponse
 
   /** @property providerID
       @brief The provider that issued the token to revoke.
@@ -56,7 +56,7 @@ private let kIDTokenKey = "idToken"
   /** @property tokenType
       @brief The type of the token to revoke.
    */
-  public var tokenType: TokenType
+  var tokenType: TokenType
 
   /** @property token
       @brief The token to be revoked.
@@ -68,7 +68,7 @@ private let kIDTokenKey = "idToken"
    */
   public var idToken: String
 
-  public enum TokenType: Int, Sendable {
+  enum TokenType: Int, Sendable {
     case unspecified = 0, refreshToken = 1, accessToken = 2, authorizationCode = 3
   }
 
@@ -77,10 +77,10 @@ private let kIDTokenKey = "idToken"
     fatalError("Use init(withToken: ... instead")
   }
      
-     public var useStaging: Bool { false }
-     public var useIdentityPlatform: Bool { true }
-     public var endpoint: String { kRevokeTokenEndpoint }
-     public var requestConfiguration: AuthRequestConfiguration
+     var useStaging: Bool { false }
+     var useIdentityPlatform: Bool { true }
+     var endpoint: String { kRevokeTokenEndpoint }
+     var requestConfiguration: AuthRequestConfiguration
 
 
   public init(withToken token: String,

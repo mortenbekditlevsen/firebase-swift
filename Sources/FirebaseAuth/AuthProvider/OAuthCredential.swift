@@ -15,7 +15,7 @@
 import Foundation
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
- public struct OAuthCredential: AuthCredential, Codable {
+ public struct OAuthCredential: PreparableAuthCredential, Codable {
   /** @property IDToken
       @brief The ID Token associated with this credential.
    */
@@ -76,7 +76,7 @@ import Foundation
       self.provider = providerID
   }
 
-  public init?(withVerifyAssertionResponse response: VerifyAssertionResponse) {
+  init?(withVerifyAssertionResponse response: VerifyAssertionResponse) {
     guard Self.nonEmptyString(response.oauthIDToken) ||
       Self.nonEmptyString(response.oauthAccessToken) ||
       Self.nonEmptyString(response.oauthSecretToken) else {
@@ -90,7 +90,7 @@ import Foundation
               pendingToken: response.pendingToken)
   }
 
-     public func prepare(_ request: inout VerifyAssertionRequest) {
+     func prepare(_ request: inout VerifyAssertionRequest) {
     request.providerIDToken = idToken
     request.providerRawNonce = rawNonce
     request.providerAccessToken = accessToken

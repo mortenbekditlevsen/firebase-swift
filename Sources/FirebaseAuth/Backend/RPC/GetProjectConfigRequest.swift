@@ -20,20 +20,20 @@ import Foundation
 private let kGetProjectConfigEndPoint = "getProjectConfig"
 
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
-public struct GetProjectConfigRequest: IdentityToolkitRequest,
+struct GetProjectConfigRequest: IdentityToolkitRequest,
                                        AuthRPCRequest {
-    public typealias Response = GetProjectConfigResponse
+    typealias Response = GetProjectConfigResponse
         
-    public var useStaging: Bool { false }
-    public var useIdentityPlatform: Bool { false }
-    public var endpoint: String { kGetProjectConfigEndPoint }
-    public var requestConfiguration: AuthRequestConfiguration
+    var useStaging: Bool { false }
+    var useIdentityPlatform: Bool { false }
+    var endpoint: String { kGetProjectConfigEndPoint }
+    var requestConfiguration: AuthRequestConfiguration
     
     public init(requestConfiguration: AuthRequestConfiguration) {
         self.requestConfiguration = requestConfiguration
     }
     
-    public func containsPostBody() -> Bool { false }
+    func containsPostBody() -> Bool { false }
 }
 
 extension GetProjectConfigRequest {

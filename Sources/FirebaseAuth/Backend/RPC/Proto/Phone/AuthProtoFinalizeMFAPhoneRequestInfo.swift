@@ -15,7 +15,7 @@
 import Foundation
 
 
-public struct AuthProtoFinalizeMFAPhoneRequestInfo:
+struct AuthProtoFinalizeMFAPhoneRequestInfo:
   Codable, Sendable /* AuthProto */ {
 
   var sessionInfo: String?

@@ -14,7 +14,7 @@
 
 import Foundation
 
-public struct FinalizeMFASignInResponse: AuthRPCResponse, Decodable {
+struct FinalizeMFASignInResponse: AuthRPCResponse, Decodable {
   public var idToken: String?
   public var refreshToken: String?
 }
