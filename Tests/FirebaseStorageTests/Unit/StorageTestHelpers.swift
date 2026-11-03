@@ -16,9 +16,13 @@ import Foundation
 
 import FirebaseCore
 @testable import FirebaseStorage
-import GTMSessionFetcherCore
+// Port note: the port's GTMSessionFetcher stand-in is in FirebaseStorage.
 
 import XCTest
+#if canImport(FoundationNetworking)
+  // Port note: Linux's URL loading types are in FoundationNetworking.
+  import FoundationNetworking
+#endif
 
 class StorageTestHelpers: XCTestCase {
   var app: FirebaseApp!
@@ -31,7 +35,8 @@ class StorageTestHelpers: XCTestCase {
   override func setUp() {
     super.setUp()
     if app == nil {
-      let options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+      // Port note: FirebaseOptions is a struct.
+      var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
                                     gcmSenderID: "00000000000000000-00000000000-000000000")
       options.projectID = "myProjectID"
       StorageTestHelpers.uniqueApp += 1

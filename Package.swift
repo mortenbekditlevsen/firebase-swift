@@ -346,9 +346,14 @@ let package = Package(
             name: "FirebaseStorageTests",
             dependencies: ["FirebaseStorage"],
             path: "Tests/FirebaseStorageTests",
-            sources: [
-                "Unit/StoragePathTests.swift",
-                "Port",
+            exclude: [
+                // Upstream's observer API (per-status handlers on a callback
+                // queue); Port/StorageTaskTests covers the port's streams.
+                "Unit/StorageObservableTaskTests.swift",
+            ],
+            sources: ["Unit", "Port", "Support"],
+            swiftSettings: [
+                .swiftLanguageMode(SwiftLanguageMode.v5),
             ]
         ),
         .testTarget(

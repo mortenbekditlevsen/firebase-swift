@@ -17,15 +17,15 @@ import Foundation
 import FirebaseCore
 @testable import FirebaseStorage
 
-import FirebaseAppCheckInterop
-import FirebaseAuthInterop
-import SharedTestUtilities
+// Port note: the interop protocols are in FirebaseCore.
+// Port note: the fakes are in Support/Fakes.swift.
 
 import XCTest
 
 class StorageTests: XCTestCase {
   override class func setUp() {
-    let options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+    // Port note: FirebaseOptions is a struct.
+    var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
                                   gcmSenderID: "00000000000000000-00000000000-000000000")
     options.projectID = "myProjectID"
     FirebaseApp.configure(name: "test-StorageTests", options: options)
@@ -102,11 +102,14 @@ class StorageTests: XCTestCase {
   }
 
   func SKIPtestStorageNoBucketInConfig() throws {
-    let options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+    // Port note: FirebaseOptions is a struct.
+    var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
                                   gcmSenderID: "00000000000000000-00000000000-000000000")
     options.projectID = "myProjectID"
     let name = "StorageTestsNil"
-    let app = FirebaseApp(instanceWithName: name, options: options)
+    // Port note: upstream's FirebaseApp(instanceWithName:options:) is
+    // FirebaseApp(options:name:).
+    let app = FirebaseApp(options: options, name: name)
     XCTAssertThrowsObjCException {
       _ = Storage.storage(app: app)
     }
@@ -204,12 +207,15 @@ class StorageTests: XCTestCase {
     XCTAssertEqual(convenienceRef.storage.app, builtRef.storage.app)
   }
 
+  // Port note: Storage has no copy() (NSCopying); a second instance for the
+  // same app and bucket stands in for the copy, and `hash` is `hashValue`.
   func testEqual() throws {
     let app = try getApp(bucket: "bucket")
     let storage = Storage.storage(app: app)
-    let copy = try XCTUnwrap(storage.copy() as? Storage)
+    let copy = Storage(app: storage.app, bucket: storage.storageBucket)
     XCTAssertEqual(storage.app.name, copy.app.name)
-    XCTAssertEqual(storage.hash, copy.hash)
+    XCTAssertEqual(storage, copy)
+    XCTAssertEqual(storage.hashValue, copy.hashValue)
   }
 
   func testNotEqual() throws {
@@ -218,14 +224,19 @@ class StorageTests: XCTestCase {
     let secondApp = try getApp(bucket: "bucket2")
     let storage2 = Storage.storage(app: secondApp)
     XCTAssertNotEqual(storage, storage2)
-    XCTAssertNotEqual(storage.hash, storage2.hash)
+    XCTAssertNotEqual(storage.hashValue, storage2.hashValue)
   }
 
   func testHash() throws {
     let app = try getApp(bucket: "bucket")
     let storage = Storage.storage(app: app)
-    let copy = try XCTUnwrap(storage.copy() as? Storage)
+    let copy = Storage(app: storage.app, bucket: storage.storageBucket)
     XCTAssertEqual(storage.app.name, copy.app.name)
+  }
+
+  func testHashIsIndependentOfCallbackQueue() throws {
+    // Port note: there's no callbackQueue; the API is async.
+    throw XCTSkip("No callbackQueue")
   }
 
   func testTranslateRetryTime() {
@@ -256,6 +267,23 @@ class StorageTests: XCTestCase {
     XCTAssertEqual(storage.maxOperationRetryInterval, 8)
   }
 
+  func testPOSIXErrorFormatting() throws {
+    let app = try getApp(bucket: "bucket")
+    let storage = Storage.storage(app: app)
+    let ref = storage.reference(withPath: "ios/public/testPOSIX40")
+    let posixError = NSError(domain: NSPOSIXErrorDomain, code: 40, userInfo: nil)
+    // Port note: the error is a Swift Error, bridged to NSError.
+    let storageError = StorageErrorCode.error(withServerError: posixError, ref: ref) as NSError
+    XCTAssertEqual(storageError.domain, StorageErrorDomain)
+    XCTAssertEqual(storageError.code, StorageErrorCode.unknown.rawValue)
+    // Port note: the system's description of the POSIX error depends on the
+    // locale and platform, so the expected text is built from it.
+    XCTAssertEqual(
+      storageError.userInfo[NSLocalizedDescriptionKey] as? String,
+      "POSIX errno 40 (\(posixError.localizedDescription))"
+    )
+  }
+
   // MARK: Private Helpers
 
   // Cache the app associated with each Storage bucket
@@ -266,21 +294,25 @@ class StorageTests: XCTestCase {
     guard savedApp == nil else {
       return try XCTUnwrap(savedApp)
     }
-    let options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+    // Port note: FirebaseOptions is a struct.
+    var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
                                   gcmSenderID: "00000000000000000-00000000000-000000000")
     options.projectID = "myProjectID"
     options.storageBucket = bucket
     let name = "StorageTests\(bucket)"
-    let app = FirebaseApp(instanceWithName: name, options: options)
+    // Port note: upstream's FirebaseApp(instanceWithName:options:) is
+    // FirebaseApp(options:name:).
+    let app = FirebaseApp(options: options, name: name)
     StorageTests.appDictionary[bucket] = app
     return app
   }
 
-  private func XCTAssertThrowsObjCException(_ closure: @escaping () -> Void) {
-    XCTAssertThrowsError(try ExceptionCatcher.catchException(closure))
-  }
+  // Port note: there are no Objective-C exceptions to catch; the port
+  // crashes (fatalError) where upstream throws one. Only upstream's disabled
+  // SKIPtest… tests expect one, and the others just run the closure.
+  private func XCTAssertThrowsObjCException(_ closure: @escaping () -> Void) {}
 
   private func XCTAssertNoThrowObjCException(_ closure: @escaping () -> Void) {
-    XCTAssertNoThrow(try ExceptionCatcher.catchException(closure))
+    closure()
   }
 }

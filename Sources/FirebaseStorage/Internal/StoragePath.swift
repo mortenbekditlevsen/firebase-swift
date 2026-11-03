@@ -24,7 +24,7 @@ enum StoragePathError: Error {
  * This class also includes helper methods to parse those URI/Ls, as well as to
  * add and remove path segments.
  */
-struct StoragePath: Equatable, Sendable {
+struct StoragePath: Hashable, Sendable {
   // MARK: Class methods
 
   /**

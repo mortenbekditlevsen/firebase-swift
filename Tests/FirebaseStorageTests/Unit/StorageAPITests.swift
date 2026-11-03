@@ -31,8 +31,7 @@ final class StorageAPITests: XCTestCase {
     storage.maxUploadRetryTime = storage.maxUploadRetryTime + 1
     storage.maxDownloadRetryTime = storage.maxDownloadRetryTime + 1
     storage.maxOperationRetryTime = storage.maxOperationRetryTime + 1
-    let queue: DispatchQueue = storage.callbackQueue
-    storage.callbackQueue = queue
+    // Port note: no callbackQueue; the API is async.
     _ = storage.reference()
     _ = storage.reference(forURL: "my-url")
     _ = storage.reference(withPath: "path")
@@ -52,60 +51,27 @@ final class StorageAPITests: XCTestCase {
 
     let metadata = StorageMetadata()
 
+    // Port note: the API is async only; upstream's completion-handler forms
+    // are left out here and below.
     _ = ref.putData(Data())
     _ = ref.putData(Data(), metadata: metadata)
-    _ = ref.putData(Data(), metadata: metadata) { (result: Result<StorageMetadata, Error>) in
-    }
-    _ = ref.putData(Data(), metadata: metadata) { (result: StorageMetadata?, error: Error?) in
-    }
-
     let file = URL(string: "my-url")!
     _ = ref.putFile(from: file)
     _ = ref.putFile(from: file, metadata: metadata)
-    _ = ref.putFile(from: file, metadata: metadata) { (result: Result<StorageMetadata, Error>) in
-    }
-    _ = ref.putFile(from: file, metadata: metadata) { (result: StorageMetadata?, error: Error?) in
-    }
-
-    _ = ref.getData(maxSize: 122) { (result: Data?, error: Error?) in
-    }
-    _ = ref.getData(maxSize: 122) { (result: Result<Data, Error>) in
-    }
-
-    ref.downloadURL { (result: URL?, error: Error?) in
-    }
-    ref.downloadURL { (result: Result<URL, Error>) in
-    }
-
     ref.write(toFile: file)
-    ref.write(toFile: file) { (result: URL?, error: Error?) in
-    }
-    ref.write(toFile: file) { (result: Result<URL, Error>) in
-    }
 
-    ref.listAll { (listResult: StorageListResult?, error: Error?) in
-    }
-    ref.listAll { (result: Result<StorageListResult, Error>) in
-    }
-
-    ref.list(maxResults: 123) { (listResult: StorageListResult?, error: Error?) in
-    }
-    ref.list(maxResults: 222) { (result: Result<StorageListResult, Error>) in
-    }
-    ref
-      .list(maxResults: 123,
-            pageToken: "pageToken") { (listResult: StorageListResult?, error: Error?) in
-      }
-    ref
-      .list(maxResults: 222, pageToken: "pageToken") { (result: Result<StorageListResult, Error>) in
-      }
-
-    ref.getMetadata { (result: Result<StorageMetadata, Error>) in
-    }
-    ref.getMetadata { (result: StorageMetadata?, error: Error?) in
-    }
-
-    ref.delete { (error: Error?) in
+    Task {
+      let _: StorageMetadata = try await ref.putData(Data(), metadata: metadata)
+      let _: StorageMetadata = try await ref.putFile(from: file, metadata: metadata)
+      _ = try await ref.getData(maxSize: 122)
+      _ = try await ref.downloadURL()
+      let _: URL = try await ref.write(toFile: file)
+      _ = try await ref.listAll()
+      _ = try await ref.list(maxResults: 123)
+      _ = try await ref.list(maxResults: 123, pageToken: "pageToken")
+      _ = try await ref.getMetadata()
+      _ = try await ref.updateMetadata(metadata)
+      try await ref.delete()
     }
   }
 
@@ -131,16 +97,15 @@ final class StorageAPITests: XCTestCase {
     _ = result.pageToken
   }
 
-  func taskStatuses(status: StorageTaskStatus) -> StorageTaskStatus {
+  // Port note: StorageTaskStatus is generic over the task's result, which
+  // `.success` carries (as `.failure` carries the error); there's no `.unknown`.
+  func taskStatuses(status: StorageTaskStatus<Data>) -> StorageTaskStatus<Data> {
     switch status {
-    case .unknown: return status
     case .resume: return status
     case .progress: return status
     case .pause: return status
     case .success: return status
     case .failure: return status
-    @unknown default:
-      fatalError()
     }
   }
 
@@ -188,28 +153,28 @@ final class StorageAPITests: XCTestCase {
     _ = metadata.isFolder
   }
 
-  func StorageobserverApis(ref: StorageReference) throws {
-    let task = ref.write(toFile: URL(string: "url")!)
-    _ = task.observe(.pause) { snapshot in
+  // Port note: tasks are observed through an AsyncThrowingStream, which ends
+  // when the task does; there are no per-status observers to remove.
+  func StorageObservableTaskApis(ref: StorageReference) async throws {
+    let task: StorageDownloadTask = ref.write(toFile: URL(string: "url")!)
+    let (_ /* handle */, snapshots) = await task.observe()
+    for try await snapshot in snapshots {
+      _ = snapshot
     }
-    task.removeObserver(withHandle: "handle")
-    task.removeAllObservers()
-    task.removeAllObservers(for: .progress)
-  }
-
-  func StorageTaskApis(task: StorageTask) {
-    _ = task.snapshot
   }
 
   func StorageTaskManagementApis(task: StorageTaskManagement) {
     task.enqueue()
-    task.pause?()
-    task.cancel?()
-    task.resume?()
+    // Port note: pause, cancel and resume are required, not optional.
+    task.pause()
+    task.cancel()
+    task.resume()
   }
 
-  func StorageTaskSnapshotApis(snapshot: StorageTaskSnapshot) {
-    _ = snapshot.task
+  // Port note: snapshots are generic over the task's result, and carry the
+  // task's state (`base`) instead of the task.
+  func StorageTaskSnapshotApis(snapshot: StorageTaskSnapshot<Data>) {
+    _ = snapshot.base
     _ = snapshot.metadata
     _ = snapshot.reference
     _ = snapshot.progress
