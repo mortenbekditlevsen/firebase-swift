@@ -89,7 +89,10 @@ class AggregationIntegrationTests: FSTIntegrationTestCase {
         AggregateField.average("foo"),
       ]).getAggregation(source: .server)
       XCTFail("Error expected.")
-    } catch let error as NSError {
+    } catch {
+      // Port note: on Linux, `catch let error as NSError` doesn't match Swift
+      // errors; coercing with `as` works everywhere.
+      let error = error as NSError
       XCTAssertNotNil(error)
       if !AggregationIntegrationTests.isRunningAgainstEmulator() {
         XCTAssertTrue(error.localizedDescription.contains("maximum number of aggregations"))
@@ -130,6 +133,9 @@ class AggregationIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testThrowsAnErrorWhenGettingTheResultOfAnUnrequestedAggregation() async throws {
+    // Port note: the port stops the process where upstream raises an
+    // exception, so this can't be tested in-process.
+    throw XCTSkip("Expects an exception")
     let collection = collectionRef()
     try await collection.addDocument(data: [:])
 

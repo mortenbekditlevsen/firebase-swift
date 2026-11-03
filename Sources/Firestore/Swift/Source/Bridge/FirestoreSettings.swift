@@ -218,8 +218,14 @@ public final class MemoryCacheSettings: LocalCacheSettings, Hashable {
 typealias CppPersistentCacheIndexManagerBridge =
   firebase.firestore.swift_bridge.PersistentCacheIndexManagerBridge
 
-/// The indexes of a persistent cache, which speed up local queries.
-public final class PersistentCacheIndexManager: @unchecked Sendable {
+/// The indexes of a persistent cache, which speed up local queries. Equal by
+/// identity, as upstream's.
+public final class PersistentCacheIndexManager: Equatable, @unchecked Sendable {
+  public static func == (lhs: PersistentCacheIndexManager,
+                         rhs: PersistentCacheIndexManager) -> Bool {
+    lhs === rhs
+  }
+
   // The C++ manager is thread-safe.
   private let cppBridge: CppPersistentCacheIndexManagerBridge
 

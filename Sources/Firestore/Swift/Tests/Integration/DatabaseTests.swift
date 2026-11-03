@@ -23,7 +23,8 @@ import FirebaseFirestore
 class DatabaseTests: FSTIntegrationTestCase {
   func testCanStillUseDisablePersistenceSettings() async throws {
     let settings = db.settings
-    settings.isPersistenceEnabled = false
+    // Port note: the deprecated isPersistenceEnabled isn't ported.
+    settings.cacheSettings = MemoryCacheSettings()
     db.settings = settings
 
     try await db.document("coll/doc").setData(["foo": "bar"])
@@ -33,7 +34,8 @@ class DatabaseTests: FSTIntegrationTestCase {
 
   func testCanStillUseEnablePersistenceSettings() async throws {
     let settings = db.settings
-    settings.isPersistenceEnabled = true
+    // Port note: the deprecated isPersistenceEnabled isn't ported.
+    settings.cacheSettings = PersistentCacheSettings()
     db.settings = settings
 
     try await db.document("coll/doc").setData(["foo": "bar"])
@@ -101,7 +103,8 @@ class DatabaseTests: FSTIntegrationTestCase {
   func testGetValidPersistentCacheIndexManager() async throws {
     // [FIRApp resetApps] is an internal api, while Swift test can only test again public api.
     // So `FirebaseApp.configure()` can only be called once for the whole test class.
-    FirebaseApp.configure()
+    // Port note: FSTIntegrationTestCase configures the default app; the port
+    // has no FirebaseApp.configure() that reads GoogleService-Info.plist.
 
     let db1 = Firestore.firestore(database: "SwiftPersistentCacheIndexManagerDB1")
     let settings1 = db1.settings
@@ -124,7 +127,8 @@ class DatabaseTests: FSTIntegrationTestCase {
     // Disable persistent disk cache (deprecated)
     let db4 = Firestore.firestore(database: "SwiftPersistentCacheIndexManagerDB4")
     let settings4 = db4.settings
-    settings4.isPersistenceEnabled = false
+    // Port note: the deprecated isPersistenceEnabled isn't ported.
+    settings4.cacheSettings = MemoryCacheSettings()
     db4.settings = settings4
     XCTAssertNil(db4.persistentCacheIndexManager)
 

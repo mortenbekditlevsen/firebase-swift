@@ -1920,6 +1920,8 @@ BridgeFieldValue ConvertProtoValue(
         }
         return BridgeFieldValue::FromBsonBinaryData(data, size, subtype);
       }
+      // nanopb stores empty bytes as null.
+      if (!value.bytes_value) return BridgeFieldValue::FromBlob(std::string());
       std::string bytes(
           reinterpret_cast<const char*>(value.bytes_value->bytes),
           value.bytes_value->size);

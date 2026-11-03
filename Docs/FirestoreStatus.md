@@ -133,7 +133,28 @@ aggregations → listeners → bundles → BSON types → pipelines.
 - [ ] All of `Swift/Source/SwiftAPI/Pipeline` is wired to stubs in `Bridge/BridgeTypes.swift`
       that return empty results. Last, since the API is still in preview upstream.
 
+## Platform notes
+
+- On Linux, `catch let error as NSError` doesn't match the port's errors (corelibs Foundation
+  only bridges Swift errors to `NSError` by coercion): use `catch FirestoreErrorCode.notFound`,
+  `error as? FirestoreErrorCode`, or `let nsError = error as NSError`.
+- Linux has no `NSErrorPointer`, so transactions there use the throwing update block.
+
 ## Tests
+
+Upstream's Swift integration tests (`Swift/Tests/Integration/`, minus the pipeline and search
+ones) run as `FirebaseFirestoreIntegrationTests` against the Firestore emulator, on
+`Swift/Tests/IntegrationSupport/FSTIntegrationTestCase.swift`, a Swift port of upstream's
+Objective-C `FSTIntegrationTestCase` and `FSTEventAccumulator`. Port notes in the test files mark
+the changes: removed deprecated settings, throwing transaction blocks, a continuation instead of
+Combine's `Future`, error codes the port reports differently, and two tests skipped because they
+expect an exception (the port stops the process instead). Enterprise-only tests skip themselves,
+as upstream's do; the BSON binary tests need firebase-tools 15.34 or later.
+
+They found: reading an empty `Data` field crashed (nanopb stores empty bytes as null), and
+`VectorValue` and `PersistentCacheIndexManager` weren't `Equatable` as upstream's are.
+
+Our own tests:
 
 `Tests/FirebaseIntegrationTests/Firestore/`: `FirestoreIntegrationTests` (CRUD, queries,
 batches, transactions, listeners), `FirestoreAuthIntegrationTests` (rules and users),

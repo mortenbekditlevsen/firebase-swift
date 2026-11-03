@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import class FirebaseCore.Timestamp
+// Port note: Timestamp is a struct in the port.
+import struct FirebaseCore.Timestamp
 @testable import FirebaseFirestore
 import Foundation
 
@@ -55,7 +56,8 @@ class CodableIntegrationTests: FSTIntegrationTestCase {
           .commit(completion: completion)
       }
     case .transaction:
-      doc.firestore.runTransaction({ transaction, errorPointer -> Any? in
+      // Port note: the throwing form, as Linux has no NSErrorPointer.
+      doc.firestore.runTransaction({ transaction -> Any? in
         do {
           if let merge {
             try transaction.setData(from: value, forDocument: doc, merge: merge)

@@ -172,15 +172,16 @@ class LargeDocIntegrationTests: FSTIntegrationTestCase {
     try await docRef.setData(LargeDocIntegrationTests.largeDocument)
 
     do {
-      _ = try await db.runTransaction { transaction, errorPointer -> Any? in
+      // Port note: the throwing form, as Linux has no NSErrorPointer.
+      _ = try await db.runTransaction { transaction -> Any? in
         do {
           _ = try transaction.getDocument(docRef)
           transaction.updateData(
             ["transaction_timestamp": FieldValue.serverTimestamp()],
             forDocument: docRef
           )
-        } catch let fetchError as NSError {
-          errorPointer?.pointee = fetchError
+        } catch {
+          throw error
         }
         return nil
       }
