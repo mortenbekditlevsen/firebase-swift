@@ -13,6 +13,7 @@
 // limitations under the License.
 
 @testable import FirebaseFunctions
+import Foundation
 
 import XCTest
 
@@ -33,9 +34,11 @@ final class FunctionsErrorTests: XCTestCase {
     let nsError = error as NSError
     XCTAssertEqual(nsError.domain, "com.firebase.functions")
     XCTAssertEqual(nsError.code, 12)
+    // Port note: Foundation's default description, whose wording depends on
+    // the platform and the locale.
     XCTAssertEqual(
       nsError.localizedDescription,
-      "The operation couldn’t be completed. (com.firebase.functions error 12.)"
+      NSError(domain: "com.firebase.functions", code: 12).localizedDescription
     )
     XCTAssertEqual(nsError.userInfo.count, 1)
     XCTAssertEqual(nsError.userInfo["TEST_Key"] as? String, "TEST_Value")

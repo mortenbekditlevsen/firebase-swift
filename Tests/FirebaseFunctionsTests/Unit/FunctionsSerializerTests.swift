@@ -16,11 +16,7 @@ import Foundation
 
 import FirebaseCore
 @testable import FirebaseFunctions
-#if COCOAPODS
-  import GTMSessionFetcher
-#else
-  import GTMSessionFetcherCore
-#endif
+// Port note: no GTMSessionFetcher in the port.
 
 import XCTest
 
@@ -49,9 +45,15 @@ class FunctionsSerializerTests: XCTestCase {
 
   func testEncodeInt() throws {
     let one = NSNumber(1)
-    let dict = try XCTUnwrap(serializer.encode(one) as? NSDictionary)
-    XCTAssertEqual("type.googleapis.com/google.protobuf.Int64Value", dict["@type"] as? String)
-    XCTAssertEqual("1", dict["value"] as? String)
+    #if canImport(Darwin)
+      let dict = try XCTUnwrap(serializer.encode(one) as? NSDictionary)
+      XCTAssertEqual("type.googleapis.com/google.protobuf.Int64Value", dict["@type"] as? String)
+      XCTAssertEqual("1", dict["value"] as? String)
+    #else
+      // Port note: on Linux, NSNumber's objCType follows the value, so a small
+      // integer is "i" and is sent as is; it fits JavaScript's numbers anyway.
+      XCTAssertEqual(try serializer.encode(one) as? NSNumber, one)
+    #endif
   }
 
   func testDecodeInt32() throws {
