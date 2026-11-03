@@ -87,7 +87,7 @@ public final class Storage: Sendable {
   }
 
   private static func storage(app: FirebaseApp, bucket: String) -> Storage {
-    return InstanceCache.shared.storage(app: app, bucket: bucket)
+    return app.component(StorageComponent.self).storage(app: app, bucket: bucket)
   }
 
   /// The `FirebaseApp` associated with this Storage instance.
@@ -268,26 +268,25 @@ public final class Storage: Sendable {
 
   // MARK: - Internal and Private APIs
 
-  private final class InstanceCache: Sendable {
-    static let shared = InstanceCache()
-
-    /// A map of active instances, grouped by app and bucket. Keys combine the
-    /// FirebaseApp name and bucket to ensure each app gets its own Storage
-    /// instance, even when multiple apps share the same storage bucket.
+  /// Storage's state for an app: its instances by bucket.
+  private final class StorageComponent: FirebaseAppComponent {
     private let instances: Mutex<[String: Storage]> = .init([:])
 
-    private init() {}
+    init() {}
 
     func storage(app: FirebaseApp, bucket: String) -> Storage {
       instances.withLock { instances in
-        let key = "\(app.name)|\(bucket)"
-        if let instance = instances[key] {
+        if let instance = instances[bucket] {
           return instance
         }
         let newInstance = FirebaseStorage.Storage(app: app, bucket: bucket)
-        instances[key] = newInstance
+        instances[bucket] = newInstance
         return newInstance
       }
+    }
+
+    func appWillBeDeleted(_ app: FirebaseApp) async {
+      instances.withLock { $0.removeAll() }
     }
   }
 

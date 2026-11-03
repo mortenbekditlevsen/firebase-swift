@@ -20,13 +20,8 @@ import FirebaseFirestore
 /// A Firestore instance for tests. Its client is created lazily, so building
 /// references never touches the network.
 let FSTTestFirestore: Firestore = {
-  let options = FirebaseApp.Options(
-    projectID: "test-project",
-    googleAppID: "1:123:ios:123ab",
-    apiKey: nil,
-    clientID: nil,
-    storageBucket: nil
-  )
+  var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
+  options.projectID = "test-project"
   return Firestore.firestore(app: FirebaseApp(options: options, name: "FSTTestFirestore"))
 }()
 

@@ -98,9 +98,11 @@ class FSTIntegrationTestCase: XCTestCase {
     super.tearDown()
   }
 
-  private static func appOptions(projectID: String) -> FirebaseApp.Options {
-    FirebaseApp.Options(projectID: projectID, googleAppID: "1:123:ios:123ab",
-                        apiKey: "fake-api-key", clientID: nil, storageBucket: nil)
+  private static func appOptions(projectID: String) -> FirebaseOptions {
+    var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
+    options.projectID = projectID
+    options.apiKey = "fake-api-key"
+    return options
   }
 
   /// A new instance with its own app, so it has its own cache (upstream gives

@@ -103,8 +103,8 @@ class DatabaseTests: FSTIntegrationTestCase {
   func testGetValidPersistentCacheIndexManager() async throws {
     // [FIRApp resetApps] is an internal api, while Swift test can only test again public api.
     // So `FirebaseApp.configure()` can only be called once for the whole test class.
-    // Port note: FSTIntegrationTestCase configures the default app; the port
-    // has no FirebaseApp.configure() that reads GoogleService-Info.plist.
+    // Port note: FSTIntegrationTestCase has already configured the default
+    // app, which the test host does upstream.
 
     let db1 = Firestore.firestore(database: "SwiftPersistentCacheIndexManagerDB1")
     let settings1 = db1.settings

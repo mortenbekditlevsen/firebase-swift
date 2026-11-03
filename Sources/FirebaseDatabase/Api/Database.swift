@@ -75,13 +75,7 @@ public final class Database:  Sendable {
      * @return A FIRDatabase instance.
      */
     public class func database(app: FirebaseApp, url: String) -> Database {
-        let provider = DatabaseComponent(app: app)
-        return provider.databaseForApp(app, URL: url)
-        // XXX TODO:
-//        let provider =
-//            FIR_COMPONENT(FIRDatabaseProvider, app.container);
-//        return [provider databaseForApp:app URL:url];
-//
+        app.component(DatabaseComponent.self).databaseForApp(app, URL: url)
     }
 
     /**

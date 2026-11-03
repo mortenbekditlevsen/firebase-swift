@@ -3,7 +3,7 @@ import PackageDescription
 
 // The firebase-ios-sdk release this package corresponds to. Keep in sync with
 // FirebaseVersion() in Sources/FirebaseCore/App.swift; see UPSTREAM.md.
-let firebaseVersion = "12.14.0"
+let firebaseVersion = "13.1.1"
 
 /// Firestore and the dependencies only it needs (gRPC, abseil, nanopb), which are by far the
 /// largest. Apps that don't use Firestore can disable the trait so SwiftPM doesn't fetch them:
@@ -267,6 +267,11 @@ let package = Package(
           ]
         ),
 
+        .testTarget(
+            name: "FirebaseCoreTests",
+            dependencies: ["FirebaseCore"],
+            path: "Tests/FirebaseCoreTests"
+        ),
         .testTarget(
             name: "FirebaseAuthTests",
             dependencies: ["FirebaseAuth"],

@@ -74,18 +74,23 @@ struct EmulatorApp {
   let app: FirebaseApp
   let auth: Auth
 
-  /// - Parameter name: Apps with the same name share Auth's stored user,
-  ///   so a second one acts like the app relaunching.
-  init(name: String = "integration-\(UUID().uuidString)") throws {
+  /// - Parameters:
+  ///   - name: Apps with the same name share Auth's stored user,
+  ///     so a second one acts like the app relaunching.
+  ///   - configured: Whether to configure the app (`FirebaseApp.configure(name:options:)`), so
+  ///     it can be deleted, instead of creating one outside the registry.
+  init(name: String = "integration-\(UUID().uuidString)", configured: Bool = false) throws {
     let authAddress = try #require(Emulators.auth)
-    let options = FirebaseApp.Options(
-      projectID: Emulators.projectID,
-      googleAppID: "1:123:ios:123ab",
-      apiKey: "fake-api-key",
-      clientID: nil,
-      storageBucket: "\(Emulators.projectID).appspot.com"
-    )
-    app = FirebaseApp(options: options, name: name)
+    var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
+    options.projectID = Emulators.projectID
+    options.apiKey = "fake-api-key"
+    options.storageBucket = "\(Emulators.projectID).appspot.com"
+    if configured {
+      FirebaseApp.configure(name: name, options: options)
+      app = try #require(FirebaseApp.app(name: name))
+    } else {
+      app = FirebaseApp(options: options, name: name)
+    }
 
     // Auth must exist before the other services: they pick up `app.auth`
     // when they're created.

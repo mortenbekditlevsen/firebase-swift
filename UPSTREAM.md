@@ -83,9 +83,13 @@ been triaged. Its *Closest releases* stay meaningless for the same reason.
 ## The version the SDK reports
 
 `FirebaseVersion()` (FirebaseCore) and `firebaseVersion` (Package.swift) are
-**12.14.0**, the oldest baseline among Functions, Storage and Auth's RPC
-layer. They're sent to the backends in version headers. Raise them when the
-modules have been synced past it.
+**13.1.1**, the release every module is synced to. They're sent to the
+backends in version headers. Keep them at the oldest *Synced to* release.
+
+FirebaseCore isn't in the table: it's a small Swift rewrite of upstream's
+Objective-C `FIRApp`/`FIROptions` (13.1.1), not a port of its files. It has
+upstream's public API, minus data collection and the heartbeat logger, plus
+options from JSON (`FirebaseOptions(contentsOfFile:)`, `FIREBASE_OPTIONS`).
 
 ## Syncing a module
 

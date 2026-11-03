@@ -54,10 +54,6 @@ public final class Functions: Equatable, Sendable {
   /// A factory for getting the metadata to include with function calls.
   private let contextProvider: FunctionsContextProvider
 
-  /// A map of active instances, grouped by app. Keys are FirebaseApp names and values are arrays
-  /// containing all instances of Functions associated with the given app.
-  private static let instances = Mutex<[String: [Functions]]>([:])
-
   /// The custom domain to use for all functions references (optional).
   let customDomain: String?
 
@@ -324,27 +320,8 @@ public final class Functions: Equatable, Sendable {
       fatalError("`FirebaseApp.configure()` needs to be called before using Functions.")
     }
 
-    return instances.withLock { instances in
-      if let associatedInstances = instances[app.name] {
-        for instance in associatedInstances {
-          // Domains may be nil, so handle with care.
-          var equalDomains = false
-          if let instanceCustomDomain = instance.customDomain {
-            equalDomains = instanceCustomDomain == customDomain
-          } else {
-            equalDomains = customDomain == nil
-          }
-          // Check if it's a match.
-          if instance.region == region, equalDomains {
-            return instance
-          }
-        }
-      }
-      let newInstance = Functions(app: app, region: region, customDomain: customDomain)
-      let existingInstances = instances[app.name, default: []]
-      instances[app.name] = existingInstances + [newInstance]
-      return newInstance
-    }
+    return app.component(FunctionsComponent.self)
+      .functions(app: app, region: region, customDomain: customDomain)
   }
 
   init(projectID: String,
@@ -780,5 +757,29 @@ private extension URL {
     let host = host?.lowercased() ?? ""
     let isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
     return scheme == "https" || isLoopback
+  }
+}
+
+/// Functions' state for an app: its instances, one per region and custom domain.
+private final class FunctionsComponent: FirebaseAppComponent {
+  private let instances = Mutex<[Functions]>([])
+
+  init() {}
+
+  func functions(app: FirebaseApp, region: String, customDomain: String?) -> Functions {
+    instances.withLock { instances in
+      if let instance = instances.first(where: {
+        $0.region == region && $0.customDomain == customDomain
+      }) {
+        return instance
+      }
+      let newInstance = Functions(app: app, region: region, customDomain: customDomain)
+      instances.append(newInstance)
+      return newInstance
+    }
+  }
+
+  func appWillBeDeleted(_ app: FirebaseApp) async {
+    instances.withLock { $0.removeAll() }
   }
 }

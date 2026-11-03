@@ -549,6 +549,24 @@ private func releaseCredentialsSource(context: UnsafeMutableRawPointer?) {
 
 // MARK: - Firestore
 
+/// Firestore's state for an app: its instances by database ID, as upstream's
+/// `FSTFirestoreComponent`.
+final class FirestoreComponent: FirebaseAppComponent {
+  let instances = Mutex<[String: Firestore]>([:])
+
+  init() {}
+
+  func appWillBeDeleted(_ app: FirebaseApp) async {
+    let firestores = instances.withLock { instances in
+      defer { instances.removeAll() }
+      return Array(instances.values)
+    }
+    for firestore in firestores {
+      try? await firestore.terminate()
+    }
+  }
+}
+
 /// A Firestore database.
 public final class Firestore: @unchecked Sendable {
   var cppBridge: CppFirestoreBridge
@@ -570,16 +588,18 @@ public final class Firestore: @unchecked Sendable {
     }
   }
 
-  /// Cache of Firestore instances keyed by "appName/databaseId".
-  private nonisolated(unsafe) static let _instances = Mutex<[String: Firestore]>([:])
+  /// The app's component, which holds this instance until it's terminated.
+  private let component: FirestoreComponent
 
-  /// This instance's key in `_instances`.
-  private let instanceKey: String
+  /// The database ID, this instance's key in `component`.
+  private let databaseID: String
 
-  private init(app: FirebaseApp, cppBridge: CppFirestoreBridge, instanceKey: String) {
+  private init(app: FirebaseApp, cppBridge: CppFirestoreBridge,
+               component: FirestoreComponent, databaseID: String) {
     self.app = app
     self.cppBridge = cppBridge
-    self.instanceKey = instanceKey
+    self.component = component
+    self.databaseID = databaseID
   }
 
   private static var defaultApp: FirebaseApp {
@@ -603,9 +623,9 @@ public final class Firestore: @unchecked Sendable {
 
   /// Returns a database of `app`.
   public static func firestore(app: FirebaseApp, database: String = "(default)") -> Firestore {
-    let key = "\(app.name)/\(database)"
-    return _instances.withLock { instances in
-      if let existing = instances[key] {
+    let component = app.component(FirestoreComponent.self)
+    return component.instances.withLock { instances in
+      if let existing = instances[database] {
         return existing
       }
       let projectID = app.options.projectID ?? ""
@@ -627,7 +647,8 @@ public final class Firestore: @unchecked Sendable {
         appCheckCallback,
         releaseCredentialsSource
       )
-      let instance = Firestore(app: app, cppBridge: bridge, instanceKey: key)
+      let instance = Firestore(app: app, cppBridge: bridge, component: component,
+                               databaseID: database)
       if let auth {
         // swift-corelibs-foundation never matches an `object:` filter that is a
         // pure Swift class, so filter by identity in the block instead.
@@ -645,7 +666,7 @@ public final class Firestore: @unchecked Sendable {
         // registering the observer.
         bridge.SetAuthUser(std.string(auth.getUserID() ?? ""))
       }
-      instances[key] = instance
+      instances[database] = instance
       return instance
     }
   }
@@ -713,9 +734,9 @@ public final class Firestore: @unchecked Sendable {
   /// Stops this instance. As upstream, `Firestore.firestore(app:database:)`
   /// returns a new instance afterwards.
   public func terminate() async throws {
-    Firestore._instances.withLock { instances in
-      if instances[instanceKey] === self {
-        instances[instanceKey] = nil
+    component.instances.withLock { instances in
+      if instances[databaseID] === self {
+        instances[databaseID] = nil
       }
     }
     try await withErrorCallback { cppBridge.Terminate($0, $1) }
