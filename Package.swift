@@ -329,6 +329,14 @@ let package = Package(
         ),
         // Upstream's unit tests are being ported one file at a time; `Port`
         // holds tests for this port's own code.
+        // Upstream's unit tests, adapted where marked "Port note".
+        .testTarget(
+            name: "FirebaseFunctionsTests",
+            dependencies: ["FirebaseFunctions"],
+            path: "Tests/FirebaseFunctionsTests",
+            sources: ["Unit", "Support"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(
             name: "FirebaseStorageTests",
             dependencies: ["FirebaseStorage"],

@@ -19,7 +19,8 @@ import XCTest
 
 import FirebaseCore
 import FirebaseFunctions
-import FirebaseSharedSwift
+// Port note: the port's module is FirebaseShared.
+import FirebaseShared
 
 final class FunctionsAPITests: XCTestCase {
   func usage() {
@@ -67,20 +68,12 @@ final class FunctionsAPITests: XCTestCase {
     _ = Functions.functions()
       .httpsCallable(url, requestAs: Message.self, responseAs: Response.self)
     let message = Message(hello: "hello", world: "world")
-    callableCodable.call(message) { result in
-      switch result {
-      case let .success(response):
-        let _: Response = response
-      case .failure:
-        ()
-      }
-    }
-
-    let data: Any? = nil
-    callableRef.call(data) { result, error in
-      if let result {
-        _ = result.data
-      } else if let _ /* error */ = error {
+    // Port note: calls are async only; upstream's completion-handler forms
+    // are left out here and below.
+    Task {
+      do {
+        let _: Response = try await callableCodable.call(message)
+      } catch {
         // ...
       }
     }
@@ -91,14 +84,6 @@ final class FunctionsAPITests: XCTestCase {
         let result = try await callableRef.call(data)
         _ = result.data
       } catch {
-        // ...
-      }
-    }
-
-    callableRef.call { result, error in
-      if let result {
-        _ = result.data
-      } else if let _ /* error */ = error {
         // ...
       }
     }
@@ -114,8 +99,10 @@ final class FunctionsAPITests: XCTestCase {
 
     // MARK: - FunctionsErrorCode
 
-    callableRef.call { _, error in
-      if let error {
+    Task {
+      do {
+        _ = try await callableRef.call()
+      } catch {
         switch (error as NSError).code {
         case FunctionsErrorCode.OK.rawValue:
           break

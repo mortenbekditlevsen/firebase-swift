@@ -91,6 +91,10 @@ struct FunctionsSerializer: Sendable {
     String(describing: type(of: value))
   }
 
+  // On Linux, swift-corelibs-foundation's objCType follows the value rather
+  // than the type it was created from: a small Int64 is "i", so it's sent as
+  // a plain number, which fits JavaScript anyway. Larger values are "q"/"Q"
+  // and wrapped, as on Apple platforms.
   private func wrapNumberIfNeeded(_ number: NSNumber) -> Any {
     switch String(cString: number.objCType) {
     case "q":

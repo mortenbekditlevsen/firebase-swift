@@ -67,33 +67,15 @@ struct FunctionsContextProvider: Sendable {
   }
 
   private func getAppCheckToken(options: HTTPSCallableOptions?) async -> String? {
-//    guard
-//      options?.requireLimitedUseAppCheckTokens != true,
-//      let tokenResult = await appCheck?.getToken(forcingRefresh: false)
-//    else { return nil }
-//    // The placeholder token should be used in the case of App Check error.
-//    return tokenResult.token
-      nil
+    guard options?.requireLimitedUseAppCheckTokens != true, let appCheck else { return nil }
+    // Upstream sends App Check's placeholder token when getting a token fails;
+    // the port's AppCheckInterop throws instead, so no token is sent, as in
+    // Storage and Firestore.
+    return try? await appCheck.getToken(forcingRefresh: false)
   }
 
   private func getLimitedUseAppCheckToken(options: HTTPSCallableOptions?) async -> String? {
-//    // At the moment, `await` doesn’t get along with Objective-C’s optional protocol methods.
-//    await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
-//      guard
-//        options?.requireLimitedUseAppCheckTokens == true,
-//        let appCheck,
-//        // `getLimitedUseToken(completion:)` is an optional protocol method. Optional binding
-//        // is performed to make sure `continuation` is called even if the method’s not implemented.
-//        let limitedUseTokenClosure = appCheck.getLimitedUseToken
-//      else {
-//        return continuation.resume(returning: nil)
-//      }
-//
-//      limitedUseTokenClosure { tokenResult in
-//        // The placeholder token should be used in the case of App Check error.
-//        continuation.resume(returning: tokenResult.token)
-//      }
-//    }
-      nil
+    // The port's AppCheckInterop has no limited-use tokens yet.
+    nil
   }
 }

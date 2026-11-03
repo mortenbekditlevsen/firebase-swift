@@ -35,11 +35,18 @@ enum FunctionsConstants {
 }
 
 /// `Functions` is the client for Cloud Functions for a Firebase project.
-public final class Functions: Sendable {
+/// Instances are equal by identity, as upstream's.
+public final class Functions: Equatable, Sendable {
+  public static func == (lhs: Functions, rhs: Functions) -> Bool {
+    lhs === rhs
+  }
+
   // MARK: - Private Variables
 
   /// The network client to use for http requests.
-//  private let fetcherService: GTMSessionFetcherService
+  /// The session for requests; tests pass one with a stub URLProtocol, as
+  /// upstream's pass a GTMSessionFetcherService.
+  private let session: URLSession
   /// The projectID to use for all function references.
   private let projectID: String
   /// A serializer to encode/decode data and return values.
@@ -346,8 +353,9 @@ public final class Functions: Sendable {
              auth: AuthInterop?,
              /* messaging: MessagingInterop?, */
              appCheck: AppCheckInterop?,
-             /* fetcherService: GTMSessionFetcherService = GTMSessionFetcherService() */) {
+             session: URLSession = .shared) {
     self.projectID = projectID
+    self.session = session
     self.region = region
     self.customDomain = customDomain
     _emulatorOrigin = Mutex(nil)
@@ -405,7 +413,7 @@ public final class Functions: Sendable {
     let rawData: Data
     let response: URLResponse
     do {
-      (rawData, response) = try await URLSession.shared.data(for: fetcher)
+      (rawData, response) = try await session.data(for: fetcher)
     } catch {
       throw processedError(fromResponseError: error)
     }
@@ -453,7 +461,7 @@ public final class Functions: Sendable {
         let stream: AsyncThrowingStream<Data, Error>
         let rawResponse: URLResponse
         do {
-          (stream, rawResponse) = try await URLSession.shared.chunkedBytes(for: urlRequest)
+          (stream, rawResponse) = try await session.chunkedBytes(for: urlRequest)
         } catch {
           continuation.finish(throwing: FunctionsError(
             .unavailable,
