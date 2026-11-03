@@ -51,17 +51,9 @@ func main() {
 
   listenToDocuments(matching: query)
 
-  enableDisableNetwork(database: db)
-
-  clearPersistence(database: db)
-
   types()
 
-  waitForPendingWrites(database: db)
-
   addSnapshotsInSyncListener(database: db)
-
-  terminateDb(database: db)
 }
 
 func initializeDb() -> Firestore {
@@ -71,8 +63,10 @@ func initializeDb() -> Firestore {
   // Apply settings
   let settings = FirestoreSettings()
   settings.host = "localhost"
-  settings.isPersistenceEnabled = true
-  settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
+  // Port note: the deprecated isPersistenceEnabled and cacheSizeBytes aren't ported.
+  settings.cacheSettings = PersistentCacheSettings(
+    sizeBytes: NSNumber(value: FirestoreCacheSizeUnlimited)
+  )
   firestore.settings = settings
 
   return firestore
@@ -175,31 +169,8 @@ func writeDocument(at docRef: DocumentReference) {
   }
 }
 
-func enableDisableNetwork(database db: Firestore) {
-  // closure syntax
-  db.disableNetwork(completion: { error in
-    if let error {
-      print("Uh oh! \(error)")
-      return
-    }
-  })
-  // trailing block syntax
-  db.enableNetwork { error in
-    if let error {
-      print("Uh oh! \(error)")
-      return
-    }
-  }
-}
-
-func clearPersistence(database db: Firestore) {
-  db.clearPersistence { error in
-    if let error {
-      print("Uh oh! \(error)")
-      return
-    }
-  }
-}
+// Port note: Firestore's network, persistence, pending-writes and terminate
+// operations are async only; see testAsyncAwait below.
 
 func writeDocuments(at docRef: DocumentReference, database db: Firestore) {
   var batch: WriteBatch
@@ -421,6 +392,9 @@ func listenToQueryDiffsWithMetadata(onQuery query: Query) {
   listener.remove()
 }
 
+// Port note: the NSErrorPointer forms of runTransaction are Apple-only;
+// Linux has no NSErrorPointer. The throwing forms work everywhere.
+#if canImport(Darwin)
 func transactions() {
   let db = Firestore.firestore()
 
@@ -448,6 +422,7 @@ func transactions() {
     // handle result.
   }
 }
+#endif
 
 func types() {
   let _: CollectionReference
@@ -468,29 +443,11 @@ func types() {
   let _: WriteBatch
 }
 
-func waitForPendingWrites(database db: Firestore) {
-  db.waitForPendingWrites { error in
-    if let error {
-      print("Uh oh! \(error)")
-      return
-    }
-  }
-}
-
 func addSnapshotsInSyncListener(database db: Firestore) {
   let listener = db.addSnapshotsInSyncListener {}
 
   // Unsubscribe
   listener.remove()
-}
-
-func terminateDb(database db: Firestore) {
-  db.terminate { error in
-    if let error {
-      print("Uh oh! \(error)")
-      return
-    }
-  }
 }
 
 func testAsyncAwait(database db: Firestore) async throws {
@@ -499,7 +456,12 @@ func testAsyncAwait(database db: Firestore) async throws {
   try await db.waitForPendingWrites()
   try await db.clearPersistence()
   try await db.terminate()
-  _ = try await db.runTransaction { _, _ in
+  #if canImport(Darwin)
+    _ = try await db.runTransaction { _, _ in
+      0
+    }
+  #endif
+  _ = try await db.runTransaction { _ in
     0
   }
 

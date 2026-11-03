@@ -14,6 +14,7 @@
 
 #include "Firestore/include/FirestoreBridge.h"
 
+#include <algorithm>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -29,6 +30,7 @@
 #include "Firestore/core/src/api/document_snapshot.h"
 #include "Firestore/core/src/api/firestore.h"
 #include "Firestore/core/src/api/listener_registration.h"
+#include "Firestore/core/src/api/load_bundle_task.h"
 #include "Firestore/core/src/api/query_core.h"
 #include "Firestore/core/src/api/query_snapshot.h"
 #include "Firestore/core/src/api/source.h"
@@ -55,6 +57,7 @@
 #include "Firestore/core/src/model/field_transform.h"
 #include "Firestore/core/src/model/object_value.h"
 #include "Firestore/core/src/model/resource_path.h"
+#include "Firestore/core/src/util/byte_stream.h"
 #include "Firestore/core/src/model/server_timestamp_util.h"
 #include "Firestore/core/src/model/transform_operation.h"
 #include "Firestore/core/src/model/value_util.h"
@@ -2324,6 +2327,222 @@ void QueryBridge::GetAggregate(const BridgeAggregateFields& fields,
                                   : BridgeFieldValue::Null());
         }
         callback(context, values, 0, "");
+      });
+}
+
+// ===========================================================================
+// Bundles (FIRFirestore loadBundle, getQueryNamed; FIRLoadBundleTask)
+// ===========================================================================
+
+namespace {
+
+/// Reads a bundle through a Swift callback. A port of `ByteStreamApple`,
+/// which reads an `NSInputStream`. The first read waits for `ready`, so
+/// observers can be added before loading makes progress.
+class SwiftByteStream : public util::ByteStream {
+ public:
+  SwiftByteStream(void* context,
+                  BundleReadCallback read,
+                  ContextReleaseCallback release,
+                  std::shared_future<void> ready)
+      : context_(context),
+        read_(read),
+        release_(release),
+        ready_(std::move(ready)) {}
+
+  ~SwiftByteStream() override {
+    if (release_) release_(context_);
+  }
+
+  util::StreamReadResult ReadUntil(char delim, size_t max_length) override {
+    size_t found_at = std::string::npos;
+    size_t last_pos = 0;
+    while (buffer_.size() < max_length) {
+      auto read = ReadToBuffer(max_length - buffer_.size());
+      if (read < 0) {
+        return ErrorResult();
+      }
+      found_at = buffer_.find(delim, last_pos);
+      last_pos = buffer_.size();
+      if (found_at != std::string::npos || read == 0) {
+        break;
+      }
+    }
+
+    // Still not found, or the buffer happens to be of the size requested.
+    // Either way, return the whole `buffer_` and clear it.
+    if (found_at == std::string::npos && buffer_.size() == max_length) {
+      return ConsumeBuffer();
+    }
+
+    // Either we found the delim, or the buffer is already larger than
+    // requested; the result is a substring.
+    auto end_pos = std::min(max_length, found_at);
+    std::string result = buffer_.substr(0, end_pos);
+    buffer_.erase(0, end_pos);
+    return util::StreamReadResult(std::move(result), eof());
+  }
+
+  util::StreamReadResult Read(size_t max_length) override {
+    if (buffer_.size() > max_length) {
+      std::string result = buffer_.substr(0, max_length);
+      buffer_.erase(0, max_length);
+      return util::StreamReadResult(std::move(result), eof());
+    }
+
+    auto read = ReadToBuffer(max_length - buffer_.size());
+    if (read < 0) {
+      return ErrorResult();
+    }
+    return ConsumeBuffer();
+  }
+
+ private:
+  int64_t ReadRaw(uint8_t* buffer, size_t max_length) {
+    ready_.wait();
+    auto read = read_(context_, buffer, max_length);
+    if (read == 0) at_end_ = true;
+    return read;
+  }
+
+  int64_t ReadToBuffer(size_t max_length) {
+    std::string result(max_length, '\0');
+    auto read = ReadRaw(reinterpret_cast<uint8_t*>(&result[0]), max_length);
+    if (read > 0) {
+      buffer_.append(result, 0, static_cast<size_t>(read));
+    }
+    return read;
+  }
+
+  // As upstream, peeks one byte so that the end of the stream is known
+  // deterministically.
+  util::StreamReadResult ConsumeBuffer() {
+    uint8_t peek_result = 0;
+    auto read = ReadRaw(&peek_result, 1);
+    util::StreamReadResult result(std::move(buffer_), read == 0);
+    buffer_.clear();
+    if (read > 0) {
+      buffer_.push_back(static_cast<char>(peek_result));
+    }
+    return result;
+  }
+
+  util::StreamReadResult ErrorResult() {
+    return util::StreamReadResult(
+        Status(Error::kErrorUnknown, "Failed to read the bundle stream"),
+        at_end_);
+  }
+
+  bool eof() const {
+    return buffer_.empty() && at_end_;
+  }
+
+  void* context_;
+  BundleReadCallback read_;
+  ContextReleaseCallback release_;
+  std::shared_future<void> ready_;
+  std::string buffer_;
+  bool at_end_ = false;
+};
+
+/// Hands a progress update to a Swift observer.
+api::LoadBundleTask::ProgressObserver MakeProgressObserver(
+    void* context,
+    ContextReleaseCallback release,
+    LoadBundleProgressCallback callback) {
+  return [owned = OwnContext(context, release),
+          callback](api::LoadBundleTaskProgress progress) {
+    int32_t state = 1;
+    switch (progress.state()) {
+      case api::LoadBundleTaskState::kError:
+        state = 0;
+        break;
+      case api::LoadBundleTaskState::kInProgress:
+        state = 1;
+        break;
+      case api::LoadBundleTaskState::kSuccess:
+        state = 2;
+        break;
+    }
+    const Status& status = progress.error_status();
+    callback(owned.get(), state, progress.documents_loaded(),
+             progress.total_documents(), progress.bytes_loaded(),
+             progress.total_bytes(), ErrorCode(status),
+             status.ok() ? "" : status.error_message().c_str());
+  };
+}
+
+}  // namespace
+
+struct LoadBundleTaskBridge::Impl {
+  explicit Impl(std::shared_ptr<api::LoadBundleTask> task)
+      : task_(std::move(task)) {}
+  std::shared_ptr<api::LoadBundleTask> task_;
+};
+
+LoadBundleTaskBridge::LoadBundleTaskBridge() noexcept = default;
+LoadBundleTaskBridge::~LoadBundleTaskBridge() noexcept = default;
+LoadBundleTaskBridge::LoadBundleTaskBridge(const LoadBundleTaskBridge&) noexcept =
+    default;
+LoadBundleTaskBridge& LoadBundleTaskBridge::operator=(
+    const LoadBundleTaskBridge&) noexcept = default;
+LoadBundleTaskBridge::LoadBundleTaskBridge(LoadBundleTaskBridge&&) noexcept =
+    default;
+LoadBundleTaskBridge& LoadBundleTaskBridge::operator=(
+    LoadBundleTaskBridge&&) noexcept = default;
+
+int64_t LoadBundleTaskBridge::Observe(
+    void* context,
+    ContextReleaseCallback release_context,
+    LoadBundleProgressCallback callback) const noexcept {
+  return impl_->task_->Observe(
+      MakeProgressObserver(context, release_context, callback));
+}
+
+void LoadBundleTaskBridge::RemoveObserver(int64_t handle) const noexcept {
+  impl_->task_->RemoveObserver(handle);
+}
+
+void LoadBundleTaskBridge::RemoveAllObservers() const noexcept {
+  impl_->task_->RemoveAllObservers();
+}
+
+LoadBundleTaskBridge FirestoreBridge::LoadBundle(
+    void* stream_context,
+    BundleReadCallback read,
+    ContextReleaseCallback release_stream,
+    void* completion_context,
+    ContextReleaseCallback release_completion,
+    LoadBundleProgressCallback completion) const noexcept {
+  std::promise<void> ready;
+  auto stream = std::make_unique<SwiftByteStream>(
+      stream_context, read, release_stream, ready.get_future().share());
+  auto task = impl_->firestore_->LoadBundle(std::move(stream));
+  if (completion) {
+    task->SetLastObserver(
+        MakeProgressObserver(completion_context, release_completion, completion));
+  }
+  ready.set_value();
+
+  LoadBundleTaskBridge result;
+  result.impl_ = std::make_shared<LoadBundleTaskBridge::Impl>(std::move(task));
+  return result;
+}
+
+void FirestoreBridge::GetNamedQuery(const std::string& name,
+                                    void* context,
+                                    NamedQueryCallback callback) const noexcept {
+  auto firestore = impl_->firestore_;
+  impl_->firestore_->GetNamedQuery(
+      name, [context, callback, firestore](core::Query query, bool found) {
+        if (!found) {
+          callback(context, nullptr);
+          return;
+        }
+        auto* bridge = new QueryBridge();
+        bridge->impl_ = std::make_shared<QueryBridge::Impl>(
+            Query(std::move(query), firestore));
+        callback(context, bridge);
       });
 }
 

@@ -291,7 +291,7 @@ let package = Package(
             name: "FirebaseFirestoreTests",
             dependencies: ["FirebaseFirestore"],
             path: "Sources/Firestore/Swift/Tests",
-            sources: ["Codable", "Credentials", "Helpers"],
+            sources: ["API", "Codable", "Credentials", "Helpers"],
             swiftSettings: [
                 .swiftLanguageMode(SwiftLanguageMode.v5),
                 .interoperabilityMode(.Cxx),

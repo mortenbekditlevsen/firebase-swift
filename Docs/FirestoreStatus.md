@@ -3,9 +3,11 @@
 What the Swift bridge (`Sources/Firestore/Swift/Source/Bridge/`, `include/FirestoreBridge.h`,
 `core/src/api/firestore_bridge.cc`) covers, compared with upstream 13.1.1's public API: the
 Objective-C headers in `Sources/Firestore/Source/Public/FirebaseFirestore/` as Swift sees them,
-plus `Swift/Source/`. Upstream's `Swift/Tests/API/BasicCompileTests.swift` exercises the whole
-API; it should become part of `FirebaseFirestoreTests` once settings and bundles are done, with
-port notes where the port is deliberately different (below).
+plus `Swift/Source/`. Upstream's `Swift/Tests/API/BasicCompileTests.swift`, which uses the
+whole API, compiles as part of `FirebaseFirestoreTests`; port notes in it mark where the port is
+deliberately different (the deprecated settings; Firestore's network, persistence,
+pending-writes and terminate operations, which are async only; and the `NSErrorPointer`
+transaction blocks, which only exist on Apple platforms).
 
 Conventions:
 
@@ -36,9 +38,15 @@ aggregations → listeners → bundles → BSON types → pipelines.
 - [x] `runTransaction(_:)`, `runTransaction(with: TransactionOptions, block:)`, throwing or
       `NSErrorPointer` (Apple only) update blocks, completion and async forms
 - [x] `addSnapshotsInSyncListener(_:)`
-- [ ] `loadBundle(_:)` (`Data`, `InputStream`), `LoadBundleTask`, `LoadBundleTaskProgress`,
-      `LoadBundleTaskState`; today a stub that never calls back (core: `Firestore::LoadBundle`)
-- [ ] `getQuery(named:)` (core: `Firestore::GetNamedQuery`)
+- [x] `loadBundle(_:)` with `Data` or `InputStream`, returning a `LoadBundleTask`
+      (`addObserver(_:)`, `removeObserverWith(handle:)`, `removeAllObservers()`) or, async, the
+      final `LoadBundleTaskProgress`; `LoadBundleTaskState`. The stream is read on the core's
+      worker through a port of `ByteStreamApple` (`SwiftByteStream` in `firestore_bridge.cc`).
+      The completion-handler forms are internal (upstream's async file uses them). Differences:
+      the async form's observer is registered before loading starts (upstream could miss a
+      fast bundle's final state), and errors carry the core's code: upstream reports every
+      failure as `.unknown`, because its error check in `FIRFirestore.mm` is inverted.
+- [x] `getQuery(named:)`, async only
 - [ ] `persistentCacheIndexManager`, `PersistentCacheIndexManager`
 - [ ] `Firestore.enableLogging(_:)`
 - n/a `setIndexConfiguration` (deprecated)
@@ -126,4 +134,4 @@ batches, transactions, listeners), `FirestoreAuthIntegrationTests` (rules and us
 `FirestoreAPIIntegrationTests` (error codes, field paths, `mergeFields`, composite filters,
 value cursors, value types, `minimum`/`maximum`, references, listener lifetime and sources,
 snapshots in sync, transaction options, settings, persistent and memory caches across
-`terminate()`, aggregations).
+`terminate()`, aggregations, bundles and named queries).

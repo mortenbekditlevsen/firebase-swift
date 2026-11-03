@@ -318,4 +318,77 @@ struct FirestoreAPIIntegrationTests {
       Issue.record("The aggregation succeeded")
     } catch FirestoreErrorCode.permissionDenied {}
   }
+
+  @Test func bundlesLoadDocumentsAndNamedQueries() async throws {
+    let fixture = try EmulatorFixture()
+    let progress = try await fixture.db.loadBundle(testBundle(projectID: Emulators.projectID))
+    #expect(progress.state == .success)
+    #expect(progress.documentsLoaded == 2)
+    #expect(progress.totalDocuments == 2)
+    #expect(progress.bytesLoaded == progress.totalBytes)
+
+    let all = try await fixture.db.collection("coll-1").getDocuments(source: .cache)
+    #expect(all.documents.map { $0.get("k") as? String } == ["a", "b"])
+
+    let limit = try #require(await fixture.db.getQuery(named: "limit"))
+    let first = try await limit.getDocuments(source: .cache)
+    #expect(first.documents.map(\.documentID) == ["b"])
+    let limitToLast = try #require(await fixture.db.getQuery(named: "limit-to-last"))
+    let last = try await limitToLast.getDocuments(source: .cache)
+    #expect(last.documents.map(\.documentID) == ["a"])
+    #expect(await fixture.db.getQuery(named: "missing") == nil)
+  }
+
+  @Test func bundlesLoadFromStreams() async throws {
+    let fixture = try EmulatorFixture()
+    let stream = InputStream(data: testBundle(projectID: Emulators.projectID))
+    let progress = try await fixture.db.loadBundle(stream)
+    #expect(progress.state == .success)
+    #expect(progress.documentsLoaded == 2)
+  }
+
+  @Test func invalidBundlesFail() async throws {
+    let fixture = try EmulatorFixture()
+    // Upstream reports every failure as `.unknown` (its error check is
+    // inverted); the port passes the core's code on.
+    do {
+      _ = try await fixture.db.loadBundle(Data())
+      Issue.record("Loading succeeded")
+    } catch FirestoreErrorCode.dataLoss {}
+
+    do {
+      _ = try await fixture.db.loadBundle(testBundle(projectID: "other-project"))
+      Issue.record("Loading succeeded")
+    } catch FirestoreErrorCode.dataLoss {}
+  }
+}
+
+/// A bundle like upstream's `testutil::CreateBundle`: documents `coll-1/a`
+/// and `coll-1/b`, and the named queries "limit" and "limit-to-last".
+private func testBundle(projectID: String) -> Data {
+  let documents = "projects/\(projectID)/databases/(default)/documents"
+  let readTime = #"{"seconds":1000,"nanos":9999}"#
+  let updateTime = #"{"seconds":1,"nanos":9}"#
+  func namedQuery(_ name: String, limitType: String) -> String {
+    #"{"namedQuery":{"name":"\#(name)","readTime":\#(readTime),"bundledQuery":{"#
+      + #""parent":"\#(documents)","structuredQuery":{"from":[{"collectionId":"coll-1"}],"#
+      + #""orderBy":[{"field":{"fieldPath":"bar"},"direction":"DESCENDING"},"#
+      + #"{"field":{"fieldPath":"__name__"},"direction":"DESCENDING"}],"limit":{"value":1}},"#
+      + #""limitType":"\#(limitType)"}}}"#
+  }
+  func document(_ id: String, bar: Int) -> [String] {
+    [
+      #"{"documentMetadata":{"name":"\#(documents)/coll-1/\#(id)","readTime":\#(readTime),"exists":true}}"#,
+      #"{"document":{"name":"\#(documents)/coll-1/\#(id)","createTime":\#(updateTime),"#
+        + #""updateTime":\#(updateTime),"fields":{"k":{"stringValue":"\#(id)"},"#
+        + #""bar":{"integerValue":\#(bar)}}}}"#,
+    ]
+  }
+  let elements = [namedQuery("limit", limitType: "FIRST"),
+                  namedQuery("limit-to-last", limitType: "LAST")]
+    + document("a", bar: 1) + document("b", bar: 2)
+  let body = elements.map { "\($0.utf8.count)\($0)" }.joined()
+  let metadata = #"{"metadata":{"id":"test-bundle","createTime":{"seconds":1001,"nanos":9999},"#
+    + #""version":1,"totalDocuments":2,"totalBytes":\#(body.utf8.count)}}"#
+  return Data("\(metadata.utf8.count)\(metadata)\(body)".utf8)
 }
