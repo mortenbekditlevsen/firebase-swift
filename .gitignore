@@ -5,5 +5,7 @@
 .build-linux/
 .build-linux-clean/
 .build-ios-packages/
+.build-android/
+.build-android-linux/
 *-debug.log
 node_modules/

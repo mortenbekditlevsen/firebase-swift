@@ -64,7 +64,8 @@ StatusOr<Path> HomeDir() {
   return Path::FromUtf8(pwd.pw_dir);
 }
 
-#if __linux__ && !__ANDROID__
+// firebase-swift: Android uses XDG data home too (see AppDataDir).
+#if __linux__
 StatusOr<Path> XdgDataHomeDir() {
   const char* data_home = getenv("XDG_DATA_HOME");
   if (data_home) return Path::FromUtf8(data_home);
@@ -75,19 +76,22 @@ StatusOr<Path> XdgDataHomeDir() {
   const Path& home_dir = maybe_home_dir.ValueOrDie();
   return home_dir.AppendUtf8(".local/share");
 }
-#endif  // __linux__ && !__ANDROID__
+#endif  // __linux__
 
 }  // namespace
 
 StatusOr<Path> Filesystem::AppDataDir(absl::string_view app_name) {
-#if __linux__ && !__ANDROID__
+#if __linux__
   // On Linux, use XDG data home, usually $HOME/.local/share/$app_name
+  // firebase-swift: also on Android (upstream: #error), where native code
+  // can't look up the app's storage without JNI. Apps set XDG_DATA_HOME to
+  // their files directory (Context.getFilesDir()), as for FirebaseAuth.
   StatusOr<Path> maybe_data_home = XdgDataHomeDir();
   if (!maybe_data_home.ok()) return maybe_data_home;
 
   return maybe_data_home.ValueOrDie().AppendUtf8(app_name);
 
-#elif !__ANDROID__
+#else
   // On any other UNIX, use an old school dotted directory in $HOME.
   StatusOr<Path> maybe_home = HomeDir();
   if (!maybe_home.ok()) return maybe_home;
@@ -95,11 +99,7 @@ StatusOr<Path> Filesystem::AppDataDir(absl::string_view app_name) {
   std::string dot_prefixed = absl::StrCat(".", app_name);
   return maybe_home.ValueOrDie().AppendUtf8(dot_prefixed);
 
-#else
-  // TODO(wilhuff): On Android, use internal storage
-#error "Don't know where to store documents on this platform."
-
-#endif  // __linux__ && !__ANDROID__
+#endif  // __linux__
 }
 
 StatusOr<Path> Filesystem::LegacyDocumentsDir(absl::string_view) {
@@ -121,7 +121,8 @@ Path Filesystem::TempDir() {
   // permissions on this directory no longer permit writing.
   //
   // TODO(wilhuff): Validate on recent Android.
-#error "Not yet sure about temporary file locations on Android."
+  // firebase-swift: upstream has #error here. Apps set TMPDIR to their cache
+  // directory (Context.getCacheDir()); this is only the fallback.
   return Path::FromUtf8("/data/local/tmp");
 
 #else

@@ -15,6 +15,15 @@ target.
   not yet implemented.
 - `FirebaseDatabase` — Realtime Database. Work in progress.
 
+## Android
+
+Build with the [Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html)
+(`swift build --swift-sdk aarch64-unknown-linux-android28`). Native code can't
+look up an app's storage directories, so before using Firebase, set
+`XDG_DATA_HOME` to the app's files directory (`Context.getFilesDir()`), where
+Auth keeps the signed-in user and Firestore its cache, and `TMPDIR` to its
+cache directory (`Context.getCacheDir()`).
+
 ## Concurrency model
 
 See [Docs/Concurrency.md](Docs/Concurrency.md).
