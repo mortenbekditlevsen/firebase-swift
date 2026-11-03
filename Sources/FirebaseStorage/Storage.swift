@@ -379,3 +379,15 @@ public final class Storage: Sendable {
     }
   }
 }
+
+extension Storage: Hashable {
+  /// Instances are equal when they have the same app and bucket, as upstream.
+  public static func == (lhs: Storage, rhs: Storage) -> Bool {
+    lhs.app === rhs.app && lhs.storageBucket == rhs.storageBucket
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(ObjectIdentifier(app))
+    hasher.combine(storageBucket)
+  }
+}

@@ -14,8 +14,12 @@
 
 @testable import FirebaseStorage
 import Foundation
-import GTMSessionFetcherCore
+// Port note: the port's GTMSessionFetcher stand-in is in FirebaseStorage.
 import XCTest
+#if canImport(FoundationNetworking)
+  // Port note: Linux's URL loading types are in FoundationNetworking.
+  import FoundationNetworking
+#endif
 
 class StorageDeleteTests: StorageTestHelpers {
   func testFetcherConfiguration() async {
@@ -55,9 +59,6 @@ class StorageDeleteTests: StorageTestHelpers {
   func testSuccessfulFetchWithEmulator() async {
     let storage = self.storage()
     storage.useEmulator(withHost: "localhost", port: 8080)
-    let testBlock = successBlock(
-      withURL: URL(string: "http://localhost:8080/v0/b/bucket/o/object")!
-    )
     await StorageFetcherService.shared.updateTestBlock(successBlock())
     let path = objectPath()
     let ref = StorageReference(storage: storage, path: path)

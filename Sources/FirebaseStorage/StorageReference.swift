@@ -414,3 +414,15 @@ public struct StorageReference: Sendable {
     return nil
   }
 }
+
+extension StorageReference: Hashable {
+  /// References are equal when they have the same `Storage` and path, as upstream.
+  public static func == (lhs: StorageReference, rhs: StorageReference) -> Bool {
+    lhs.storage == rhs.storage && lhs.path == rhs.path
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(storage)
+    hasher.combine(path)
+  }
+}

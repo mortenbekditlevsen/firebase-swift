@@ -15,7 +15,7 @@
 import Foundation
 
 @testable import FirebaseStorage
-import GTMSessionFetcherCore
+// Port note: the port's GTMSessionFetcher stand-in is in FirebaseStorage.
 
 import XCTest
 
@@ -150,9 +150,30 @@ class StorageMetadataTests: StorageTestHelpers {
     XCTAssertEqual(actualURL?.absoluteString, expectedURL)
   }
 
+  func testInitializeDownloadURLEscapesBucket() {
+    // A bucket value from the server response must be percent-escaped the same way the
+    // object name is, otherwise a bucket containing a URL path delimiter (e.g. "#" or "?")
+    // makes percentEncodedPath raise, and one containing "/" rewrites the object path.
+    let metaDict = [
+      "bucket": "bucket#/o/other",
+      "downloadTokens": "12345,ignored",
+      "name": "path/to/object",
+    ] as [String: String]
+
+    let rootReference = rootReference()
+    let escapedBucket = StorageUtils.GCSEscapedString(metaDict["bucket"]!)
+    let escapedPath = StorageUtils.GCSEscapedString(metaDict["name"]!)
+    let expectedURL =
+      "https://firebasestorage.googleapis.com:443/v0/b/\(escapedBucket)/o/\(escapedPath)?alt=media&token=12345"
+    let actualURL = StorageGetDownloadURLTask.downloadURLFromMetadataDictionary(metaDict,
+                                                                                rootReference)
+    XCTAssertEqual(actualURL?.absoluteString, expectedURL)
+  }
+
   func testInitializeMetadataWithFile() {
     let metaDict = ["bucket": "bucket", "name": "/path/to/file"]
-    let metadata = StorageMetadata(dictionary: metaDict)
+    // Port note: StorageMetadata is a struct.
+    var metadata = StorageMetadata(dictionary: metaDict)
     metadata.fileType = .file
     XCTAssertTrue(metadata.isFile)
     XCTAssertFalse(metadata.isFolder)
@@ -160,7 +181,8 @@ class StorageMetadataTests: StorageTestHelpers {
 
   func testInitializeMetadataWithFolder() {
     let metaDict = ["bucket": "bucket", "name": "/path/to/folder"]
-    let metadata = StorageMetadata(dictionary: metaDict)
+    // Port note: StorageMetadata is a struct.
+    var metadata = StorageMetadata(dictionary: metaDict)
     metadata.fileType = .folder
     XCTAssertFalse(metadata.isFile)
     XCTAssertTrue(metadata.isFolder)
@@ -209,9 +231,8 @@ class StorageMetadataTests: StorageTestHelpers {
       "md5Hash": "d41d8cd98f00b204e9800998ecf8427e",
     ]
     let metadata0 = StorageMetadata(dictionary: metaDict)
-    let metadata1 = metadata0.copy() as? StorageMetadata
-    // Verify that copied object has a new reference.
-    XCTAssertFalse(metadata0 === metadata1)
+    // Port note: StorageMetadata is a struct, so assigning it copies it.
+    let metadata1 = metadata0
     XCTAssertEqual(metadata0, metadata1)
   }
 
@@ -220,7 +241,8 @@ class StorageMetadataTests: StorageTestHelpers {
       "contentLanguage": "old",
       "metadata": ["foo": "old", "bar": "old"],
     ] as [String: AnyHashable]
-    let metadata = StorageMetadata(dictionary: oldMetadata)
+    // Port note: StorageMetadata is a struct.
+    var metadata = StorageMetadata(dictionary: oldMetadata)
     metadata.contentLanguage = "new"
     metadata.customMetadata = ["foo": "new", "bar": "old"]
 
@@ -249,7 +271,8 @@ class StorageMetadataTests: StorageTestHelpers {
       "contentLanguage": "old",
       "metadata": ["foo": "old", "bar": "old"],
     ] as [String: AnyHashable]
-    let metadata = StorageMetadata(dictionary: oldMetadata)
+    // Port note: StorageMetadata is a struct.
+    var metadata = StorageMetadata(dictionary: oldMetadata)
     metadata.contentLanguage = nil
     metadata.customMetadata = ["foo": "old"]
     let update = metadata.updatedMetadata()
@@ -267,9 +290,9 @@ class StorageMetadataTests: StorageTestHelpers {
     ] as [String: String]
     let metadata0 = StorageMetadata(dictionary: metaDict)
     let metadata1 = StorageMetadata(dictionary: metaDict)
-    XCTAssertFalse(metadata0 === metadata1)
+    // Port note: StorageMetadata is a struct (no identity) and Hashable.
     XCTAssertTrue(metadata0 == metadata1)
-    XCTAssertEqual(metadata0.hash, metadata1.hash)
+    XCTAssertEqual(metadata0.hashValue, metadata1.hashValue)
   }
 
   func testZuluTimeOffset() {

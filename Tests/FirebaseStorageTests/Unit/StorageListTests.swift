@@ -14,47 +14,51 @@
 
 @testable import FirebaseStorage
 import Foundation
-import GTMSessionFetcherCore
+// Port note: the port's GTMSessionFetcher stand-in is in FirebaseStorage.
 import XCTest
+#if canImport(FoundationNetworking)
+  // Port note: Linux's URL loading types are in FoundationNetworking.
+  import FoundationNetworking
+#endif
 
 class StorageListTests: StorageTestHelpers {
-  func testValidatesInput() {
-    let expectation = self.expectation(description: #function)
-    expectation.expectedFulfillmentCount = 4
-
-    let errorBlock = { (result: StorageListResult?, error: Error?) in
-      XCTAssertNil(result)
-      XCTAssertNotNil(error)
-      let nsError = error! as NSError
-      XCTAssertEqual(nsError.domain, "FIRStorageErrorDomain")
-      XCTAssertEqual(nsError.code, StorageErrorCode.invalidArgument.rawValue)
-      expectation.fulfill()
-    }
+  // Port note: list and listAll are async only, so these tests await them
+  // instead of waiting for completion handlers. An async call returns once,
+  // so "called once" holds by construction.
+  func testValidatesInput() async {
     let ref = storage().reference(withPath: "object")
-    ref.list(maxResults: 0, completion: errorBlock)
-    ref.list(maxResults: 1001, completion: errorBlock)
-    ref.list(maxResults: 0, pageToken: "foo", completion: errorBlock)
-    ref.list(maxResults: 1001, pageToken: "foo", completion: errorBlock)
-
-    waitForExpectation(test: self)
+    for (maxResults, pageToken) in [(Int64(0), nil), (1001, nil), (0, "foo"), (1001, "foo")]
+      as [(Int64, String?)] {
+      do {
+        if let pageToken {
+          _ = try await ref.list(maxResults: maxResults, pageToken: pageToken)
+        } else {
+          _ = try await ref.list(maxResults: maxResults)
+        }
+        XCTFail("Listing \(maxResults) results succeeded")
+      } catch {
+        let nsError = error as NSError
+        XCTAssertEqual(nsError.domain, "FIRStorageErrorDomain")
+        XCTAssertEqual(nsError.code, StorageErrorCode.invalidArgument.rawValue)
+      }
+    }
   }
 
-  func testListAllCallbackOnlyCalledOnce() {
-    let expectation = self.expectation(description: #function)
-    expectation.expectedFulfillmentCount = 1
-
-    let errorBlock = { (result: StorageListResult?, error: Error?) in
-      XCTAssertNil(result)
-      XCTAssertNotNil(error)
-      let nsError = error! as NSError
-      XCTAssertEqual(nsError.domain, "FIRStorageErrorDomain")
-      XCTAssertEqual(nsError.code, StorageErrorCode.unknown.rawValue)
-      expectation.fulfill()
+  func testListAllCallbackOnlyCalledOnce() async {
+    // Port note: upstream reaches the network and fails there; the test
+    // block fails the request instead.
+    await StorageFetcherService.shared.updateTestBlock { _, response in
+      response(nil, nil, NSError(domain: "test", code: -1))
     }
     let ref = storage().reference(withPath: "object")
-    ref.listAll(completion: errorBlock)
-
-    waitForExpectation(test: self)
+    do {
+      _ = try await ref.listAll()
+      XCTFail("listAll succeeded")
+    } catch {
+      let nsError = error as NSError
+      XCTAssertEqual(nsError.domain, "FIRStorageErrorDomain")
+      XCTAssertEqual(nsError.code, StorageErrorCode.unknown.rawValue)
+    }
   }
 
   func testDefaultList() async throws {
@@ -260,5 +264,53 @@ class StorageListTests: StorageTestHelpers {
       XCTAssertEqual((error as NSError).domain, "FIRStorageErrorDomain")
       XCTAssertEqual((error as NSError).code, StorageErrorCode.objectNotFound.rawValue)
     }
+  }
+
+  func testListAllReleasesCompletionAfterError() async throws {
+    let firstPage = try XCTUnwrap("""
+    {
+      "items": [{"name": "object/data1.dat", "bucket": "bucket"}],
+      "nextPageToken": "page2"
+    }
+    """.data(using: .utf8))
+    let errorBlock = unauthorizedBlock()
+    let testBlock: GTMSessionFetcherTestBlock = { fetcher, response in
+      let url = fetcher.request!.url!
+      let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+      if queryItems?.contains(where: { $0.name == "pageToken" }) == true {
+        // The second page fails.
+        errorBlock(fetcher, response)
+      } else {
+        let httpResponse = HTTPURLResponse(url: url,
+                                           statusCode: 200,
+                                           httpVersion: "HTTP/1.1",
+                                           headerFields: nil)
+        response(httpResponse, firstPage, nil)
+      }
+    }
+    await StorageFetcherService.shared.updateTestBlock(testBlock)
+    let ref = storage().reference(withPath: "object")
+
+    // Port note: listAll is async, so there's no completion to release;
+    // what's left to check is that the second page's error is thrown.
+    do {
+      _ = try await ref.listAll()
+      XCTFail("listAll succeeded")
+    } catch {
+      XCTAssertEqual((error as NSError).code, StorageErrorCode.unauthorized.rawValue)
+    }
+  }
+}
+
+/// Calls `onDeinit` when it is deallocated.
+private final class DeallocationTracker {
+  private let onDeinit: () -> Void
+
+  init(onDeinit: @escaping () -> Void) {
+    self.onDeinit = onDeinit
+  }
+
+  deinit {
+    onDeinit()
   }
 }

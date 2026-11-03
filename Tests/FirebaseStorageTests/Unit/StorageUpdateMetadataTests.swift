@@ -14,8 +14,12 @@
 
 @testable import FirebaseStorage
 import Foundation
-import GTMSessionFetcherCore
+// Port note: the port's GTMSessionFetcher stand-in is in FirebaseStorage.
 import XCTest
+#if canImport(FoundationNetworking)
+  // Port note: Linux's URL loading types are in FoundationNetworking.
+  import FoundationNetworking
+#endif
 
 class StorageUpdateMetadataTests: StorageTestHelpers {
   var metadata: StorageMetadata!

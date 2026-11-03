@@ -17,15 +17,15 @@ import Foundation
 import FirebaseCore
 @testable import FirebaseStorage
 
-import FirebaseAppCheckInterop
-import FirebaseAuthInterop
-import SharedTestUtilities
+// Port note: the interop protocols are in FirebaseCore.
+// Port note: the fakes are in Support/Fakes.swift.
 
 import XCTest
 
 class StorageReferenceTests: XCTestCase {
   override class func setUp() {
-    let options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+    // Port note: FirebaseOptions is a struct.
+    var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
                                   gcmSenderID: "00000000000000000-00000000000-000000000")
     options.projectID = "myProjectID-Ref"
     FirebaseApp.configure(name: "test-StorageReference", options: options)
@@ -125,7 +125,7 @@ class StorageReferenceTests: XCTestCase {
     let secondRef = ref.child("1")
     XCTAssertEqual(ref.description, "gs://bucket/")
     XCTAssertTrue(firstRef == secondRef)
-    XCTAssertFalse(firstRef === secondRef)
+    // Port note: StorageReference is a struct, with no identity.
   }
 
   func testDifferentChildDifferentRef() throws {
@@ -134,7 +134,7 @@ class StorageReferenceTests: XCTestCase {
     let secondRef = ref.child("2")
     XCTAssertEqual(ref.description, "gs://bucket/")
     XCTAssertFalse(firstRef == secondRef)
-    XCTAssertFalse(firstRef === secondRef)
+    // Port note: StorageReference is a struct, with no identity.
   }
 
   func testChildWithTrailingSlash() throws {
@@ -202,72 +202,59 @@ class StorageReferenceTests: XCTestCase {
 
   func testCopy() throws {
     let ref = storage!.reference(forURL: "gs://bucket/")
-    let copiedRef = ref.copy() as? StorageReference
+    // Port note: StorageReference is a struct, so assigning it copies it.
+    let copiedRef = ref
     XCTAssertTrue(ref == copiedRef)
-    XCTAssertFalse(ref === copiedRef)
   }
 
-  func testReferenceWithNonExistentFileFailsWithCompletionResult() throws {
+  // Port note: upload is async only, so upstream's Result and callback forms
+  // of these tests both use `try await putFile(from:)`.
+  func testReferenceWithNonExistentFileFailsWithCompletionResult() async throws {
     let tempFilePath = NSTemporaryDirectory().appending("temp.data")
     let ref = storage!.reference(withPath: tempFilePath)
     let dummyFileURL = try XCTUnwrap(URL(string: "some_non_existing-folder/file.data"))
-    let expectation = self.expectation(description: #function)
 
-    ref.putFile(from: dummyFileURL) { result in
-      expectation.fulfill()
-      switch result {
-      case .success:
-        XCTFail("Unexpected success.", file: #file, line: #line)
-      case let .failure(error):
-        switch error {
-        case let StorageError.unknown(message, _):
-          let expectedDescription = "File at URL: \(dummyFileURL.absoluteString) " +
-            "is not reachable. Ensure file URL is not a directory, symbolic link, or invalid url."
-          XCTAssertEqual(expectedDescription, message)
-        default:
-          XCTFail("Failed to match expected Internal Error")
-        }
+    do {
+      let _: StorageMetadata = try await ref.putFile(from: dummyFileURL)
+      XCTFail("Unexpected success.", file: #file, line: #line)
+    } catch {
+      switch error {
+      case let StorageError.unknown(message, _):
+        let expectedDescription = "File at URL: \(dummyFileURL.absoluteString) " +
+          "is not reachable. Ensure file URL is not a directory, symbolic link, or invalid url."
+        XCTAssertEqual(expectedDescription, message)
+      default:
+        XCTFail("Failed to match expected Internal Error")
       }
     }
-    waitForExpectations(timeout: 0.5)
   }
 
-  func testReferenceWithNonExistentFileFailsWithCompletionCallback() throws {
+  func testReferenceWithNonExistentFileFailsWithCompletionCallback() async throws {
     let tempFilePath = NSTemporaryDirectory().appending("temp.data")
     let ref = storage!.reference(withPath: tempFilePath)
     let dummyFileURL = try XCTUnwrap(URL(string: "some_non_existing-folder/file.data"))
-    let expectation = self.expectation(description: #function)
-
-    ref.putFile(from: dummyFileURL) { metadata, error in
-      expectation.fulfill()
-      XCTAssertNil(metadata)
-      let nsError = (error as? NSError)!
-      XCTAssertEqual(nsError.code, StorageErrorCode.unknown.rawValue)
-      let expectedDescription = "File at URL: \(dummyFileURL.absoluteString) " +
-        "is not reachable. Ensure file URL is not a directory, symbolic link, or invalid url."
-      XCTAssertEqual(expectedDescription, nsError.localizedDescription)
-      XCTAssertEqual(nsError.domain, StorageErrorDomain)
-    }
-    waitForExpectations(timeout: 0.5)
+    try await assertPutFileFails(ref: ref, url: dummyFileURL)
   }
 
-  func testReferenceWithNilFileFailsWithCompletionCallback() throws {
+  func testReferenceWithNilFileFailsWithCompletionCallback() async throws {
     let tempFilePath = NSTemporaryDirectory().appending("temp.data")
     let ref = storage!.reference(withPath: tempFilePath)
     let dummyFileURL = try XCTUnwrap(URL(string: "bad-url"))
-    let expectation = self.expectation(description: #function)
+    try await assertPutFileFails(ref: ref, url: dummyFileURL)
+  }
 
-    ref.putFile(from: dummyFileURL) { metadata, error in
-      expectation.fulfill()
-      XCTAssertNil(metadata)
-      let nsError = (error as? NSError)!
+  private func assertPutFileFails(ref: StorageReference, url: URL) async throws {
+    do {
+      let _: StorageMetadata = try await ref.putFile(from: url)
+      XCTFail("Unexpected success.")
+    } catch {
+      let nsError = error as NSError
       XCTAssertEqual(nsError.code, StorageErrorCode.unknown.rawValue)
-      let expectedDescription = "File at URL: \(dummyFileURL.absoluteString) " +
+      let expectedDescription = "File at URL: \(url.absoluteString) " +
         "is not reachable. Ensure file URL is not a directory, symbolic link, or invalid url."
       XCTAssertEqual(expectedDescription, nsError.localizedDescription)
       XCTAssertEqual(nsError.domain, StorageErrorDomain)
     }
-    waitForExpectations(timeout: 1.0)
   }
 
   // MARK: Private Helpers
@@ -280,12 +267,15 @@ class StorageReferenceTests: XCTestCase {
     guard savedApp == nil else {
       return try XCTUnwrap(savedApp)
     }
-    let options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
+    // Port note: FirebaseOptions is a struct.
+    var options = FirebaseOptions(googleAppID: "0:0000000000000:ios:0000000000000000",
                                   gcmSenderID: "00000000000000000-00000000000-000000000")
     options.projectID = "myProjectID"
     options.storageBucket = bucket
     let name = "StorageTests\(bucket)"
-    let app = FirebaseApp(instanceWithName: name, options: options)
+    // Port note: upstream's FirebaseApp(instanceWithName:options:) is
+    // FirebaseApp(options:name:).
+    let app = FirebaseApp(options: options, name: name)
     StorageReferenceTests.appDictionary[bucket] = app
     return app
   }

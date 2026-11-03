@@ -175,11 +175,7 @@ public struct StorageMetadata: Sendable {
             self.name = (name as NSString).lastPathComponent
         }
         fileType = .unknown
-        // First initialize with a default value
-        self.initialMetadata = []
-        
-        // Then make a copy of self and assign
-        self.initialMetadata = [self]
+        initialMetadata = InitialMetadata(dictionary: dictionary)
     }
 
     public var description: String {
@@ -189,10 +185,7 @@ public struct StorageMetadata: Sendable {
   // MARK: - Internal APIs
 
   func updatedMetadata() -> [String: AnyHashable] {
-      remove(
-        matchingMetadata: dictionaryRepresentation(),
-        oldMetadata: initialMetadata.first?.dictionaryRepresentation() ?? [:]
-      )
+      remove(matchingMetadata: dictionaryRepresentation(), oldMetadata: initialMetadata.dictionary)
   }
 
   enum StorageMetadataType {
@@ -205,11 +198,15 @@ public struct StorageMetadata: Sendable {
 
   // MARK: - Private APIs and data
 
-    // We store a copy of the initial metadata as StorageMetadata
-    // rather than [String: AnyHashable] due to sendability.
-    // We wrap in array since structs can't reference themselves (unless it is marked indirect
-    // but this spills out into public api...)
-  private var initialMetadata: [StorageMetadata]
+  /// The dictionary this metadata was created from, as upstream keeps it: an update sends what
+  /// differs from it.
+  private var initialMetadata: InitialMetadata
+
+  /// The dictionary holds values parsed from JSON (strings, numbers, dictionaries), which are
+  /// immutable.
+  private struct InitialMetadata: @unchecked Sendable {
+    let dictionary: [String: AnyHashable]
+  }
 
   private static func intFromDictionaryValue(_ value: Any?) -> Int64 {
     if let value = value as? Int { return Int64(value) }
@@ -262,5 +259,16 @@ public struct StorageMetadata: Sendable {
       }
     }
     return newMetadata
+  }
+}
+
+extension StorageMetadata: Hashable {
+  /// Metadata is equal when its `dictionaryRepresentation()` is, as upstream.
+  public static func == (lhs: StorageMetadata, rhs: StorageMetadata) -> Bool {
+    lhs.dictionaryRepresentation() == rhs.dictionaryRepresentation()
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(dictionaryRepresentation())
   }
 }
