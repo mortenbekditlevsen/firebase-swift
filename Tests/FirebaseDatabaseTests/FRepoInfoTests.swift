@@ -16,6 +16,9 @@
 import Foundation
 import Testing
 
+// Serialized: on Linux, concurrent writes to UserDefaults.standard can lose
+// updates (swift-corelibs-foundation), which made these tests flaky.
+@Suite(.serialized)
 struct FRepoInfoTests {
   @Test(arguments: [
     "s-usc1a-nss-2001.firebaseio.com",

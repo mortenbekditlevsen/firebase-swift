@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import Combine
 import FirebaseFirestore
 import Foundation
 
@@ -41,7 +40,8 @@ class TypeTest: FSTIntegrationTestCase {
     XCTAssertEqual(docSnapshot.data() as NSDictionary?, expectedData as NSDictionary?)
 
     // Validate that the transaction API returns the same types
-    _ = try await db.runTransaction { transaction, errorPointer in
+    // Port note: the throwing form, as Linux has no NSErrorPointer.
+    _ = try await db.runTransaction { transaction in
       do {
         let transactionSnapshot = try transaction.getDocument(docRef)
         XCTAssertEqual(
@@ -50,8 +50,7 @@ class TypeTest: FSTIntegrationTestCase {
         )
         return nil // Transaction doesn't need to modify data in this test
       } catch {
-        errorPointer?.pointee = error as NSError
-        return nil
+        throw error
       }
     }
 

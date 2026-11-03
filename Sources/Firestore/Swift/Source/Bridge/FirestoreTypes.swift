@@ -1716,10 +1716,19 @@ public final class FieldValue: Hashable, @unchecked Sendable {
 }
 
 /// Vector value for vector search.
-public final class VectorValue: @unchecked Sendable {
-  private var _array: [Double]
+public final class VectorValue: Hashable, Sendable {
+  private let _array: [Double]
 
   public var array: [Double] { _array }
+
+  /// Equal when the numbers are, as upstream.
+  public static func == (lhs: VectorValue, rhs: VectorValue) -> Bool {
+    lhs._array == rhs._array
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(_array)
+  }
 
   public init(_ array: [Double]) {
     self._array = array

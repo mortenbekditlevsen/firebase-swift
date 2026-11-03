@@ -345,7 +345,8 @@ class SnapshotListenerSourceTests: FSTIntegrationTestCase {
     querySnap = eventAccumulator.awaitEvent(withName: "snapshot")
     try assertQuerySnapshotDataEquals(querySnap, [["k": "b", "sort": 1], ["k": "c", "sort": 2]])
     XCTAssertEqual(querySnap.metadata.isFromCache, true)
-    XCTAssertEqual(querySnap.metadata?.hasPendingWrites, true)
+    // Port note: upstream reads `metadata` through AnyObject, which makes it optional.
+    XCTAssertEqual(querySnap.metadata.hasPendingWrites, true)
 
     // As we are not listening to server, the listener will not get notified
     // when local mutation is acknowledged by server.

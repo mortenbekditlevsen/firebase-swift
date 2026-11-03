@@ -53,6 +53,13 @@ bridge in `Swift/Source/Bridge/`, so a few upstream files differ:
 - `Stages.swift` passes `Int(limit)` and `Int(offset)` where upstream uses
   `NSInteger(…)`.
 
+Upstream's integration tests (`Swift/Tests/Integration/`) are changed only
+where marked `Port note:`: deprecated settings, `NSErrorPointer` transaction
+blocks (Linux has none), Combine's `Future` (Apple-only), `Timestamp` being a
+struct, bundle error codes, `catch … as NSError` on Linux, and two tests that
+expect exceptions. `grep -rn "Port note" Sources/Firestore/Swift/Tests` lists
+them; `Swift/Tests/API/BasicCompileTests.swift` has them too.
+
 ## FirebaseDataEncoder (`Sources/FirebaseShared/third_party/FirebaseDataEncoder`)
 
 - **Passthrough values are boxed.** Upstream requires passthrough types

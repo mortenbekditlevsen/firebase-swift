@@ -7,6 +7,12 @@ service cloud.firestore {
     match /public/{document=**} {
       allow read, write: if true;
     }
+    // Open everywhere else, as upstream's integration tests
+    // (Sources/Firestore/Swift/Tests/Integration) expect; `denied` stays
+    // closed for tests of permission errors.
+    match /{collection}/{document=**} {
+      allow read, write: if !(collection in ['users', 'denied']);
+    }
     // Only the signed-in owner, so tests can tell whether Firestore actually
     // sends the Auth user's token.
     match /users/{uid}/{document=**} {

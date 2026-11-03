@@ -52,7 +52,9 @@ class AsyncAwaitIntegrationTests: FSTIntegrationTestCase {
       XCTFail("Bundle loading should have failed")
     } catch {
       XCTAssertEqual((error as NSError).domain, FirestoreErrorDomain)
-      XCTAssertEqual((error as NSError).code, FirestoreErrorCode.unknown.rawValue)
+      // Port note: upstream reports every bundle failure as unknown (its
+      // error check is inverted); the port passes the core's code on.
+      XCTAssertEqual((error as NSError).code, FirestoreErrorCode.dataLoss.rawValue)
     }
   }
 
@@ -64,7 +66,8 @@ class AsyncAwaitIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testRunTransactionDoesNotCrashOnNilSuccess() async throws {
-    let value = try await db.runTransaction { transact, error in
+    // Port note: the throwing form, as Linux has no NSErrorPointer.
+    let value = try await db.runTransaction { _ in
       nil // should not crash
     }
 
@@ -92,6 +95,9 @@ class AsyncAwaitIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testAutoIndexCreationAfterFailsTermination() async throws {
+    // Port note: the port stops the process where upstream raises an
+    // exception, so this can't be tested in-process.
+    throw XCTSkip("Expects an exception")
     try await db.terminate()
 
     let enableIndexAutoCreation = {

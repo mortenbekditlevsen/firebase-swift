@@ -130,7 +130,7 @@ struct FirestoreAPIIntegrationTests {
     let missing: String? = nil
 
     try await doc.setData(["int": 3, "double": 2.5, "date": date, "missing": missing as Any,
-                           "ref": fixture.collection.document("other")])
+                           "ref": fixture.collection.document("other"), "empty": Data()])
     let snapshot = try await doc.getDocument(source: .server)
 
     // Numbers come back as NSNumbers, which cast to any numeric type.
@@ -140,6 +140,8 @@ struct FirestoreAPIIntegrationTests {
     #expect((snapshot.get("date") as? Timestamp)?.dateValue() == date)
     #expect(snapshot.get("missing") is NSNull)
     #expect(snapshot.get("ref") as? DocumentReference == fixture.collection.document("other"))
+    // Reading empty bytes used to crash (nanopb stores them as null).
+    #expect(snapshot.get("empty") as? Data == Data())
   }
 
   @Test func numericTransforms() async throws {

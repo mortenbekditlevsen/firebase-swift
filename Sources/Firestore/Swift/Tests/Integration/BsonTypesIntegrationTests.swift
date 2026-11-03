@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import Combine
 import FirebaseFirestore
 import Foundation
 
@@ -80,16 +79,20 @@ class BsonTypesIntegrationTests: FSTIntegrationTestCase {
                                                   collection: CollectionReference,
                                                   query: Query,
                                                   expectedResult: [String]) async throws {
-    let watchSnapshot = try await Future<QuerySnapshot, Error>() { promise in
+    // Port note: a continuation instead of Combine's Future, which is
+    // Apple-only. Like the Future, it takes the first event.
+    let watchSnapshot: QuerySnapshot = try await withCheckedThrowingContinuation { continuation in
+      var resumed = false
       query.addSnapshotListener { snapshot, error in
-        if let error {
-          promise(Result.failure(error))
-        }
+        guard !resumed else { return }
+        resumed = true
         if let snapshot {
-          promise(Result.success(snapshot))
+          continuation.resume(returning: snapshot)
+        } else {
+          continuation.resume(throwing: error ?? FirestoreErrorCode(.unknown))
         }
       }
-    }.value
+    }
 
     try verifySnapshot(
       snapshot: watchSnapshot,
