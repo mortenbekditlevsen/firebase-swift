@@ -122,7 +122,7 @@ private func makeFirestore(auth: AuthInterop?, appCheck: AppCheckInterop?) -> Fi
   // Port 1 refuses connections, so nothing leaves the machine.
   settings.host = "127.0.0.1:1"
   settings.isSSLEnabled = false
-  settings.isPersistenceEnabled = false
+  settings.cacheSettings = MemoryCacheSettings()
   db.settings = settings
   return db
 }

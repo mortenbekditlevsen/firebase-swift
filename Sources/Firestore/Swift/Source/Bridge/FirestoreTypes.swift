@@ -298,7 +298,7 @@ func fromBridgeFieldValueVector(_ vec: CppBridgeFieldValueVector,
 // run; listener boxes are released by C++ (`releaseCallbackBox`) once the
 // listener is gone.
 
-private final class CallbackBox<Handler>: @unchecked Sendable {
+final class CallbackBox<Handler>: @unchecked Sendable {
   let handler: Handler
   init(_ handler: Handler) {
     self.handler = handler
@@ -309,7 +309,7 @@ private typealias DocumentSnapshotHandler = (CppDocumentSnapshotBridge?, Error?)
 private typealias QuerySnapshotHandler = (CppQuerySnapshotBridge?, Error?) -> Void
 private typealias ErrorHandler = (Error?) -> Void
 
-private func retainedContext<Handler>(_ handler: Handler) -> UnsafeMutableRawPointer {
+func retainedContext<Handler>(_ handler: Handler) -> UnsafeMutableRawPointer {
   Unmanaged.passRetained(CallbackBox(handler)).toOpaque()
 }
 
@@ -319,7 +319,7 @@ private func releaseCallbackBox(context: UnsafeMutableRawPointer?) {
 }
 
 /// Takes ownership of a heap-allocated bridge object that C++ passed to Swift.
-private func takeBridge<Bridge>(_ pointer: UnsafeMutableRawPointer?, as _: Bridge.Type) -> Bridge? {
+func takeBridge<Bridge>(_ pointer: UnsafeMutableRawPointer?, as _: Bridge.Type) -> Bridge? {
   guard let pointer else { return nil }
   let bridge = pointer.assumingMemoryBound(to: Bridge.self)
   defer {
@@ -518,6 +518,8 @@ public final class Firestore: @unchecked Sendable {
   /// provider's current user up to date.
   private var authObserver: (any NSObjectProtocol)?
 
+  private let _settings = Mutex(FirestoreSettings())
+
   deinit {
     if let authObserver {
       NotificationCenter.default.removeObserver(authObserver)
@@ -527,9 +529,13 @@ public final class Firestore: @unchecked Sendable {
   /// Cache of Firestore instances keyed by "appName/databaseId".
   private nonisolated(unsafe) static let _instances = Mutex<[String: Firestore]>([:])
 
-  private init(app: FirebaseApp, cppBridge: CppFirestoreBridge) {
+  /// This instance's key in `_instances`.
+  private let instanceKey: String
+
+  private init(app: FirebaseApp, cppBridge: CppFirestoreBridge, instanceKey: String) {
     self.app = app
     self.cppBridge = cppBridge
+    self.instanceKey = instanceKey
   }
 
   private static var defaultApp: FirebaseApp {
@@ -577,7 +583,7 @@ public final class Firestore: @unchecked Sendable {
         appCheckCallback,
         releaseCredentialsSource
       )
-      let instance = Firestore(app: app, cppBridge: bridge)
+      let instance = Firestore(app: app, cppBridge: bridge, instanceKey: key)
       if let auth {
         // swift-corelibs-foundation never matches an `object:` filter that is a
         // pure Swift class, so filter by identity in the block instead.
@@ -628,31 +634,41 @@ public final class Firestore: @unchecked Sendable {
   /// the host; the emulator doesn't use TLS, so also set
   /// `settings.isSSLEnabled = false`.
   public func useEmulator(withHost host: String, port: Int) {
-    precondition(!host.isEmpty, "Host cannot be nil or empty.")
+    if host.isEmpty {
+      invalidArgument("Host cannot be nil or empty.")
+    }
     let newSettings = settings
     newSettings.host = "\(host):\(port)"
     settings = newSettings
   }
 
+  /// The settings, as a copy: change it and assign it back. Settings can
+  /// only change before the instance is first used.
   public var settings: FirestoreSettings {
-    get {
-      let s = FirestoreSettings()
-      s.host = String(cppBridge.settings_host())
-      s.isPersistenceEnabled = cppBridge.settings_persistence_enabled()
-      s.isSSLEnabled = cppBridge.settings_ssl_enabled()
-      s.cacheSizeBytes = Int(cppBridge.settings_cache_size_bytes())
-      return s
-    }
+    get { _settings.withLock { $0.copy() } }
     set {
-      var bridge = cppBridge
-      bridge.set_settings_host(std.string(newValue.host))
-      bridge.set_settings_persistence_enabled(newValue.isPersistenceEnabled)
-      bridge.set_settings_ssl_enabled(newValue.isSSLEnabled)
-      bridge.set_settings_cache_size_bytes(Int64(newValue.cacheSizeBytes))
+      let newSettings = newValue.copy()
+      let changed = _settings.withLock { settings in
+        guard settings != newSettings else { return false }
+        settings = newSettings
+        return true
+      }
+      if changed {
+        // The bridge shares its core instance between copies.
+        var bridge = cppBridge
+        newSettings.apply(to: &bridge)
+      }
     }
   }
 
+  /// Stops this instance. As upstream, `Firestore.firestore(app:database:)`
+  /// returns a new instance afterwards.
   public func terminate() async throws {
+    Firestore._instances.withLock { instances in
+      if instances[instanceKey] === self {
+        instances[instanceKey] = nil
+      }
+    }
     try await withErrorCallback { cppBridge.Terminate($0, $1) }
   }
 
@@ -1663,16 +1679,6 @@ public final class VectorValue: @unchecked Sendable {
   public init(__array: [NSNumber]) {
     self._array = __array.map { $0.doubleValue }
   }
-}
-
-/// Firestore settings.
-public final class FirestoreSettings: @unchecked Sendable {
-  public var host: String = "firestore.googleapis.com"
-  public var isPersistenceEnabled: Bool = true
-  public var isSSLEnabled: Bool = true
-  public var cacheSizeBytes: Int = 100 * 1024 * 1024  // 100 MB default
-
-  public init() {}
 }
 
 /// Metadata about a snapshot.
