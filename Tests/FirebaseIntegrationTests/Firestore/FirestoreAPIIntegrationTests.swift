@@ -230,4 +230,92 @@ struct FirestoreAPIIntegrationTests {
     #expect(result as? Int == 1)
     #expect(try await doc.getDocument(source: .server).get("n") as? Int == 2)
   }
+
+  @Test func settingsAreCopies() throws {
+    let fixture = try EmulatorFixture()
+    let settings = fixture.db.settings
+    #expect(settings.cacheSettings as? MemoryCacheSettings == MemoryCacheSettings())
+    #expect(settings == fixture.db.settings)
+
+    settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: FirestoreCacheSizeUnlimited))
+    settings.host = "elsewhere"
+    #expect(settings != fixture.db.settings)
+    #expect(fixture.db.settings.cacheSettings is MemoryCacheSettings)
+    #expect(MemoryCacheSettings(garbageCollectorSettings: MemoryLRUGCSettings(sizeBytes: 5))
+      != MemoryCacheSettings(garbageCollectorSettings: MemoryEagerGCSetting()))
+  }
+
+  @Test func persistentCacheOutlivesTheInstance() async throws {
+    let name = "persistent-\(UUID().uuidString)"
+    let first = try EmulatorApp(name: name).firestore(
+      cacheSettings: PersistentCacheSettings(sizeBytes: NSNumber(value: 10 * 1024 * 1024))
+    )
+    let doc = first.collection("public").document(UUID().uuidString)
+      .collection("items").document("kept")
+    try await doc.setData(["n": 1])
+    try await first.terminate()
+
+    // The same app name finds the same cache on disk.
+    let second = try EmulatorApp(name: name).firestore(cacheSettings: PersistentCacheSettings())
+    #expect(second !== first)
+    let cached = try await second.document(doc.path).getDocument(source: .cache)
+    #expect(cached.get("n") as? Int == 1)
+
+    try await second.terminate()
+    try await second.clearPersistence()
+  }
+
+  @Test func memoryCacheDoesNotOutliveTheInstance() async throws {
+    let name = "memory-\(UUID().uuidString)"
+    let first = try EmulatorApp(name: name).firestore(
+      cacheSettings: MemoryCacheSettings(garbageCollectorSettings: MemoryEagerGCSetting())
+    )
+    let doc = first.collection("public").document(UUID().uuidString)
+      .collection("items").document("gone")
+    try await doc.setData(["n": 1])
+    try await first.terminate()
+
+    let second = try EmulatorApp(name: name).firestore()
+    do {
+      _ = try await second.document(doc.path).getDocument(source: .cache)
+      Issue.record("The document was in the cache")
+    } catch FirestoreErrorCode.unavailable {}
+    try await second.terminate()
+  }
+
+  @Test func aggregationsRunOnTheServer() async throws {
+    let fixture = try EmulatorFixture()
+    for (n, price) in [(1, 1.5), (2, 2.5), (3, 5)] {
+      try await fixture.collection.document("n\(n)").setData(["n": n, "item": ["price": price]])
+    }
+
+    let count = try await fixture.collection.count.getAggregation(source: .server)
+    #expect(count.count == 3)
+
+    let query = fixture.collection.whereField("n", isGreaterThan: 1)
+    let aggregate = query.aggregate([.count(), .sum("n"), .average(FieldPath(["item", "price"]))])
+    #expect(aggregate == query.aggregate([.count(), .sum("n"), .average("item.price")]))
+    #expect(aggregate != query.count)
+
+    let snapshot = try await aggregate.getAggregation(source: .server)
+    #expect(snapshot.query == aggregate)
+    #expect(snapshot.count == 2)
+    #expect(snapshot.get(.sum("n")) as? Int == 5)
+    #expect(snapshot.get(.average("item.price")) as? Double == 3.75)
+
+    // As documented for the backend, several aggregations only see the
+    // documents that have all of their fields.
+    let missing = try await query.aggregate([.count(), .average("missing")])
+      .getAggregation(source: .server)
+    #expect(missing.count == 0)
+    #expect(missing.get(.average("missing")) is NSNull)
+  }
+
+  @Test func aggregationsReportErrors() async throws {
+    let fixture = try EmulatorFixture()
+    do {
+      _ = try await fixture.db.collection("denied").count.getAggregation(source: .server)
+      Issue.record("The aggregation succeeded")
+    } catch FirestoreErrorCode.permissionDenied {}
+  }
 }

@@ -93,13 +93,13 @@ struct EmulatorApp {
     auth.useEmulator(withHost: authAddress.host, port: authAddress.port)
   }
 
-  func firestore() throws -> Firestore {
+  func firestore(cacheSettings: any LocalCacheSettings = MemoryCacheSettings()) throws -> Firestore {
     let address = try #require(Emulators.firestore)
     let db = Firestore.firestore(app: app)
     db.useEmulator(withHost: address.host, port: address.port)
     let settings = db.settings
     settings.isSSLEnabled = false
-    settings.isPersistenceEnabled = false
+    settings.cacheSettings = cacheSettings
     db.settings = settings
     return db
   }

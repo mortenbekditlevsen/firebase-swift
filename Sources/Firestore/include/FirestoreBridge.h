@@ -46,6 +46,15 @@ typedef void (*QuerySnapshotCallback)(
     int32_t error_code,
     const char* error_message);
 
+/// Callback for aggregation results.
+/// results: opaque pointer to a heap-allocated BridgeFieldValueVector (caller
+/// owns) with one value per requested field, in order, or null on error.
+typedef void (*AggregateCallback)(
+    void* context,
+    void* results,
+    int32_t error_code,
+    const char* error_message);
+
 /// Callback for error-only results.
 typedef void (*ErrorCallback)(
     void* context,
@@ -108,6 +117,26 @@ using FieldPathVector = std::vector<FieldPathSegments>;
 /// The data of an `updateData` call: field paths to new values.
 using BridgeUpdateEntry = std::pair<FieldPathSegments, BridgeFieldValue>;
 using BridgeUpdateData = std::vector<BridgeUpdateEntry>;
+
+/// The local cache in the settings.
+enum class CacheKind : int32_t {
+  Persistent = 0,
+  /// In memory, with eager garbage collection.
+  MemoryEager,
+  /// In memory, with LRU garbage collection.
+  MemoryLru,
+};
+
+/// An aggregation of an aggregate query.
+enum class AggregateKind : int32_t {
+  Count = 0,
+  Sum,
+  Average,
+};
+
+/// An aggregation and its field (empty for `Count`).
+using BridgeAggregateField = std::pair<AggregateKind, FieldPathSegments>;
+using BridgeAggregateFields = std::vector<BridgeAggregateField>;
 
 /// How `setData` treats fields that aren't in the new data.
 enum class SetOption : int32_t {
@@ -563,6 +592,11 @@ class QueryBridge {
       ContextReleaseCallback release_context,
       QuerySnapshotCallback callback) const noexcept;
 
+  /// Runs the aggregations on the server.
+  void GetAggregate(const BridgeAggregateFields& fields,
+                    void* context,
+                    AggregateCallback callback) const noexcept;
+
  protected:
   friend class FirestoreBridge;
   friend class CollectionReferenceBridge;
@@ -772,29 +806,13 @@ class FirestoreBridge {
 
   // --- Settings ---
 
-  /// Gets the host setting.
-  std::string settings_host() const noexcept;
-
-  /// Gets the persistence enabled setting.
-  bool settings_persistence_enabled() const noexcept;
-
-  /// Gets the SSL enabled setting.
-  bool settings_ssl_enabled() const noexcept;
-
-  /// Gets the cache size in bytes.
-  int64_t settings_cache_size_bytes() const noexcept;
-
-  /// Sets the host.
-  void set_settings_host(const std::string& host) noexcept;
-
-  /// Sets persistence enabled.
-  void set_settings_persistence_enabled(bool enabled) noexcept;
-
-  /// Sets SSL enabled.
-  void set_settings_ssl_enabled(bool enabled) noexcept;
-
-  /// Sets the cache size in bytes.
-  void set_settings_cache_size_bytes(int64_t bytes) noexcept;
+  /// Applies settings, as upstream's `Firestore.settings` setter does. Stops
+  /// the process if the instance has already started. `cache_size_bytes` is
+  /// used by `CacheKind::Persistent` and `CacheKind::MemoryLru`.
+  void SetSettings(const std::string& host,
+                   bool ssl_enabled,
+                   CacheKind cache_kind,
+                   int64_t cache_size_bytes) noexcept;
 
   /// The project ID.
   std::string project_id() const noexcept;

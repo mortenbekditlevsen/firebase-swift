@@ -30,7 +30,8 @@ aggregations → listeners → bundles → BSON types → pipelines.
 - [x] `firestore()`, `firestore(app:)`, `firestore(app:database:)`, `firestore(database:)`, `app`
 - [x] `collection(_:)`, `document(_:)`, `collectionGroup(_:)`, `batch()`
 - [x] `useEmulator(withHost:port:)`
-- [x] `terminate()`, `clearPersistence()`, `waitForPendingWrites()`, `enableNetwork()`,
+- [x] `terminate()` (also drops the instance, so `firestore(app:)` returns a new one, as
+      upstream; it used to return the terminated one), `clearPersistence()`, `waitForPendingWrites()`, `enableNetwork()`,
       `disableNetwork()` (async)
 - [x] `runTransaction(_:)`, `runTransaction(with: TransactionOptions, block:)`, throwing or
       `NSErrorPointer` (Apple only) update blocks, completion and async forms
@@ -44,13 +45,13 @@ aggregations → listeners → bundles → BSON types → pipelines.
 
 ## Settings
 
-- [x] `host`, `isSSLEnabled`
-- [ ] `cacheSettings`: `PersistentCacheSettings(sizeBytes:)`, `MemoryCacheSettings`
-      (`MemoryEagerGCSettings`, `MemoryLRUGCSettings`), `FirestoreCacheSizeUnlimited`
-- [ ] Remove `isPersistenceEnabled` and `cacheSizeBytes` (deprecated upstream) once
-      `cacheSettings` exists
-- [ ] `FirestoreSettings` is a mutable class whose changes only apply when assigned back, as
-      upstream; make it a copied value as upstream does
+- [x] `host`, `isSSLEnabled`, `==`/`hash`
+- [x] `cacheSettings`: `PersistentCacheSettings` (the default; `init(sizeBytes:)` checks the
+      1 MB minimum), `MemoryCacheSettings` with `MemoryEagerGCSetting` (upstream's Swift name) or
+      `MemoryLRUGCSettings`, `FirestoreCacheSizeUnlimited`
+- n/a `isPersistenceEnabled`, `cacheSizeBytes` (deprecated upstream; removed)
+- [x] `Firestore.settings` returns a copy and applies an assigned one in one go, only when it
+      differs, as upstream; changing settings after first use stops the process (core)
 - n/a `dispatchQueue` (callbacks come from the core's executor; decide later)
 
 ## References
@@ -95,8 +96,11 @@ aggregations → listeners → bundles → BSON types → pipelines.
 
 ## Aggregations
 
-- [ ] `Query.count`, `aggregate(_:)`, `AggregateQuery`, `AggregateField` (`count`, `sum`,
-      `average`), `AggregateQuerySnapshot`, `AggregateSource` (core: `Query::Aggregate`)
+- [x] `Query.count`, `aggregate(_:)`, `AggregateQuery` (`query`, `==`/`hash`,
+      `getAggregation(source:)`, async only), `AggregateField` (`count()`, `sum(_:)`,
+      `average(_:)` with `String` or `FieldPath`), `AggregateQuerySnapshot` (`query`, `count`,
+      `get(_:)`; a field that wasn't requested stops the process, as upstream), `AggregateSource`
+- n/a `AggregateQuerySnapshot` `==`/`hash` (upstream compares the result values; not ported)
 
 ## Values
 
@@ -121,4 +125,5 @@ aggregations → listeners → bundles → BSON types → pipelines.
 batches, transactions, listeners), `FirestoreAuthIntegrationTests` (rules and users),
 `FirestoreAPIIntegrationTests` (error codes, field paths, `mergeFields`, composite filters,
 value cursors, value types, `minimum`/`maximum`, references, listener lifetime and sources,
-snapshots in sync, transaction options).
+snapshots in sync, transaction options, settings, persistent and memory caches across
+`terminate()`, aggregations).

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "Firestore/core/src/api/aggregate_query.h"
 #include "Firestore/core/src/api/collection_reference.h"
 #include "Firestore/core/src/api/document_change.h"
 #include "Firestore/core/src/api/document_reference.h"
@@ -83,6 +84,10 @@ using api::Query;
 using api::QuerySnapshot;
 using api::Source;
 using api::WriteBatch;
+using api::MemoryCacheSettings;
+using api::MemoryEagerGcSettings;
+using api::MemoryLruGcSettings;
+using api::PersistentCacheSettings;
 using api::Settings;
 using core::Bound;
 using core::EventListener;
@@ -908,51 +913,30 @@ void FirestoreBridge::DisableNetwork(
 // FirestoreBridge — Settings
 // ===========================================================================
 
-std::string FirestoreBridge::settings_host() const noexcept {
-  if (!impl_) return Settings::DefaultHost;
-  return impl_->firestore_->settings().host();
-}
-
-bool FirestoreBridge::settings_persistence_enabled() const noexcept {
-  if (!impl_) return Settings::DefaultPersistenceEnabled;
-  return impl_->firestore_->settings().persistence_enabled();
-}
-
-bool FirestoreBridge::settings_ssl_enabled() const noexcept {
-  if (!impl_) return Settings::DefaultSslEnabled;
-  return impl_->firestore_->settings().ssl_enabled();
-}
-
-int64_t FirestoreBridge::settings_cache_size_bytes() const noexcept {
-  if (!impl_) return Settings::DefaultCacheSizeBytes;
-  return impl_->firestore_->settings().cache_size_bytes();
-}
-
-void FirestoreBridge::set_settings_host(const std::string& host) noexcept {
+void FirestoreBridge::SetSettings(const std::string& host,
+                                  bool ssl_enabled,
+                                  CacheKind cache_kind,
+                                  int64_t cache_size_bytes) noexcept {
   if (!impl_) return;
-  Settings settings = impl_->firestore_->settings();
+  Settings settings;
   settings.set_host(host);
-  impl_->firestore_->set_settings(settings);
-}
-
-void FirestoreBridge::set_settings_persistence_enabled(bool enabled) noexcept {
-  if (!impl_) return;
-  Settings settings = impl_->firestore_->settings();
-  settings.set_persistence_enabled(enabled);
-  impl_->firestore_->set_settings(settings);
-}
-
-void FirestoreBridge::set_settings_ssl_enabled(bool enabled) noexcept {
-  if (!impl_) return;
-  Settings settings = impl_->firestore_->settings();
-  settings.set_ssl_enabled(enabled);
-  impl_->firestore_->set_settings(settings);
-}
-
-void FirestoreBridge::set_settings_cache_size_bytes(int64_t bytes) noexcept {
-  if (!impl_) return;
-  Settings settings = impl_->firestore_->settings();
-  settings.set_cache_size_bytes(bytes);
+  settings.set_ssl_enabled(ssl_enabled);
+  switch (cache_kind) {
+    case CacheKind::Persistent:
+      settings.set_local_cache_settings(
+          PersistentCacheSettings{}.WithSizeBytes(cache_size_bytes));
+      break;
+    case CacheKind::MemoryEager:
+      settings.set_local_cache_settings(
+          MemoryCacheSettings{}.WithMemoryGarbageCollectorSettings(
+              MemoryEagerGcSettings{}));
+      break;
+    case CacheKind::MemoryLru:
+      settings.set_local_cache_settings(
+          MemoryCacheSettings{}.WithMemoryGarbageCollectorSettings(
+              MemoryLruGcSettings{}.WithSizeBytes(cache_size_bytes)));
+      break;
+  }
   impl_->firestore_->set_settings(settings);
 }
 
@@ -2292,7 +2276,57 @@ ListenerRegistrationBridge FirestoreBridge::AddSnapshotsInSyncListener(
   return result;
 }
 
+// ===========================================================================
+// QueryBridge — aggregations (FIRAggregateQuery, FIRAggregateField)
+// ===========================================================================
+
+void QueryBridge::GetAggregate(const BridgeAggregateFields& fields,
+                               void* context,
+                               AggregateCallback callback) const noexcept {
+  // Aliases as upstream: the operation, plus "_" and the field for sum and
+  // average. The core maps them to server aliases.
+  std::vector<std::string> aliases;
+  std::vector<model::AggregateField> aggregates;
+  for (const auto& field : fields) {
+    switch (field.first) {
+      case AggregateKind::Count:
+        aliases.push_back("count");
+        aggregates.emplace_back(model::AggregateField::OpKind::Count,
+                                model::AggregateAlias(aliases.back()));
+        break;
+      case AggregateKind::Sum:
+      case AggregateKind::Average: {
+        bool sum = field.first == AggregateKind::Sum;
+        FieldPath path = UserDataParser::MakeFieldPath(field.second);
+        aliases.push_back(std::string(sum ? "sum" : "avg") + "_" +
+                          path.CanonicalString());
+        aggregates.emplace_back(sum ? model::AggregateField::OpKind::Sum
+                                    : model::AggregateField::OpKind::Avg,
+                                model::AggregateAlias(aliases.back()), path);
+        break;
+      }
+    }
+  }
+
+  auto firestore = impl_->query_.firestore();
+  impl_->query_.Aggregate(std::move(aggregates))
+      .GetAggregate([context, callback, firestore,
+                     aliases](const StatusOr<ObjectValue>& result) {
+        if (!result.ok()) {
+          callback(context, nullptr, ErrorCode(result.status()),
+                   result.status().error_message().c_str());
+          return;
+        }
+        auto* values = new BridgeFieldValueVector();
+        for (const auto& alias : aliases) {
+          auto value = result.ValueOrDie().Get(alias);
+          values->push_back(value ? ConvertProtoValue(*value, firestore, 0)
+                                  : BridgeFieldValue::Null());
+        }
+        callback(context, values, 0, "");
+      });
+}
+
 }  // namespace swift_bridge
 }  // namespace firestore
 }  // namespace firebase
-
