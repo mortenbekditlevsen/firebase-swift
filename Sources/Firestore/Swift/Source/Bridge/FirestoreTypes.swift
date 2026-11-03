@@ -171,6 +171,26 @@ func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
     return CppBridgeFieldValue.FromVector(doubles)
   case let reference as DocumentReference:
     return CppBridgeFieldValue.FromReference(reference.cppBridge)
+  case is MinKey:
+    return CppBridgeFieldValue.MinKey()
+  case is MaxKey:
+    return CppBridgeFieldValue.MaxKey()
+  case let regex as RegexValue:
+    return CppBridgeFieldValue.FromRegex(std.string(regex.pattern), std.string(regex.options))
+  case let int32 as Int32Value:
+    return CppBridgeFieldValue.FromInt32(int32.value)
+  case let decimal as Decimal128Value:
+    return CppBridgeFieldValue.FromDecimal128(std.string(decimal.value))
+  case let objectId as BSONObjectId:
+    return CppBridgeFieldValue.FromBsonObjectId(std.string(objectId.value))
+  case let timestamp as BSONTimestamp:
+    return CppBridgeFieldValue.FromBsonTimestamp(timestamp.seconds, timestamp.increment)
+  case let blob as Blob:
+    return blob.bytes.withUnsafeBytes { buffer in
+      CppBridgeFieldValue.FromBsonBinaryData(
+        buffer.bindMemory(to: UInt8.self).baseAddress, buffer.count, blob.subtype
+      )
+    }
   case let array as [Any]:
     var cppArray = CppBridgeFieldValueVector()
     for element in array {
@@ -235,12 +255,7 @@ func fromBridgeFieldValue(_ value: CppBridgeFieldValue, firestore: Firestore) ->
   case .String:
     return Swift.String(value.string_value())
   case .Blob:
-    let bytes = value.blob_bytes()
-    var data = Data(count: bytes.size())
-    for i in 0 ..< bytes.size() {
-      data[i] = bytes[i]
-    }
-    return data
+    return blobData(value)
   case .Timestamp:
     return Timestamp(
       seconds: value.timestamp_seconds(),
@@ -264,9 +279,36 @@ func fromBridgeFieldValue(_ value: CppBridgeFieldValue, firestore: Firestore) ->
       arr.append(doubles[i])
     }
     return VectorValue(arr)
+  case .MinKey:
+    return MinKey.shared
+  case .MaxKey:
+    return MaxKey.shared
+  case .Regex:
+    return RegexValue(pattern: Swift.String(value.string_value()),
+                      options: Swift.String(value.string2_value()))
+  case .Int32:
+    return Int32Value(Int32(truncatingIfNeeded: value.int64_value()))
+  case .Decimal128:
+    return Decimal128Value(Swift.String(value.string_value()))
+  case .BsonObjectId:
+    return BSONObjectId(Swift.String(value.string_value()))
+  case .BsonTimestamp:
+    return BSONTimestamp(seconds: value.bson_timestamp_seconds(),
+                         increment: value.bson_timestamp_increment())
+  case .BsonBinaryData:
+    return Blob(bsonBinary: blobData(value), subtype: value.bson_subtype())
   default:
     return NSNull()
   }
+}
+
+private func blobData(_ value: CppBridgeFieldValue) -> Data {
+  let bytes = value.blob_bytes()
+  var data = Data(count: bytes.size())
+  for i in 0 ..< bytes.size() {
+    data[i] = bytes[i]
+  }
+  return data
 }
 
 /// Convert a C++ `BridgeFieldValueMap` to a Swift dictionary.
@@ -520,6 +562,8 @@ public final class Firestore: @unchecked Sendable {
 
   private let _settings = Mutex(FirestoreSettings())
 
+  private let _indexManager = Mutex<PersistentCacheIndexManager?>(nil)
+
   deinit {
     if let authObserver {
       NotificationCenter.default.removeObserver(authObserver)
@@ -648,6 +692,21 @@ public final class Firestore: @unchecked Sendable {
         var bridge = cppBridge
         newSettings.apply(to: &bridge)
       }
+    }
+  }
+
+  /// The index manager of the cache, or nil if the cache isn't persistent.
+  /// Like other operations, this starts the instance, so settings can't
+  /// change afterwards.
+  public var persistentCacheIndexManager: PersistentCacheIndexManager? {
+    _indexManager.withLock { manager in
+      if manager == nil {
+        var cppManager = CppPersistentCacheIndexManagerBridge()
+        if cppBridge.GetPersistentCacheIndexManager(&cppManager) {
+          manager = PersistentCacheIndexManager(cppBridge: cppManager)
+        }
+      }
+      return manager
     }
   }
 

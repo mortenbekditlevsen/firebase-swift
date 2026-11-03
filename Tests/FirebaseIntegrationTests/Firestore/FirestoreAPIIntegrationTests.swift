@@ -245,6 +245,28 @@ struct FirestoreAPIIntegrationTests {
       != MemoryCacheSettings(garbageCollectorSettings: MemoryEagerGCSetting()))
   }
 
+  @Test func onlyPersistentCachesHaveAnIndexManager() async throws {
+    let memory = try EmulatorFixture()
+    #expect(memory.db.persistentCacheIndexManager == nil)
+
+    let db = try EmulatorApp().firestore(cacheSettings: PersistentCacheSettings())
+    let manager = try #require(db.persistentCacheIndexManager)
+    #expect(db.persistentCacheIndexManager === manager)
+
+    // Queries keep working with index auto-creation on and after deleting the indexes.
+    let collection = db.collection("public").document(UUID().uuidString).collection("items")
+    try await collection.document("a").setData(["n": 1])
+    manager.enableIndexAutoCreation()
+    let query = collection.whereField("n", isEqualTo: 1)
+    #expect(try await query.getDocuments(source: .cache).count == 1)
+    manager.deleteAllIndexes()
+    manager.disableIndexAutoCreation()
+    #expect(try await query.getDocuments(source: .cache).count == 1)
+
+    try await db.terminate()
+    try await db.clearPersistence()
+  }
+
   @Test func persistentCacheOutlivesTheInstance() async throws {
     let name = "persistent-\(UUID().uuidString)"
     let first = try EmulatorApp(name: name).firestore(
@@ -317,6 +339,108 @@ struct FirestoreAPIIntegrationTests {
       _ = try await fixture.db.collection("denied").count.getAggregation(source: .server)
       Issue.record("The aggregation succeeded")
     } catch FirestoreErrorCode.permissionDenied {}
+  }
+
+  /// Every BSON value, as written and read by the SDK. The emulator, like a
+  /// Standard-edition database, rejects several of them (Decimal128, binaries
+  /// with a subtype), so these stay in the local cache.
+  @Test func bsonValuesRoundTripThroughTheCache() async throws {
+    let fixture = try EmulatorFixture()
+    try await fixture.db.disableNetwork()
+    let doc = fixture.collection.document("bson")
+    // Offline, the write never completes; it's in the cache at once.
+    doc.setData([
+      "min": MinKey.shared,
+      "max": MaxKey.shared,
+      "regex": RegexValue(pattern: "^a.*", options: "i"),
+      "int32": Int32Value(-7),
+      "decimal": Decimal128Value("1.5"),
+      "objectId": BSONObjectId("507f191e810c19729de860ea"),
+      "timestamp": BSONTimestamp(seconds: 4_000_000_000, increment: 3),
+      "binary": Blob(bsonBinary: Data([1, 2, 3]), subtype: 128),
+      "emptyBinary": Blob(bsonBinary: Data(), subtype: 5),
+      "plainBlob": Blob(bytes: Data([4, 5])),
+      "nested": ["values": [Int32Value(1), MinKey.shared]],
+    ], completion: nil)
+
+    let snapshot = try await doc.getDocument(source: .cache)
+    #expect(snapshot.get("min") as? MinKey == MinKey.shared)
+    #expect(snapshot.get("max") as? MaxKey == MaxKey.shared)
+    #expect(snapshot.get("regex") as? RegexValue == RegexValue(pattern: "^a.*", options: "i"))
+    #expect(snapshot.get("int32") as? Int32Value == Int32Value(-7))
+    #expect(snapshot.get("decimal") as? Decimal128Value == Decimal128Value("1.50"))
+    #expect(snapshot.get("objectId") as? BSONObjectId == BSONObjectId("507f191e810c19729de860ea"))
+    #expect(snapshot.get("timestamp") as? BSONTimestamp
+      == BSONTimestamp(seconds: 4_000_000_000, increment: 3))
+    #expect(snapshot.get("binary") as? Blob == Blob(bsonBinary: Data([1, 2, 3]), subtype: 128))
+    #expect(snapshot.get("emptyBinary") as? Blob == Blob(bsonBinary: Data(), subtype: 5))
+    // As upstream, subtype 0 is plain bytes.
+    #expect(snapshot.get("plainBlob") as? Data == Data([4, 5]))
+    let nested = snapshot.get("nested.values") as? [Any]
+    #expect(nested?.first as? Int32Value == Int32Value(1))
+    #expect(nested?.last is MinKey)
+  }
+
+  /// A Standard-edition database refuses BSON values, but names each type,
+  /// which shows the SDK encodes them as the backend expects. Newer emulators
+  /// accept some (binaries with a subtype, as of firebase-tools 15.34); those
+  /// must read back unchanged.
+  @Test(arguments: [
+    ("MIN_KEY", MinKey.shared as any Hashable & Sendable),
+    ("MAX_KEY", MaxKey.shared),
+    ("REGEX", RegexValue(pattern: "^a", options: "i")),
+    ("INT", Int32Value(1)),
+    ("DECIMAL128", Decimal128Value("1.5")),
+    ("OBJECT_ID", BSONObjectId("507f191e810c19729de860ea")),
+    ("REQUEST_TIMESTAMP", BSONTimestamp(seconds: 1, increment: 2)),
+    ("BYTES_WITH_SUBTYPE", Blob(bsonBinary: Data([1]), subtype: 128)),
+  ])
+  func theEmulatorRecognizesBSONValues(type: String, value: any Hashable & Sendable) async throws {
+    let fixture = try EmulatorFixture()
+    let doc = fixture.collection.document("bson")
+    do {
+      try await doc.setData(["value": value])
+    } catch {
+      let nsError = error as NSError
+      #expect(nsError.code == FirestoreErrorCode.invalidArgument.rawValue)
+      #expect(nsError.localizedDescription == "Value type \(type) is not allowed")
+      return
+    }
+    let read = try await doc.getDocument(source: .server).get("value")
+    #expect(read as? AnyHashable == AnyHashable(value))
+  }
+
+  @Test func bsonValuesWorkWithCodable() async throws {
+    struct Record: Codable, Equatable {
+      var min: MinKey
+      var regex: RegexValue
+      var int32: Int32Value
+      var decimal: Decimal128Value
+      var objectId: BSONObjectId
+      var timestamp: BSONTimestamp
+      var binary: Blob
+    }
+    let fixture = try EmulatorFixture()
+    try await fixture.db.disableNetwork()
+    let doc = fixture.collection.document("codable")
+    let record = Record(
+      min: .shared, regex: RegexValue(pattern: "x", options: "m"), int32: Int32Value(5),
+      decimal: Decimal128Value("-0"), objectId: BSONObjectId("507f191e810c19729de860eb"),
+      timestamp: BSONTimestamp(seconds: 1, increment: 2),
+      binary: Blob(bsonBinary: Data([9]), subtype: 1)
+    )
+    try doc.setData(from: record)
+    let read = try await doc.getDocument(source: .cache).data(as: Record.self)
+    #expect(read == record)
+  }
+
+  @Test func decimalsCompareAsNumbers() {
+    #expect(Decimal128Value("1.0") == Decimal128Value("1"))
+    #expect(Decimal128Value("-0") == Decimal128Value("0"))
+    #expect(Decimal128Value("1e2") == Decimal128Value("100"))
+    #expect(Decimal128Value("1.1") != Decimal128Value("1.2"))
+    #expect(Set([Decimal128Value("2"), Decimal128Value("2.00")]).count == 1)
+    #expect(Blob(bsonBinary: Data([1]), subtype: 1).compare(Blob(bytes: Data([2]))) == .orderedDescending)
   }
 
   @Test func bundlesLoadDocumentsAndNamedQueries() async throws {
