@@ -219,6 +219,16 @@ class BridgeFieldValue {
 
     /// A Swift value Firestore can't store; the string is its type name.
     Unsupported,
+
+    // BSON types (MinKey, RegexValue, ...)
+    MinKey,
+    MaxKey,
+    Regex,           // pattern, options in string2_value_
+    Int32,           // in int64_value_
+    Decimal128,      // the decimal as a string
+    BsonObjectId,    // the object ID as a string
+    BsonTimestamp,   // seconds in int64_value_, increment in int64_2_value_
+    BsonBinaryData,  // bytes, subtype in int32_value_
   };
 
   // Default constructor creates a Null value.
@@ -259,6 +269,28 @@ class BridgeFieldValue {
       const DoubleVector& doubles) noexcept;
   static BridgeFieldValue Unsupported(const std::string& type_name) noexcept;
 
+  // BSON factories
+  static BridgeFieldValue MinKey() noexcept;
+  static BridgeFieldValue MaxKey() noexcept;
+  static BridgeFieldValue FromRegex(const std::string& pattern,
+                                    const std::string& options) noexcept;
+  static BridgeFieldValue FromInt32(int32_t value) noexcept;
+  static BridgeFieldValue FromDecimal128(const std::string& value) noexcept;
+  static BridgeFieldValue FromBsonObjectId(const std::string& value) noexcept;
+  static BridgeFieldValue FromBsonTimestamp(uint32_t seconds,
+                                            uint32_t increment) noexcept;
+  /// A BSON binary with `subtype`; subtype 0 is stored as plain bytes, as
+  /// upstream does.
+  static BridgeFieldValue FromBsonBinaryData(const uint8_t* bytes,
+                                             size_t size,
+                                             uint8_t subtype) noexcept;
+
+  /// Whether two Decimal128 strings are the same number, as upstream's
+  /// `FIRDecimal128Value` compares them (+0 equals -0).
+  static bool Decimal128Equal(const std::string& lhs,
+                              const std::string& rhs) noexcept;
+  static size_t Decimal128Hash(const std::string& value) noexcept;
+
   // Sentinel factories
   static BridgeFieldValue Delete() noexcept;
   static BridgeFieldValue ServerTimestamp() noexcept;
@@ -293,6 +325,18 @@ class BridgeFieldValue {
   DoubleVector vector_value() const noexcept {
     return vector_value_;
   }
+  /// The options of a Regex.
+  std::string string2_value() const noexcept { return string2_value_; }
+  int32_t int32_value() const noexcept { return int32_value_; }
+  uint32_t bson_timestamp_seconds() const noexcept {
+    return static_cast<uint32_t>(int64_value_);
+  }
+  uint32_t bson_timestamp_increment() const noexcept {
+    return static_cast<uint32_t>(int64_2_value_);
+  }
+  uint8_t bson_subtype() const noexcept {
+    return static_cast<uint8_t>(int32_value_);
+  }
 
  private:
   friend class UserDataParser;
@@ -300,10 +344,12 @@ class BridgeFieldValue {
   Tag tag_ = Tag::Null;
   bool bool_value_ = false;
   int64_t int64_value_ = 0;
+  int64_t int64_2_value_ = 0;
   int32_t int32_value_ = 0;
   double double_value_ = 0.0;
   double double2_value_ = 0.0;
   std::string string_value_;
+  std::string string2_value_;
   // The database of a Reference.
   std::string project_id_;
   std::string database_id_;
@@ -385,6 +431,34 @@ class ListenerRegistrationBridge {
  private:
   friend class DocumentReferenceBridge;
   friend class QueryBridge;
+  friend class FirestoreBridge;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+// ---------------------------------------------------------------------------
+// PersistentCacheIndexManagerBridge
+// ---------------------------------------------------------------------------
+/// Wraps api::PersistentCacheIndexManager: the indexes of a persistent cache.
+class PersistentCacheIndexManagerBridge {
+ public:
+  PersistentCacheIndexManagerBridge() noexcept;
+  ~PersistentCacheIndexManagerBridge() noexcept;
+
+  PersistentCacheIndexManagerBridge(
+      const PersistentCacheIndexManagerBridge&) noexcept;
+  PersistentCacheIndexManagerBridge& operator=(
+      const PersistentCacheIndexManagerBridge&) noexcept;
+  PersistentCacheIndexManagerBridge(
+      PersistentCacheIndexManagerBridge&&) noexcept;
+  PersistentCacheIndexManagerBridge& operator=(
+      PersistentCacheIndexManagerBridge&&) noexcept;
+
+  void EnableIndexAutoCreation() const noexcept;
+  void DisableIndexAutoCreation() const noexcept;
+  void DeleteAllIndexes() const noexcept;
+
+ private:
   friend class FirestoreBridge;
   struct Impl;
   std::shared_ptr<Impl> impl_;
@@ -854,6 +928,14 @@ class FirestoreBridge {
       void* completion_context,
       ContextReleaseCallback release_completion,
       LoadBundleProgressCallback completion) const noexcept;
+
+  /// Writes the index manager to `manager` and returns true, or returns false
+  /// if the cache isn't persistent.
+  bool GetPersistentCacheIndexManager(
+      PersistentCacheIndexManagerBridge& manager) const noexcept;
+
+  /// Logs debug messages (true) or only notices and above (false).
+  static void EnableLogging(bool enabled) noexcept;
 
   /// Looks up a query that a loaded bundle named.
   void GetNamedQuery(const std::string& name,

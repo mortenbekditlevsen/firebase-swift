@@ -19,6 +19,7 @@
 #else
   @_exported import FirebaseFirestoreInternal
 #endif // SWIFT_PACKAGE
+import Foundation
 
 /**
  * A protocol describing the encodable properties of a Blob.

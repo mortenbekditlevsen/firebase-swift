@@ -47,8 +47,10 @@ aggregations → listeners → bundles → BSON types → pipelines.
       fast bundle's final state), and errors carry the core's code: upstream reports every
       failure as `.unknown`, because its error check in `FIRFirestore.mm` is inverted.
 - [x] `getQuery(named:)`, async only
-- [ ] `persistentCacheIndexManager`, `PersistentCacheIndexManager`
-- [ ] `Firestore.enableLogging(_:)`
+- [x] `persistentCacheIndexManager` (nil without a persistent cache), `PersistentCacheIndexManager`
+      (`enableIndexAutoCreation()`, `disableIndexAutoCreation()`, `deleteAllIndexes()`)
+- [x] `Firestore.enableLogging(_:)`: debug or notice level of the core's log, which the port
+      builds from `log_stdio.cc` on every platform
 - n/a `setIndexConfiguration` (deprecated)
 
 ## Settings
@@ -118,9 +120,13 @@ aggregations → listeners → bundles → BSON types → pipelines.
       database), arrays, maps. Anything else fails with "Unsupported type".
 - [x] Read: numbers as `NSNumber`, so `as? Int`, `as? Int64` and `as? Double` all work
 - [ ] `GeoPoint` is a struct here, a class upstream (keep; note in the docs)
-- [ ] BSON types (13.0): `MinKey`, `MaxKey`, `RegexValue`, `Int32Value`, `BSONObjectId`,
-      `BSONTimestamp`, `Decimal128Value`, `Blob`. Documents return them as their maps today, and
-      their Codable files are excluded in `Package.swift`.
+- [x] BSON types (13.0): `MinKey`, `MaxKey`, `RegexValue`, `Int32Value`, `BSONObjectId`,
+      `BSONTimestamp`, `Decimal128Value` (equal when they're the same number, as upstream),
+      `Blob` (subtype 0 is plain bytes and reads back as `Data`, as upstream), written and read
+      as upstream's `FSTUserDataReader`/`Writer` do, with upstream's Codable files and pass-through
+      list. They need an Enterprise-edition database: the emulator, like a Standard one, refuses
+      each by name, so the tests check that and round-trip them through the local cache. (A
+      binary with a subtype used to be read as garbage.)
 
 ## Pipelines
 
@@ -134,4 +140,4 @@ batches, transactions, listeners), `FirestoreAuthIntegrationTests` (rules and us
 `FirestoreAPIIntegrationTests` (error codes, field paths, `mergeFields`, composite filters,
 value cursors, value types, `minimum`/`maximum`, references, listener lifetime and sources,
 snapshots in sync, transaction options, settings, persistent and memory caches across
-`terminate()`, aggregations, bundles and named queries).
+`terminate()`, aggregations, bundles and named queries, the index manager, BSON values).

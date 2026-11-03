@@ -253,16 +253,6 @@ let package = Package(
             "Swift/CHANGELOG.md",
             "Swift/Tests/",
             "third_party/nlohmann_json",
-            // The BSON types (13.0) extend Objective-C classes the Swift bridge
-            // doesn't have yet; documents return them as their maps.
-            "Swift/Source/Codable/BSONObjectId+Codable.swift",
-            "Swift/Source/Codable/BSONTimestamp+Codable.swift",
-            "Swift/Source/Codable/Blob+Codable.swift",
-            "Swift/Source/Codable/Decimal128Value+Codable.swift",
-            "Swift/Source/Codable/Int32Value+Codable.swift",
-            "Swift/Source/Codable/MaxKey+Codable.swift",
-            "Swift/Source/Codable/MinKey+Codable.swift",
-            "Swift/Source/Codable/RegexValue+Codable.swift",
           ],
           sources: [
             "Swift/Source/",

@@ -214,3 +214,39 @@ public final class MemoryCacheSettings: LocalCacheSettings, Hashable {
     hasher.combine(CacheKey(self))
   }
 }
+
+typealias CppPersistentCacheIndexManagerBridge =
+  firebase.firestore.swift_bridge.PersistentCacheIndexManagerBridge
+
+/// The indexes of a persistent cache, which speed up local queries.
+public final class PersistentCacheIndexManager: @unchecked Sendable {
+  // The C++ manager is thread-safe.
+  private let cppBridge: CppPersistentCacheIndexManagerBridge
+
+  init(cppBridge: CppPersistentCacheIndexManagerBridge) {
+    self.cppBridge = cppBridge
+  }
+
+  /// Lets the SDK create indexes for queries that would run faster with one.
+  /// Off by default.
+  public func enableIndexAutoCreation() {
+    cppBridge.EnableIndexAutoCreation()
+  }
+
+  /// Stops creating indexes; existing ones stay.
+  public func disableIndexAutoCreation() {
+    cppBridge.DisableIndexAutoCreation()
+  }
+
+  /// Deletes all indexes in the cache.
+  public func deleteAllIndexes() {
+    cppBridge.DeleteAllIndexes()
+  }
+}
+
+public extension Firestore {
+  /// Turns debug logging of the Firestore client on or off.
+  static func enableLogging(_ logging: Bool) {
+    CppFirestoreBridge.EnableLogging(logging)
+  }
+}

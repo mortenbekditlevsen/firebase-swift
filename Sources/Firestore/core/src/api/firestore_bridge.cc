@@ -31,6 +31,7 @@
 #include "Firestore/core/src/api/firestore.h"
 #include "Firestore/core/src/api/listener_registration.h"
 #include "Firestore/core/src/api/load_bundle_task.h"
+#include "Firestore/core/src/api/persistent_cache_index_manager.h"
 #include "Firestore/core/src/api/query_core.h"
 #include "Firestore/core/src/api/query_snapshot.h"
 #include "Firestore/core/src/api/source.h"
@@ -69,6 +70,7 @@
 #include "Firestore/core/src/util/executor.h"
 #include "Firestore/core/src/util/hard_assert.h"
 #include "Firestore/core/src/util/log.h"
+#include "Firestore/core/src/util/quadruple.h"
 #include "Firestore/core/src/util/status.h"
 #include "Firestore/core/src/util/statusor.h"
 
@@ -1063,6 +1065,101 @@ BridgeFieldValue BridgeFieldValue::Unsupported(
   return v;
 }
 
+BridgeFieldValue BridgeFieldValue::MinKey() noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::MinKey;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::MaxKey() noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::MaxKey;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromRegex(const std::string& pattern,
+                                             const std::string& options) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Regex;
+  v.string_value_ = pattern;
+  v.string2_value_ = options;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromInt32(int32_t value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Int32;
+  v.int64_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromDecimal128(
+    const std::string& value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::Decimal128;
+  v.string_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromBsonObjectId(
+    const std::string& value) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::BsonObjectId;
+  v.string_value_ = value;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromBsonTimestamp(
+    uint32_t seconds, uint32_t increment) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::BsonTimestamp;
+  v.int64_value_ = seconds;
+  v.int64_2_value_ = increment;
+  return v;
+}
+
+BridgeFieldValue BridgeFieldValue::FromBsonBinaryData(const uint8_t* bytes,
+                                                      size_t size,
+                                                      uint8_t subtype) noexcept {
+  BridgeFieldValue v;
+  v.tag_ = Tag::BsonBinaryData;
+  if (bytes) {
+    v.string_value_.assign(reinterpret_cast<const char*>(bytes), size);
+  }
+  v.int32_value_ = subtype;
+  return v;
+}
+
+namespace {
+
+/// Parses a Decimal128 string, with -0 as +0, as `FIRDecimal128Value` does.
+bool ParseDecimal128(const std::string& value, util::Quadruple& result) {
+  if (!result.Parse(value)) return false;
+  if (result.Compare(util::Quadruple(-0.0)) == 0) result = util::Quadruple();
+  return true;
+}
+
+}  // namespace
+
+bool BridgeFieldValue::Decimal128Equal(const std::string& lhs,
+                                       const std::string& rhs) noexcept {
+  if (lhs == rhs) return true;
+  util::Quadruple left;
+  util::Quadruple right;
+  if (!ParseDecimal128(lhs, left) || !ParseDecimal128(rhs, right)) {
+    return false;
+  }
+  return left.Compare(right) == 0;
+}
+
+size_t BridgeFieldValue::Decimal128Hash(const std::string& value) noexcept {
+  util::Quadruple parsed;
+  if (!ParseDecimal128(value, parsed)) {
+    return std::hash<std::string>{}(value);
+  }
+  return static_cast<size_t>(parsed.HashValue());
+}
+
 BridgeFieldValue BridgeFieldValue::FromVector(
     const DoubleVector& doubles) noexcept {
   BridgeFieldValue v;
@@ -1470,6 +1567,83 @@ class UserDataParser {
       case Tag::Vector:
         return ParseVector(value.vector_value_);
 
+      // The BSON types, as upstream's FSTUserDataReader writes them: maps
+      // with a special key.
+      case Tag::MinKey:
+        return SingleFieldMap(model::kMinKeyTypeFieldValue,
+                              model::DeepClone(model::NullValue()));
+
+      case Tag::MaxKey:
+        return SingleFieldMap(model::kMaxKeyTypeFieldValue,
+                              model::DeepClone(model::NullValue()));
+
+      case Tag::Regex: {
+        Message<google_firestore_v1_Value> regex;
+        regex->which_value_type = google_firestore_v1_Value_map_value_tag;
+        regex->map_value = {};
+        regex->map_value.fields_count = 2;
+        regex->map_value.fields =
+            nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(2);
+        regex->map_value.fields[0].key =
+            nanopb::CopyBytesArray(model::kRegexTypePatternFieldValue);
+        regex->map_value.fields[0].value =
+            *model::StringValue(value.string_value_).release();
+        regex->map_value.fields[1].key =
+            nanopb::CopyBytesArray(model::kRegexTypeOptionsFieldValue);
+        regex->map_value.fields[1].value =
+            *model::StringValue(value.string2_value_).release();
+        return SingleFieldMap(model::kRegexTypeFieldValue, std::move(regex));
+      }
+
+      case Tag::Int32:
+        // The 32-bit integer is encoded as a 64-bit one in the proto.
+        return SingleFieldMap(model::kInt32TypeFieldValue,
+                              IntegerValue(value.int64_value_));
+
+      case Tag::Decimal128:
+        return SingleFieldMap(model::kDecimal128TypeFieldValue,
+                              model::StringValue(value.string_value_));
+
+      case Tag::BsonObjectId:
+        return SingleFieldMap(model::kBsonObjectIdTypeFieldValue,
+                              model::StringValue(value.string_value_));
+
+      case Tag::BsonTimestamp: {
+        Message<google_firestore_v1_Value> timestamp;
+        timestamp->which_value_type = google_firestore_v1_Value_map_value_tag;
+        timestamp->map_value = {};
+        timestamp->map_value.fields_count = 2;
+        timestamp->map_value.fields =
+            nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(2);
+        timestamp->map_value.fields[0].key =
+            nanopb::CopyBytesArray(model::kBsonTimestampTypeSecondsFieldValue);
+        timestamp->map_value.fields[0].value =
+            *IntegerValue(value.int64_value_).release();
+        timestamp->map_value.fields[1].key = nanopb::CopyBytesArray(
+            model::kBsonTimestampTypeIncrementFieldValue);
+        timestamp->map_value.fields[1].value =
+            *IntegerValue(value.int64_2_value_).release();
+        return SingleFieldMap(model::kBsonTimestampTypeFieldValue,
+                              std::move(timestamp));
+      }
+
+      case Tag::BsonBinaryData: {
+        if (value.int32_value_ == 0) {
+          result->which_value_type = google_firestore_v1_Value_bytes_value_tag;
+          result->bytes_value = nanopb::MakeBytesArray(
+              value.string_value_.data(), value.string_value_.size());
+          return result;
+        }
+        // The bytes, prefixed with the subtype.
+        std::string data(1, static_cast<char>(value.int32_value_));
+        data += value.string_value_;
+        Message<google_firestore_v1_Value> bytes;
+        bytes->which_value_type = google_firestore_v1_Value_bytes_value_tag;
+        bytes->bytes_value = nanopb::MakeBytesArray(data.data(), data.size());
+        return SingleFieldMap(model::kBsonBinaryDataTypeFieldValue,
+                              std::move(bytes));
+      }
+
       case Tag::Unsupported:
         ThrowInvalidArgument("Unsupported type: %s%s", value.string_value_,
                              context.FieldDescription());
@@ -1477,6 +1651,27 @@ class UserDataParser {
       default:
         HARD_FAIL("Unexpected value type: %s", static_cast<int>(value.tag()));
     }
+  }
+
+  static Message<google_firestore_v1_Value> IntegerValue(int64_t integer) {
+    Message<google_firestore_v1_Value> result;
+    result->which_value_type = google_firestore_v1_Value_integer_value_tag;
+    result->integer_value = integer;
+    return result;
+  }
+
+  /// The map {key: value}.
+  static Message<google_firestore_v1_Value> SingleFieldMap(
+      const pb_bytes_array_s* key, Message<google_firestore_v1_Value> value) {
+    Message<google_firestore_v1_Value> result;
+    result->which_value_type = google_firestore_v1_Value_map_value_tag;
+    result->map_value = {};
+    result->map_value.fields_count = 1;
+    result->map_value.fields =
+        nanopb::MakeArray<google_firestore_v1_MapValue_FieldsEntry>(1);
+    result->map_value.fields[0].key = nanopb::CopyBytesArray(key);
+    result->map_value.fields[0].value = *value.release();
+    return result;
   }
 
   static Message<google_firestore_v1_Value> ParseVector(
@@ -1569,6 +1764,32 @@ void DocumentReferenceBridge::UpdateData(const BridgeUpdateData& data,
 
 namespace {
 
+/// The string in a BSON map such as {"__oid__": "..."}, or "".
+std::string SingleStringField(const google_firestore_v1_MapValue& map_value) {
+  if (map_value.fields_count == 1 &&
+      map_value.fields[0].value.which_value_type ==
+          google_firestore_v1_Value_string_value_tag) {
+    return nanopb::MakeString(map_value.fields[0].value.string_value);
+  }
+  return "";
+}
+
+/// Calls `body` with each field of the inner map of a BSON map such as
+/// {"__regex__": {"pattern": ..., "options": ...}}.
+template <typename Body>
+void ForEachInnerField(const google_firestore_v1_MapValue& map_value,
+                       Body body) {
+  if (map_value.fields_count != 1) return;
+  const auto& inner = map_value.fields[0].value;
+  if (inner.which_value_type != google_firestore_v1_Value_map_value_tag) {
+    return;
+  }
+  for (pb_size_t i = 0; i < inner.map_value.fields_count; ++i) {
+    body(nanopb::MakeString(inner.map_value.fields[i].key),
+         inner.map_value.fields[i].value);
+  }
+}
+
 // Forward declarations with server_ts_behavior parameter.
 BridgeFieldValue ConvertProtoValue(
     const google_firestore_v1_Value& value,
@@ -1621,22 +1842,60 @@ BridgeFieldValue ConvertProtoValue(
         return BridgeFieldValue::FromDouble(value.double_value);
       } else if (model::IsInt32Value(value)) {
         // An Int32Value is the map {"__int__": <integer>}.
-        return BridgeFieldValue::FromInt64(
-            value.map_value.fields[0].value.integer_value);
+        return BridgeFieldValue::FromInt32(static_cast<int32_t>(
+            value.map_value.fields[0].value.integer_value));
+      } else if (model::IsDecimal128Value(value)) {
+        return BridgeFieldValue::FromDecimal128(
+            SingleStringField(value.map_value));
       }
-      // A Decimal128Value has no Swift counterpart yet; pass its map along.
-      return BridgeFieldValue::FromMap(
-          ConvertProtoMap(value.map_value, firestore, server_ts_behavior));
+      return BridgeFieldValue::Null();
 
-    // The BSON types are maps with a special key. Until the bridge has Swift
-    // types for them, they reach Swift as those maps rather than as null.
+    // The BSON types are maps with a special key; read as upstream's
+    // FSTUserDataWriter does.
     case model::TypeOrder::kMinKey:
-    case model::TypeOrder::kBsonTimestamp:
-    case model::TypeOrder::kBsonObjectId:
-    case model::TypeOrder::kRegex:
+      return BridgeFieldValue::MinKey();
+
     case model::TypeOrder::kMaxKey:
-      return BridgeFieldValue::FromMap(
-          ConvertProtoMap(value.map_value, firestore, server_ts_behavior));
+      return BridgeFieldValue::MaxKey();
+
+    case model::TypeOrder::kRegex: {
+      std::string pattern;
+      std::string options;
+      ForEachInnerField(value.map_value, [&](const std::string& key,
+                                             const google_firestore_v1_Value& field) {
+        if (field.which_value_type != google_firestore_v1_Value_string_value_tag) {
+          return;
+        }
+        if (key == model::kRawRegexTypePatternFieldValue) {
+          pattern = nanopb::MakeString(field.string_value);
+        } else if (key == model::kRawRegexTypeOptionsFieldValue) {
+          options = nanopb::MakeString(field.string_value);
+        }
+      });
+      return BridgeFieldValue::FromRegex(pattern, options);
+    }
+
+    case model::TypeOrder::kBsonObjectId:
+      return BridgeFieldValue::FromBsonObjectId(
+          SingleStringField(value.map_value));
+
+    case model::TypeOrder::kBsonTimestamp: {
+      uint32_t seconds = 0;
+      uint32_t increment = 0;
+      ForEachInnerField(value.map_value, [&](const std::string& key,
+                                             const google_firestore_v1_Value& field) {
+        if (field.which_value_type != google_firestore_v1_Value_integer_value_tag) {
+          return;
+        }
+        // The server guarantees these fit in 32-bit unsigned integers.
+        if (key == model::kRawBsonTimestampTypeSecondsFieldValue) {
+          seconds = static_cast<uint32_t>(field.integer_value);
+        } else if (key == model::kRawBsonTimestampTypeIncrementFieldValue) {
+          increment = static_cast<uint32_t>(field.integer_value);
+        }
+      });
+      return BridgeFieldValue::FromBsonTimestamp(seconds, increment);
+    }
 
     case model::TypeOrder::kString: {
       std::string str = nanopb::MakeString(value.string_value);
@@ -1644,6 +1903,23 @@ BridgeFieldValue ConvertProtoValue(
     }
 
     case model::TypeOrder::kBlob: {
+      if (value.which_value_type == google_firestore_v1_Value_map_value_tag) {
+        // A BSON binary: the bytes, prefixed with the subtype.
+        uint8_t subtype = 0;
+        const uint8_t* data = nullptr;
+        size_t size = 0;
+        if (value.map_value.fields_count == 1) {
+          const auto& field = value.map_value.fields[0].value;
+          if (field.which_value_type ==
+                  google_firestore_v1_Value_bytes_value_tag &&
+              field.bytes_value && field.bytes_value->size > 0) {
+            subtype = field.bytes_value->bytes[0];
+            data = field.bytes_value->bytes + 1;
+            size = field.bytes_value->size - 1;
+          }
+        }
+        return BridgeFieldValue::FromBsonBinaryData(data, size, subtype);
+      }
       std::string bytes(
           reinterpret_cast<const char*>(value.bytes_value->bytes),
           value.bytes_value->size);
@@ -2544,6 +2820,56 @@ void FirestoreBridge::GetNamedQuery(const std::string& name,
             Query(std::move(query), firestore));
         callback(context, bridge);
       });
+}
+
+// ===========================================================================
+// Index manager and logging (FIRPersistentCacheIndexManager, enableLogging)
+// ===========================================================================
+
+struct PersistentCacheIndexManagerBridge::Impl {
+  explicit Impl(std::shared_ptr<const api::PersistentCacheIndexManager> manager)
+      : manager_(std::move(manager)) {}
+  std::shared_ptr<const api::PersistentCacheIndexManager> manager_;
+};
+
+PersistentCacheIndexManagerBridge::PersistentCacheIndexManagerBridge() noexcept =
+    default;
+PersistentCacheIndexManagerBridge::~PersistentCacheIndexManagerBridge() noexcept =
+    default;
+PersistentCacheIndexManagerBridge::PersistentCacheIndexManagerBridge(
+    const PersistentCacheIndexManagerBridge&) noexcept = default;
+PersistentCacheIndexManagerBridge& PersistentCacheIndexManagerBridge::operator=(
+    const PersistentCacheIndexManagerBridge&) noexcept = default;
+PersistentCacheIndexManagerBridge::PersistentCacheIndexManagerBridge(
+    PersistentCacheIndexManagerBridge&&) noexcept = default;
+PersistentCacheIndexManagerBridge& PersistentCacheIndexManagerBridge::operator=(
+    PersistentCacheIndexManagerBridge&&) noexcept = default;
+
+void PersistentCacheIndexManagerBridge::EnableIndexAutoCreation()
+    const noexcept {
+  impl_->manager_->EnableIndexAutoCreation();
+}
+
+void PersistentCacheIndexManagerBridge::DisableIndexAutoCreation()
+    const noexcept {
+  impl_->manager_->DisableIndexAutoCreation();
+}
+
+void PersistentCacheIndexManagerBridge::DeleteAllIndexes() const noexcept {
+  impl_->manager_->DeleteAllFieldIndexes();
+}
+
+bool FirestoreBridge::GetPersistentCacheIndexManager(
+    PersistentCacheIndexManagerBridge& manager) const noexcept {
+  auto index_manager = impl_->firestore_->persistent_cache_index_manager();
+  if (!index_manager) return false;
+  manager.impl_ = std::make_shared<PersistentCacheIndexManagerBridge::Impl>(
+      std::move(index_manager));
+  return true;
+}
+
+void FirestoreBridge::EnableLogging(bool enabled) noexcept {
+  util::LogSetLevel(enabled ? util::kLogLevelDebug : util::kLogLevelNotice);
 }
 
 }  // namespace swift_bridge
