@@ -26,6 +26,13 @@ their own contents, as upstream already does for `filesystem_apple.mm` and
 - `secure_random_openssl.cc` is compiled (it guards itself with
   `HAVE_OPENSSL_RAND_H`, which `config.h` sets only on Linux).
 
+`src/util/filesystem_posix.cc` builds on Android, where upstream has `#error`
+placeholders: the data directory is `$XDG_DATA_HOME` (or
+`$HOME/.local/share`), as on Linux, and the temporary directory `$TMPDIR` (or
+`/data/local/tmp`). Native code can't look up an app's storage without JNI, so
+Android apps set `XDG_DATA_HOME` and `TMPDIR` to their files and cache
+directories, as FirebaseAuth's file storage also expects.
+
 `src/api/firestore_bridge.cc` and `include/FirestoreBridge.h` are ours (the
 Swift bridge), not upstream code.
 
@@ -36,11 +43,11 @@ bridge in `Swift/Source/Bridge/`, so a few upstream files differ:
 
 - `Bridge/BridgeTypes.swift` (ours) has stubs for the pipeline bridge
   classes, with upstream's `__`-prefixed names. Pipelines don't execute yet.
-- `Codable/CodablePassThroughTypes.swift` leaves out the BSON types
-  (`firebase-swift:` comment), and the BSON `+Codable.swift` files are
-  excluded in `Package.swift`, until the bridge has those types.
-  `core/src/api/firestore_bridge.cc` (ours) returns BSON values as their maps,
-  and `Int32Value` as an integer.
+- The BSON types (`MinKey`, `Int32Value`, …) are Swift classes in
+  `Bridge/BSONTypes.swift` instead of Objective-C ones; upstream's
+  `+Codable.swift` files for them are used unchanged, except that
+  `Codable/Blob+Codable.swift` imports Foundation (upstream gets `Data` through
+  its Objective-C module).
 - `Helper/PipelineHelper.swift` reads `FieldValue.methodName` instead of using
   key-value coding (`firebase-swift:` comment).
 - `Stages.swift` passes `Int(limit)` and `Int(offset)` where upstream uses

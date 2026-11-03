@@ -19,7 +19,7 @@
 #else
   @_exported import FirebaseFirestoreInternal
 #endif // SWIFT_PACKAGE
-import Foundation
+import Foundation // firebase-swift: upstream gets Data through its Objective-C module.
 
 /**
  * A protocol describing the encodable properties of a Blob.
