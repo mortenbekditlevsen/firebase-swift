@@ -25,6 +25,19 @@ firebase emulators:exec --project demo-firebase-swift --only auth,database,fires
   "swift test --skip-build --filter IntegrationTests"
 ```
 
+Firestore pipelines need the Firestore emulator's Enterprise edition, which
+`firebase.enterprise.json` in this folder starts (on the same port, so not at
+the same time as the others). Upstream's pipeline tests run against it with:
+
+```sh
+BACKEND_EDITION=enterprise firebase emulators:exec --config Tests/Emulator/firebase.enterprise.json \
+  --project demo-firebase-swift --only firestore \
+  "swift test --skip-build --filter 'FirebaseFirestoreIntegrationTests.(Pipeline|QueryToPipeline|Search|RealtimePipeline)'"
+```
+
+The other upstream Firestore suites assume the Standard edition (two
+aggregation tests fail on the Enterprise edition), so run them as above.
+
 `emulators:exec` starts the emulators, sets the environment variables, runs the
 command and shuts everything down again. The `demo-` project prefix keeps the
 emulators from contacting any real Firebase project.
@@ -46,6 +59,8 @@ install.
   upstream's `FirebaseFunctions/Backend/index.js` plus `authTest`, which
   returns the caller's uid, and `slowTest`, which answers after 2.5 s for the
   timeout tests.
+- `firestore.enterprise.rules`: everything open, for the pipeline tests, which
+  read collection groups and the whole database.
 - `firestore.rules`: everything under `public/` is open; `users/{uid}/**` is
   readable and writable only by that signed-in user, so the tests can check
   which user's token Firestore sends.

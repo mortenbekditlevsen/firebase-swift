@@ -16,6 +16,29 @@
 @testable import FirebaseAppCheck
 import Foundation
 
+/// Lets a test hold an in-flight operation open until it chooses to release
+/// it, so coalescing behavior can be exercised deterministically.
+actor AsyncGate {
+  private var isOpen = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    if isOpen { return }
+    await withCheckedContinuation { continuation in
+      waiters.append(continuation)
+    }
+  }
+
+  func open() {
+    isOpen = true
+    let resumable = waiters
+    waiters = []
+    for continuation in resumable {
+      continuation.resume()
+    }
+  }
+}
+
 class AppCheckCoreStorageFake: NSObject, AppCheckCoreStorageProtocol {
   var getTokenHandler: (() async throws -> AppCheckCoreToken?)?
   var setTokenHandler: ((AppCheckCoreToken?) async throws -> AppCheckCoreToken?)?

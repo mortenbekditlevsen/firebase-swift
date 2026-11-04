@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "Firestore/include/FirestoreBridge.h"
+#include "Firestore/core/src/api/firestore_bridge_internal.h"
 
 #include <algorithm>
 #include <future>
@@ -2889,6 +2890,55 @@ bool FirestoreBridge::GetPersistentCacheIndexManager(
 
 void FirestoreBridge::EnableLogging(bool enabled) noexcept {
   util::LogSetLevel(enabled ? util::kLogLevelDebug : util::kLogLevelNotice);
+}
+
+// ===========================================================================
+// For the rest of the bridge (firestore_bridge_internal.h)
+// ===========================================================================
+
+const std::shared_ptr<Firestore>& BridgeAccess::GetFirestore(
+    const FirestoreBridge& firestore) {
+  return firestore.impl_->firestore_;
+}
+
+const Query& BridgeAccess::GetQuery(const QueryBridge& query) {
+  return query.impl_->query_;
+}
+
+const DocumentReference& BridgeAccess::GetDocumentReference(
+    const DocumentReferenceBridge& document) {
+  return document.impl_->ref_;
+}
+
+DocumentReferenceBridge BridgeAccess::MakeDocumentReference(
+    DocumentReference document) {
+  DocumentReferenceBridge result;
+  result.impl_ =
+      std::make_shared<DocumentReferenceBridge::Impl>(std::move(document));
+  return result;
+}
+
+ListenerRegistrationBridge BridgeAccess::MakeListenerRegistration(
+    std::unique_ptr<api::ListenerRegistration> registration) {
+  ListenerRegistrationBridge result;
+  result.impl_ =
+      std::make_shared<ListenerRegistrationBridge::Impl>(std::move(registration));
+  return result;
+}
+
+Message<google_firestore_v1_Value> ParseQueryValue(
+    const std::shared_ptr<Firestore>& firestore, const BridgeFieldValue& value) {
+  return ParserFor(firestore).ParseQueryValue(value);
+}
+
+BridgeFieldValue ConvertValueForSwift(const google_firestore_v1_Value& value,
+                                      const std::shared_ptr<Firestore>& firestore,
+                                      int32_t server_timestamp_behavior) {
+  return ConvertProtoValue(value, firestore, server_timestamp_behavior);
+}
+
+int32_t StatusErrorCode(const Status& status) {
+  return ErrorCode(status);
 }
 
 }  // namespace swift_bridge

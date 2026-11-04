@@ -31,5 +31,6 @@
 
 // C++ bridge wrappers for Swift interop
 #include "FirestoreBridge.h"
+#include "PipelineBridge.h"
 
 #endif  // FIRESTORE_INTERNAL_H_

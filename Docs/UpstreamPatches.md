@@ -33,8 +33,10 @@ placeholders: the data directory is `$XDG_DATA_HOME` (or
 Android apps set `XDG_DATA_HOME` and `TMPDIR` to their files and cache
 directories, as FirebaseAuth's file storage also expects.
 
-`src/api/firestore_bridge.cc` and `include/FirestoreBridge.h` are ours (the
-Swift bridge), not upstream code.
+`src/api/firestore_bridge.cc`, `src/api/firestore_bridge_internal.h`,
+`src/api/pipeline_bridge.cc` and `include/{FirestoreBridge,PipelineBridge}.h`
+are ours (the Swift bridge), not upstream code. `pipeline_bridge.cc` follows
+upstream's `Firestore/Source/API/FIRPipelineBridge.mm`.
 
 `src/util/ordered_code.cc`: `ReadNumDecreasing` inverts the length byte as an
 `unsigned char`. Upstream inverts the `char`, which `~` promotes to `int`; where
@@ -58,8 +60,9 @@ on Linux.
 Upstream's Swift API sits on Objective-C classes; here it sits on the Swift
 bridge in `Swift/Source/Bridge/`, so a few upstream files differ:
 
-- `Bridge/BridgeTypes.swift` (ours) has stubs for the pipeline bridge
-  classes, with upstream's `__`-prefixed names. Pipelines don't execute yet.
+- `Bridge/BridgeTypes.swift` (ours) has the pipeline bridge classes, with
+  upstream's `__`-prefixed names (Objective-C++ upstream), on
+  `include/PipelineBridge.h`.
 - The BSON types (`MinKey`, `Int32Value`, …) are Swift classes in
   `Bridge/BSONTypes.swift` instead of Objective-C ones; upstream's
   `+Codable.swift` files for them are used unchanged, except that
@@ -153,7 +156,12 @@ Linux and Android while it wasn't.
   (`-Wmodules-import-nested-redundant`, an error by default). The includes
   are wrapped in a `#pragma clang diagnostic`. (The fork's older
   `linux-fixes-0.20240722.2` branch also excluded `.inc` files from the
-  target; upstream does that itself since 0.20250512.)
+  target; upstream does that itself since 0.20250512.) For Android, the fork
+  also excludes `absl/random/internal/nanobenchmark.cc`, which only abseil's
+  own tests and benchmarks use: its static initializer runs a timing benchmark
+  (`rdtsc` on x86-64) when the binary loads, which crashes in Android's
+  x86-64 emulator. And it links `liblog`, which abseil's Android log sink
+  needs.
 - **grpc-ios:** 1.83.1, as firebase-ios-sdk 13.1; it builds on Linux
   unchanged.
 - **C++ standard:** `Package.swift` sets `cxxLanguageStandard: .gnucxx17`,

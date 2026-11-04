@@ -317,20 +317,13 @@ let package = Package(
             ]
         ),
         // Upstream's Firestore integration tests, against the Firestore emulator;
-        // skipped without it. The pipeline and search tests wait for pipelines.
+        // skipped without it. The pipeline tests need its Enterprise edition
+        // (BACKEND_EDITION=enterprise, see Tests/Emulator/README.md).
         .testTarget(
             name: "FirebaseFirestoreIntegrationTests",
             dependencies: ["FirebaseFirestore"],
             path: "Sources/Firestore/Swift/Tests",
-            exclude: [
-                "Integration/PipelineApiTests.swift",
-                "Integration/PipelineDmlTests.swift",
-                "Integration/PipelineSubqueryTests.swift",
-                "Integration/PipelineTests.swift",
-                "Integration/QueryToPipelineTests.swift",
-                "Integration/SearchIntegrationTests.swift",
-            ],
-            sources: ["Integration", "IntegrationSupport"],
+            sources: ["Integration", "IntegrationSupport", "Port", "TestHelper"],
             swiftSettings: [
                 .swiftLanguageMode(SwiftLanguageMode.v5),
                 .interoperabilityMode(.Cxx),

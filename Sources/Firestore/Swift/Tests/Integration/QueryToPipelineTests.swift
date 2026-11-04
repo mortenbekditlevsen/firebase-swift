@@ -30,12 +30,37 @@ class QueryToPipelineTests: FSTIntegrationTestCase {
 
   let testUnsupportedFeatures = false
 
+  private func normalized(_ data: [String: Any?]) -> [String: AnyHashable?] {
+    data.mapValues { normalized($0) }
+  }
+
+  private func normalized(_ value: Any?) -> AnyHashable? {
+    guard let value else { return nil }
+    switch value {
+    case let hashable as AnyHashable where type(of: value) == AnyHashable.self:
+      return normalized(hashable.base)
+    case is NSNull: return nil
+    case let bool as Bool where type(of: value) == Bool.self: return bool
+    case let int as Int: return Double(int)
+    case let double as Double: return double
+    case let number as NSNumber: return number.doubleValue
+    case let array as [Any?]: return array.map { normalized($0) }
+    case let dictionary as [String: Any?]: return normalized(dictionary)
+    case let hashable as AnyHashable: return hashable
+    default: return String(describing: value)
+    }
+  }
+
   private func verifyResults(_ snapshot: Pipeline.Snapshot,
                              _ expected: [[String: AnyHashable?]],
                              enforceOrder: Bool = false,
                              file: StaticString = #file,
                              line: UInt = #line) {
-    let results = snapshot.results.map { $0.data as! [String: AnyHashable?] }
+    // Port note: results hold Swift arrays and dictionaries, which aren't
+    // hashable (upstream's are NSArrays and NSDictionaries), and numbers as
+    // NSNumbers, so both sides are compared in a normalized form.
+    let results = snapshot.results.map { normalized($0.data) }
+    let expected = expected.map { normalized($0) }
     guard results.count == expected.count else {
       XCTFail(
         "Result count mismatch. Got \(results.count), expected \(expected.count)",

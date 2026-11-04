@@ -42,7 +42,9 @@ private let expectationWaitSeconds: TimeInterval = 25
 private let emulatorProjectID = "demo-firebase-swift"
 
 class FSTIntegrationTestCase: XCTestCase {
-  var db: Firestore!
+  /// Not optional, as upstream's (`let firestore = db` is a `Firestore`).
+  var db: Firestore { _db! }
+  private var _db: Firestore?
   var eventAccumulator: FSTEventAccumulator<any FSTSnapshot>!
   private var firestores: [Firestore] = []
 
@@ -84,7 +86,7 @@ class FSTIntegrationTestCase: XCTestCase {
       FirebaseApp.configure(options: Self.appOptions(projectID: Self.projectID()))
     }
     firestores = []
-    db = firestore()
+    _db = firestore()
     eventAccumulator = FSTEventAccumulator(forTest: self)
   }
 

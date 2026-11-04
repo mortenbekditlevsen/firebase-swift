@@ -125,6 +125,8 @@ class QuerySnapshotBridge;
 class ListenerRegistrationBridge;
 class BridgeFieldValue;
 class FilterBridge;
+/// Gives the rest of the bridge (firestore_bridge_internal.h) access.
+struct BridgeAccess;
 
 // Type aliases for template specializations (required by Swift C++ interop).
 using StringVector = std::vector<std::string>;
@@ -429,6 +431,7 @@ class ListenerRegistrationBridge {
   void Remove() noexcept;
 
  private:
+  friend struct BridgeAccess;
   friend class DocumentReferenceBridge;
   friend class QueryBridge;
   friend class FirestoreBridge;
@@ -631,6 +634,7 @@ class DocumentReferenceBridge {
       DocumentSnapshotCallback callback) const noexcept;
 
  private:
+  friend struct BridgeAccess;
   friend class FirestoreBridge;
   friend class CollectionReferenceBridge;
   friend class DocumentSnapshotBridge;
@@ -726,6 +730,7 @@ class QueryBridge {
                     AggregateCallback callback) const noexcept;
 
  protected:
+  friend struct BridgeAccess;
   friend class FirestoreBridge;
   friend class CollectionReferenceBridge;
   friend class DocumentReferenceBridge;
@@ -977,6 +982,7 @@ class FirestoreBridge {
   std::string database_id() const noexcept;
 
  private:
+  friend struct BridgeAccess;
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };

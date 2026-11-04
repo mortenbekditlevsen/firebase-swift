@@ -252,6 +252,9 @@ class PipelineIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testRejectsCollectionReferenceFromAnotherDB() async throws {
+    // Port note: the port stops the process where upstream raises an
+    // exception, so this can't be tested in-process.
+    throw XCTSkip("Expects an exception")
     let db1 = firestore()
 
     let db2 = Firestore.firestore(app: db1.app, database: "db2")
@@ -264,6 +267,9 @@ class PipelineIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testRejectsDocumentReferenceFromAnotherDB() async throws {
+    // Port note: the port stops the process where upstream raises an
+    // exception, so this can't be tested in-process.
+    throw XCTSkip("Expects an exception")
     let db1 = firestore()
 
     let db2 = Firestore.firestore(app: db1.app, database: "db2")
@@ -1672,7 +1678,10 @@ class PipelineIntegrationTests: FSTIntegrationTestCase {
       ["value": 1],
     ]
 
-    TestHelper.compare(snapshot: snapshot, expected: expectedResults, enforceOrder: true)
+    // Port note: after `select` drops the document names, the emulator
+    // returns these in either order.
+    TestHelper.compare(snapshot: snapshot, expected: expectedResults,
+                       enforceOrder: !FSTIntegrationTestCase.isRunningAgainstEmulator())
   }
 
   func testIfNullWorks() async throws {
@@ -2616,6 +2625,10 @@ class PipelineIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testCollectionForceIndexInvalid() async throws {
+    // Port note: the emulator doesn't check forced indexes.
+    if FSTIntegrationTestCase.isRunningAgainstEmulator() {
+      throw XCTSkip("The emulator accepts any forced index")
+    }
     let collRef = collectionRef()
     let pipeline = db.pipeline()
       .collection(collRef.path, forceIndex: "doesnotexist")
@@ -2655,6 +2668,10 @@ class PipelineIntegrationTests: FSTIntegrationTestCase {
   }
 
   func testCollectionGroupForceIndexInvalid() async throws {
+    // Port note: the emulator doesn't check forced indexes.
+    if FSTIntegrationTestCase.isRunningAgainstEmulator() {
+      throw XCTSkip("The emulator accepts any forced index")
+    }
     let collRef = collectionRef()
     let pipeline = db.pipeline()
       .collectionGroup(collRef.collectionID, forceIndex: "doesnotexist")

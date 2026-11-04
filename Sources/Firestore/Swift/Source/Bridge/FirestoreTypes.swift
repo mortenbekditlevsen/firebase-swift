@@ -152,6 +152,9 @@ func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
     return CppBridgeFieldValue.FromDouble(Double(float))
   case let string as String:
     return CppBridgeFieldValue.FromString(std.string(string))
+  // Upstream gets substrings as NSStrings.
+  case let substring as Substring:
+    return CppBridgeFieldValue.FromString(std.string(String(substring)))
   case let data as Data:
     return data.withUnsafeBytes { buffer in
       CppBridgeFieldValue.FromBlob(buffer.bindMemory(to: UInt8.self).baseAddress, buffer.count)
@@ -1049,7 +1052,7 @@ public final class DocumentReference: Hashable, @unchecked Sendable {
 
 /// A reference to a Firestore collection.
 public final class CollectionReference: Query, @unchecked Sendable {
-  private let collectionBridge: CppCollectionReferenceBridge
+  let collectionBridge: CppCollectionReferenceBridge
 
   init(cppBridge: CppCollectionReferenceBridge, firestore: Firestore) {
     collectionBridge = cppBridge
