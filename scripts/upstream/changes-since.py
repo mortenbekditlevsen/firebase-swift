@@ -36,8 +36,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from upstream import (DEFAULT_CACHE, UPSTREAM_WEB, ensure_clone, git, label, release_tags,
-                      select, version_key)
+from upstream import (DEFAULT_CACHE, ensure_clone, git, label, release_tags, select,
+                      version_key)
 
 FIX = re.compile(r"\bfix(es|ed|ing)?\b|\bcrash|\bbug\b|\bleak|\brace\b|\bregression", re.I)
 FEATURE = re.compile(r"^feat|\badd(s|ed)? (support|api)|\bnew api\b|\bsupport for\b|\bintroduce", re.I)
@@ -57,8 +57,8 @@ def guess(subject):
     return "?"
 
 
-def link_prs(text):
-    return PR.sub(lambda m: f"([#{m[1]}]({UPSTREAM_WEB}/pull/{m[1]}))", text)
+def link_prs(text, web):
+    return PR.sub(lambda m: f"([#{m[1]}]({web}/pull/{m[1]}))", text)
 
 
 def changelog_sections(repo, path, since, to):
@@ -137,7 +137,12 @@ def main():
     args = parser.parse_args()
 
     modules = select(args.module)
-    repo = ensure_clone(args.cache, args.offline)
+    sources = {m.source for m in modules}
+    if len(sources) > 1:
+        sys.exit(f"{args.module!r} matches modules from different upstream repositories "
+                 f"({', '.join(m.name for m in modules)}); name one of them")
+    source = sources.pop()
+    repo = ensure_clone(args.cache, args.offline, source)
     to = "origin/main" if args.to == "main" else (args.to or release_tags(repo)[-1])
     since = min((m.synced_to for m in modules), key=version_key)
     if len({m.synced_to for m in modules}) > 1:
@@ -158,7 +163,7 @@ def main():
             lines += ["No entries.", ""]
         for heading, entries in sections:
             lines.append(f"### {heading}")
-            lines += [f"- [ ] {link_prs(entry)}" for entry in entries]
+            lines += [f"- [ ] {link_prs(entry, source.web)}" for entry in entries]
             lines.append("")
 
     found = commits(repo, since, to, paths)
@@ -166,8 +171,8 @@ def main():
               "Commits that touched the module's upstream sources, oldest first. The "
               "category is a guess from the subject.", ""]
     for sha, day, subject, files in found:
-        lines.append(f"- [ ] [`{sha[:9]}`]({UPSTREAM_WEB}/commit/{sha}) {day} "
-                     f"**{guess(subject)}** {link_prs(subject)}  \n"
+        lines.append(f"- [ ] [`{sha[:9]}`]({source.web}/commit/{sha}) {day} "
+                     f"**{guess(subject)}** {link_prs(subject, source.web)}  \n"
                      f"  {short_files(files, modules)}")
     output = "\n".join(lines).rstrip() + "\n"
 
