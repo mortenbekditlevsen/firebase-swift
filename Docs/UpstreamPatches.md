@@ -96,10 +96,15 @@ Vendored from [google/app-check](https://github.com/google/app-check)
 own `AppCheckCore` module). `grep -rn "firebase-swift:"
 Sources/FirebaseAppCheck/AppCheckCore` lists the changes:
 
-- **No GoogleUtilities.** The token and App Attest artifact go to the app's
-  `AppCheckKeychain` (passed to `AppCheck.setAppCheckProviderFactory(_:keychain:)`)
-  instead of `GULKeychainStorage`; the storages archive the objects
-  themselves, as `GULKeychainStorage` did, so the stored bytes are the same.
+- **No GoogleUtilities.** The token and App Attest artifact go to an
+  `AppCheckKeychain` instead of `GULKeychainStorage`: on Apple platforms
+  `AppCheckSystemKeychain` by default, which stores the items as
+  `GULKeychainStorage` does, or the app's own, passed to
+  `AppCheck.setAppCheckProviderFactory(_:keychain:)` (required elsewhere).
+  The storages archive the objects themselves, as `GULKeychainStorage` did,
+  so the stored bytes are the same. Processes that can't use the data
+  protection keychain (unsigned macOS tools) keep the items in memory, where
+  upstream fails every token request.
   `GULUserDefaults` is replaced by `UserDefaults`.
 - **Archived class names.** Upstream keeps `GACAppCheckStoredToken` and
   `GACAppAttestStoredArtifact` as the archived names with `@objc(…)`; here
@@ -121,6 +126,15 @@ The tests in `Tests/FirebaseAppCheckTests/AppCheckCore` are upstream's, with
 `Port note` comments where they differ: the keychain storage tests run
 against an in-memory `AppCheckKeychain` (upstream needs a host app), and the
 main-thread delivery tests are skipped.
+
+FirebaseAppCheck itself is a Swift rewrite of upstream's Objective-C, so it
+has no patches. Upstream's unit tests for it are Objective-C with OCMock;
+`Tests/FirebaseAppCheckTests/FirebaseAppCheck` ports them to Swift, running
+`AppCheck` on a real `AppCheckCore` built from the AppCheckCore fakes.
+`AppCheck` is an `NSObject`, as upstream's is: swift-corelibs-foundation's
+`NotificationCenter` only matches an observer's `object` by identity for
+`NSObject`s, so token-change observers for an instance were never called on
+Linux and Android while it wasn't.
 
 ## Dependencies
 

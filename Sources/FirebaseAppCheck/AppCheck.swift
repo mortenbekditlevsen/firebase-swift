@@ -35,7 +35,14 @@ public let AppCheckTokenNotificationKey = "FIRAppCheckTokenNotificationKey"
 public let AppCheckAppNameNotificationKey = "FIRAppCheckAppNameNotificationKey"
 
 /// A class used to manage App Check tokens for a given Firebase app.
-public final class AppCheck: AppCheckInterop, Sendable {
+///
+/// It's an `NSObject`, as upstream's: swift-corelibs-foundation's `NotificationCenter` only
+/// matches an observer's `object` by identity for `NSObject`s, so observers of
+/// `AppCheckTokenDidChange` for an instance would never be called on Linux and Android.
+///
+/// `@unchecked`: AppCheckCore, vendored Swift 5 code, isn't declared `Sendable`, but guards its
+/// state with a lock.
+public final class AppCheck: NSObject, AppCheckInterop, @unchecked Sendable {
   /// Returns a default instance of `AppCheck`, for the default Firebase app.
   /// - Note: `FirebaseApp.configure()` must be called before using this method, and the
   ///   provider factory must have been set with `setAppCheckProviderFactory(_:keychain:)`.
@@ -72,8 +79,9 @@ public final class AppCheck: AppCheckInterop, Sendable {
   /// created.
   /// - Parameters:
   ///   - factory: An instance of a Firebase App Check provider factory.
-  ///   - keychain: Where tokens (and App Attest's artifact) are stored between launches. Upstream
-  ///     uses the keychain; this port leaves the choice to the app, see `AppCheckKeychain`.
+  ///   - keychain: Where tokens (and App Attest's artifact) are stored between launches, see
+  ///     `AppCheckKeychain`. On Apple platforms `setAppCheckProviderFactory(_:)` uses the
+  ///     keychain, as upstream does.
   public static func setAppCheckProviderFactory(_ factory: (any AppCheckProviderFactory)?,
                                                 keychain: any AppCheckKeychain) {
     configuration.withLock { $0 = Configuration(providerFactory: factory, keychain: keychain) }
@@ -81,6 +89,17 @@ public final class AppCheck: AppCheckInterop, Sendable {
       $0 = { app in AppCheck(app: app) }
     }
   }
+
+  #if canImport(Security)
+    /// Set an instance of a Firebase App Check provider factory. Tokens are stored in the
+    /// keychain (`AppCheckSystemKeychain`), as upstream stores them.
+    ///
+    /// See `setAppCheckProviderFactory(_:keychain:)`, which takes storage of the app's own.
+    /// - Parameter factory: An instance of a Firebase App Check provider factory.
+    public static func setAppCheckProviderFactory(_ factory: (any AppCheckProviderFactory)?) {
+      setAppCheckProviderFactory(factory, keychain: AppCheckSystemKeychain())
+    }
+  #endif
 
   /// The storage passed to `setAppCheckProviderFactory(_:keychain:)`.
   static var keychain: (any AppCheckKeychain)? {
@@ -164,8 +183,16 @@ public final class AppCheck: AppCheckInterop, Sendable {
 
   /// As upstream's `-[FIRAppCheck initWithApp:]`.
   convenience init?(app: FirebaseApp) {
-    guard let configuration = Self.configuration.withLock({ $0 }),
-          let providerFactory = configuration.providerFactory else {
+    let configuration = Self.configuration.withLock { $0 }
+    self.init(app: app, providerFactory: configuration?.providerFactory,
+              keychain: configuration?.keychain)
+  }
+
+  /// App Check for an app with a provider factory and keychain of its own, instead of the ones
+  /// set with `setAppCheckProviderFactory(_:keychain:)`, which apply to every app. For tests.
+  convenience init?(app: FirebaseApp, providerFactory: (any AppCheckProviderFactory)?,
+                    keychain: (any AppCheckKeychain)?) {
+    guard let providerFactory, let keychain else {
       logger.error("""
       I-FAA001001: Cannot instantiate `FIRAppCheck` for app: \(app.name) without a provider \
       factory. Please register a provider factory using \
@@ -188,7 +215,7 @@ public final class AppCheck: AppCheckInterop, Sendable {
       appCheckProvider: InternalAppCheckProvider(appCheckProvider: appCheckProvider),
       settings: settings,
       tokenDelegate: tokenDelegate,
-      keychain: configuration.keychain,
+      keychain: keychain,
       keychainAccessGroup: app.options.appGroupID
     )
     self.init(appName: app.name, appCheckCore: appCheckCore, settings: settings,
@@ -201,6 +228,7 @@ public final class AppCheck: AppCheckInterop, Sendable {
     self.appCheckCore = appCheckCore
     self.settings = settings
     self.tokenDelegate = tokenDelegate
+    super.init()
     tokenDelegate.appCheck.withLock { $0 = WeakAppCheck(value: self) }
   }
 

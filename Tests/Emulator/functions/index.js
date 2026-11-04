@@ -254,3 +254,9 @@ exports.genStreamHeartbeat = functionsV2.https.onCall(
 exports.authTest = functionsV2.https.onCall((request) => {
   return { uid: request.auth ? request.auth.uid : null };
 });
+
+// Returns the App Check token the request carried, so tests can check that
+// App Check's token reaches the function.
+exports.appCheckTest = functionsV1.https.onRequest((request, response) => {
+  response.send({ data: { token: request.get('X-Firebase-AppCheck') ?? null } });
+});

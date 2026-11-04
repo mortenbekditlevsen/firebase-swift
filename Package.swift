@@ -344,6 +344,7 @@ let package = Package(
         .testTarget(
             name: "FirebaseIntegrationTests",
             dependencies: [
+                "FirebaseAppCheck",
                 "FirebaseAuth",
                 "FirebaseDatabase",
                 "FirebaseFirestore",
