@@ -121,6 +121,25 @@ jobs:
         with:
           swift-version: '6.3'
           free-disk-space: true
+          # As apps must (README, Android): the shell's HOME is / on older
+          # Android, which isn't writable, so Firestore's data directory
+          # can't be created under it.
+          test-env: XDG_DATA_HOME=/data/local/tmp
+      # On Android, Swift writes fatal errors to logcat, not the terminal, so a
+      # crash only shows as a signal. Rerun the action's test script in a new
+      # emulator and print the crash log.
+      - name: Android crash log
+        if: failure()
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          emulator-options: -no-window -noaudio -no-boot-anim -no-snapshot
+          script: >-
+            sh .build/x86_64-unknown-linux-android28/debug/run-android-tests.sh;
+            adb logcat -d -b crash | head -150;
+            adb logcat -d | grep -E " (F|E) " | grep -iE "swift|fatal|libc|DEBUG" | tail -60;
+            exit 1
 
   linux:
     runs-on: ubuntu-latest
