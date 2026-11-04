@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The modules this repository ports from firebase-ios-sdk, and git helpers
-shared by the scripts in this folder."""
+"""The modules this repository ports from firebase-ios-sdk (and AppCheckCore
+from google/app-check), and git helpers shared by the scripts in this folder."""
 
 import os
 import re
@@ -22,10 +22,22 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-UPSTREAM_URL = "https://github.com/firebase/firebase-ios-sdk.git"
-UPSTREAM_WEB = "https://github.com/firebase/firebase-ios-sdk"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "firebase-swift"
+
+
+@dataclass(frozen=True)
+class Upstream:
+    """An upstream repository."""
+    name: str  # the clone's directory in the cache
+    url: str
+    web: str
+
+
+FIREBASE_IOS_SDK = Upstream("firebase-ios-sdk", "https://github.com/firebase/firebase-ios-sdk.git",
+                            "https://github.com/firebase/firebase-ios-sdk")
+APP_CHECK = Upstream("app-check", "https://github.com/google/app-check.git",
+                     "https://github.com/google/app-check")
 
 
 @dataclass
@@ -40,6 +52,7 @@ class Module:
     synced_to: str
     changelog: str  # upstream CHANGELOG.md for the module
     exclude: tuple = ()  # port path prefixes (relative to `port`) to skip
+    source: Upstream = FIREBASE_IOS_SDK  # the repository `upstream` is in
 
 
 MODULES = [
@@ -62,6 +75,10 @@ MODULES = [
            "13.1.1", "FirebaseStorage/CHANGELOG.md"),
     Module("FirebaseDatabase", "Sources/FirebaseDatabase", "FirebaseDatabase/Sources", "strings",
            "13.1.1", "FirebaseDatabase/CHANGELOG.md", exclude=("third_party/",)),
+    Module("FirebaseAppCheck", "Sources/FirebaseAppCheck", "FirebaseAppCheck/Sources", "strings",
+           "13.1.1", "FirebaseAppCheck/CHANGELOG.md", exclude=("AppCheckCore/", "Port/")),
+    Module("AppCheckCore", "Sources/FirebaseAppCheck/AppCheckCore", "AppCheckCore/Sources", "lines",
+           "12.0.0", "CHANGELOG.md", source=APP_CHECK),
 ]
 
 RELEASE_TAG = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -85,14 +102,14 @@ def git(repo, *args, input=None, env=None):
     return result.stdout
 
 
-def ensure_clone(cache, offline):
-    """A blobless clone of firebase-ios-sdk with all tags, updated unless offline."""
-    repo = cache / "firebase-ios-sdk"
+def ensure_clone(cache, offline, upstream=FIREBASE_IOS_SDK):
+    """A blobless clone of `upstream` with all tags, updated unless offline."""
+    repo = cache / upstream.name
     if not (repo / ".git").exists():
         cache.mkdir(parents=True, exist_ok=True)
-        print(f"Cloning {UPSTREAM_URL} into {repo} (blobless)…", file=sys.stderr)
+        print(f"Cloning {upstream.url} into {repo} (blobless)…", file=sys.stderr)
         subprocess.run(["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
-                        UPSTREAM_URL, str(repo)], check=True)
+                        upstream.url, str(repo)], check=True)
     elif not offline:
         git(repo, "fetch", "--quiet", "--tags", "--force", "origin")
     return repo

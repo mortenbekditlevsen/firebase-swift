@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Infers which firebase-ios-sdk release each module was ported from.
+"""Infers which upstream release each module was ported from.
 
 Every module is compared with the same paths in each upstream release tag
 (and main), and the closest one is reported. How modules are compared:
@@ -42,7 +42,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from upstream import DEFAULT_CACHE, REPO_ROOT, ensure_clone, git, label, release_tags, select
+from upstream import (DEFAULT_CACHE, FIREBASE_IOS_SDK, REPO_ROOT, ensure_clone, git, label,
+                      release_tags, select)
 
 
 def candidate_refs(repo, since):
@@ -276,12 +277,15 @@ def main():
                         help="for ported modules, print the closest release of each file")
     args = parser.parse_args()
 
-    repo = ensure_clone(args.cache, args.offline)
-    refs = candidate_refs(repo, args.since)
-    blobs = BlobStore(repo)
+    # Each upstream repository's clone, candidate refs and blob store.
+    upstreams = {}
 
     rows = []
     for module in select(args.module):
+        if module.source not in upstreams:
+            repo = ensure_clone(args.cache, args.offline, module.source)
+            upstreams[module.source] = (repo, candidate_refs(repo, args.since), BlobStore(repo))
+        repo, refs, blobs = upstreams[module.source]
         print(f"\n## {module.name} ({module.metric}: {module.port} ↔ {module.upstream})")
         if module.metric == "exact":
             results = compare_exact(module, repo, refs)
@@ -329,7 +333,10 @@ def main():
             "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for module, best, margin, level, sha, date, _ in rows:
-            table.append(f"| {module.name} | `{module.port}` | `{module.upstream}` | "
+            upstream = f"`{module.upstream}`"
+            if module.source != FIREBASE_IOS_SDK:
+                upstream = f"[{module.source.name}]({module.source.web}) {upstream}"
+            table.append(f"| {module.name} | `{module.port}` | {upstream} | "
                          f"**{module.synced_to}** | {ref_range(best)} | `{sha}` ({date}) | "
                          f"{best[0].score:.3f} (±{margin:.3f}) | {level} |")
         write_table(args.write, "\n".join(table))
