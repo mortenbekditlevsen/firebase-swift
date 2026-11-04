@@ -28,6 +28,25 @@ struct DatabaseIntegrationTests {
     database.reference().child("public").child(UUID().uuidString)
   }
 
+  /// Runs `operation` again when the Database emulator fails it with "An internal error
+  /// occurred". Under load the emulator (4.11.2) can throw a NullPointerException while flushing a
+  /// batch of writes ("Encountered unknown exception while flushing batch" in
+  /// database-debug.log), and answers every write in the batch with that error. The SDK reports
+  /// it, as upstream does. A write that was applied anyway would show up in the test's totals.
+  private static func retryingEmulatorBatchFailures<T>(
+    _ operation: () async throws -> T
+  ) async throws -> T {
+    for _ in 0 ..< 2 {
+      do {
+        return try await operation()
+      } catch let error as NSError where error.domain == "com.firebase"
+        && error.localizedDescription == "An internal error occurred" {
+        continue
+      }
+    }
+    return try await operation()
+  }
+
   @Test func writesAndReadsAValue() async throws {
     let ref = try scratchRef(EmulatorApp().database())
 
@@ -186,9 +205,11 @@ struct DatabaseIntegrationTests {
       for counter in refs {
         group.addTask {
           for _ in 0 ..< 5 {
-            let (committed, _) = try await counter.runTransactionBlock { currentData in
-              currentData.value = ((currentData.value as? NSNumber)?.intValue ?? 0) + 1
-              return .success(withValue: currentData)
+            let (committed, _) = try await Self.retryingEmulatorBatchFailures {
+              try await counter.runTransactionBlock { currentData in
+                currentData.value = ((currentData.value as? NSNumber)?.intValue ?? 0) + 1
+                return .success(withValue: currentData)
+              }
             }
             #expect(committed)
           }

@@ -69,6 +69,11 @@ bridge in `Swift/Source/Bridge/`, so a few upstream files differ:
   key-value coding (`firebase-swift:` comment).
 - `Stages.swift` passes `Int(limit)` and `Int(offset)` where upstream uses
   `NSInteger(…)`.
+- `GeoPoint` is a struct in `Bridge/FirestoreTypes.swift` instead of an
+  Objective-C class. Its initializer stops the process for coordinates out of
+  range, where upstream's throws an exception, and
+  `Codable/GeoPoint+Codable.swift` throws a `DecodingError` for them instead.
+  Equality uses `==`, so 0 and -0 are equal (upstream compares bits).
 
 Upstream's integration tests (`Swift/Tests/Integration/`) are changed only
 where marked `Port note:`: deprecated settings, `NSErrorPointer` transaction

@@ -26,6 +26,22 @@ extension GeoPoint: Codable {
     let container = try decoder.container(keyedBy: GeoPointKeys.self)
     let latitude = try container.decode(Double.self, forKey: .latitude)
     let longitude = try container.decode(Double.self, forKey: .longitude)
+    // firebase-swift: upstream throws an Objective-C exception for coordinates out of range;
+    // decoding throws instead of stopping the process.
+    guard GeoPoint.isValidLatitude(latitude) else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .latitude, in: container,
+        debugDescription: "GeoPoint requires a latitude value in the range of [-90, 90], " +
+          "but was \(latitude)"
+      )
+    }
+    guard GeoPoint.isValidLongitude(longitude) else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .longitude, in: container,
+        debugDescription: "GeoPoint requires a longitude value in the range of [-180, 180], " +
+          "but was \(longitude)"
+      )
+    }
     self.init(latitude: latitude, longitude: longitude)
   }
 

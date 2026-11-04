@@ -46,6 +46,27 @@ class CodableGeoPointTests: XCTestCase {
     XCTAssertEqual(-122.41942, geoPoint.longitude, accuracy: 0.0001)
   }
 
+  // Port note: upstream's GeoPoint throws an Objective-C exception for coordinates out of range;
+  // decoding throws a DecodingError here.
+  func testGeoPointOutOfRangeDoesNotDecode() {
+    for (latitude, longitude) in [(90.5, 0.0), (-91.0, 0.0), (0.0, 180.5), (0.0, -181.0)] {
+      let json = "{\"latitude\": \(latitude), \"longitude\": \(longitude)}"
+      XCTAssertThrowsError(try JSONDecoder().decode(GeoPoint.self, from: Data(json.utf8))) {
+        guard case DecodingError.dataCorrupted = $0 else {
+          return XCTFail("Expected dataCorrupted, got \($0)")
+        }
+      }
+    }
+  }
+
+  func testGeoPointRangeIncludesItsBounds() throws {
+    for (latitude, longitude) in [(90.0, 180.0), (-90.0, -180.0)] {
+      let json = "{\"latitude\": \(latitude), \"longitude\": \(longitude)}"
+      let geoPoint = try JSONDecoder().decode(GeoPoint.self, from: Data(json.utf8))
+      XCTAssertEqual(geoPoint, GeoPoint(latitude: latitude, longitude: longitude))
+    }
+  }
+
   func testGeoPointIsHashable() {
     let geoPoint = GeoPoint(latitude: 37.77493, longitude: -122.41942)
     let geoPoint2 = GeoPoint(latitude: 37.77493, longitude: -122.41942)

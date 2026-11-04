@@ -1865,14 +1865,36 @@ public final class SnapshotListenOptions: Sendable {
   }
 }
 
-/// GeoPoint for geographic data.
-/// This wraps the C++ firebase::firestore::GeoPoint.
+/// An immutable object representing a geographical point in Firestore. The point is represented
+/// as a latitude/longitude pair.
+///
+/// Latitude values are in the range of [-90, 90].
+/// Longitude values are in the range of [-180, 180].
+///
+/// A value type here; upstream's `GeoPoint` is a class. Equality compares the coordinates with
+/// `==`, so 0 and -0 are equal, where upstream compares their bits.
 public struct GeoPoint: Hashable, Sendable {
   public let latitude: Double
   public let longitude: Double
 
+  /// Creates a point. Stops the process if a coordinate is out of range or not finite, as
+  /// upstream throws an exception.
   public init(latitude: Double, longitude: Double) {
+    precondition(Self.isValidLatitude(latitude),
+                 "GeoPoint requires a latitude value in the range of [-90, 90], but was \(latitude)")
+    precondition(Self.isValidLongitude(longitude),
+                 "GeoPoint requires a longitude value in the range of [-180, 180], but was \(longitude)")
     self.latitude = latitude
     self.longitude = longitude
+  }
+
+  /// Whether `latitude` is in [-90, 90]; NaN and infinities aren't.
+  static func isValidLatitude(_ latitude: Double) -> Bool {
+    (-90 ... 90).contains(latitude)
+  }
+
+  /// Whether `longitude` is in [-180, 180]; NaN and infinities aren't.
+  static func isValidLongitude(_ longitude: Double) -> Bool {
+    (-180 ... 180).contains(longitude)
   }
 }
