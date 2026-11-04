@@ -24,6 +24,9 @@ import Testing
 ///
 /// Each app gets App Check of its own instead of `AppCheck.setAppCheckProviderFactory`, which
 /// would apply to the apps of every test running alongside.
+@Suite(.enabled(if: Emulators.functions != nil && Emulators.auth != nil,
+                "Needs the Functions and Auth emulators"),
+       .timeLimit(.minutes(1)))
 struct FunctionsAppCheckIntegrationTests {
   private struct EmptyRequest: Encodable, Sendable {}
 

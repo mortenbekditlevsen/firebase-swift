@@ -106,6 +106,13 @@ public final class AppCheck: NSObject, AppCheckInterop, @unchecked Sendable {
     configuration.withLock { $0?.keychain }
   }
 
+  /// Forgets what `setAppCheckProviderFactory` set, so apps whose App Check hasn't been created
+  /// yet get none. For tests: the configuration is process-wide, and test targets share a process.
+  static func resetConfiguration() {
+    configuration.withLock { $0 = nil }
+    FirebaseApp.appCheckFactory.withLock { $0 = nil }
+  }
+
   /// If this flag is disabled then Firebase App Check will not periodically auto-refresh the
   /// Firebase App Check token. The default value of the flag is equal to
   /// `FirebaseApp.dataCollectionDefaultEnabled`, which is true here. To disable auto-refresh for

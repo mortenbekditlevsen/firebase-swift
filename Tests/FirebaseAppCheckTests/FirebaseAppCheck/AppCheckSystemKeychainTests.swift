@@ -40,6 +40,7 @@
     }
 
     override func tearDown() async throws {
+      AppCheck.resetConfiguration()
       for key in ["key", "other"] {
         try await keychain.removeData(forKey: key, service: service, accessGroup: nil)
       }

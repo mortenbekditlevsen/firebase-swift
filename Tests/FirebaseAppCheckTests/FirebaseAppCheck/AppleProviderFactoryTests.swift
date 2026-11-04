@@ -33,6 +33,11 @@
   }
 
   final class AppAttestProviderFactoryTests: XCTestCase {
+    override func tearDown() {
+      AppCheck.resetConfiguration()
+      super.tearDown()
+    }
+
     func testCreateProviderWithApp() throws {
       // Port note: App Attest stores its artifact in the app's keychain.
       AppCheck.setAppCheckProviderFactory(nil, keychain: AppCheckCoreKeychainStorageFake())

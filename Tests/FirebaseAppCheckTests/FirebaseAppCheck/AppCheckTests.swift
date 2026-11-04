@@ -64,6 +64,8 @@ final class AppCheckTests: XCTestCase {
   }
 
   override func tearDown() {
+    // Test targets share a process; other SDKs' tests mustn't get this one's App Check.
+    AppCheck.resetConfiguration()
     if let observer {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -87,7 +89,7 @@ final class AppCheckTests: XCTestCase {
     AppCheck.setAppCheckProviderFactory(factory, keychain: AppCheckCoreKeychainStorageFake())
 
     XCTAssertNotNil(AppCheck(app: app))
-    XCTAssertEqual(factory.createdProviderApps.map(\.name), [app.name])
+    XCTAssertEqual(factory.createdProviderAppNames, [app.name])
   }
 
   func testAppCheckInstanceForApp() {
@@ -341,10 +343,11 @@ private final class AppCheckProviderFake: AppCheckProvider, @unchecked Sendable 
 
 private final class AppCheckProviderFactoryFake: AppCheckProviderFactory, @unchecked Sendable {
   var returnsProvider = true
-  private(set) var createdProviderApps: [FirebaseApp] = []
+  // Names, not apps: holding an app would keep it alive.
+  private(set) var createdProviderAppNames: [String] = []
 
   func createProvider(with app: FirebaseApp) -> (any AppCheckProvider)? {
-    createdProviderApps.append(app)
+    createdProviderAppNames.append(app.name)
     return returnsProvider ? AppCheckProviderFake() : nil
   }
 }

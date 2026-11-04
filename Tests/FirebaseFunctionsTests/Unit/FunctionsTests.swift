@@ -228,8 +228,10 @@ class FunctionsTests: XCTestCase {
     fetcherService.testBlock = { fetcherToTest, testResponse in
       // Assert that header does not contain an AppCheck token.
       do {
+        // Port note: `value(forHTTPHeaderField:)` ignores case; on Linux, corelibs'
+        // `allHTTPHeaderFields` renames the field "X-Firebase-Appcheck".
         let appCheckHeader = try XCTUnwrap(fetcherToTest.request?
-          .allHTTPHeaderFields?["X-Firebase-AppCheck"])
+          .value(forHTTPHeaderField: "X-Firebase-AppCheck"))
         XCTAssertEqual(appCheckHeader, self.appCheckFake.limitedUseTokenResult.token)
       } catch {
         XCTFail("Unexpected failure: \(error)")
