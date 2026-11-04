@@ -27,8 +27,8 @@ import Foundation
 /// `firebase appcheck:debugtokens:create <token> --project <project ID> --app <app ID>`.
 public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable {
   private let debugProvider: AppCheckCoreDebugProvider
-  private let projectID: String?
-  private let googleAppID: String
+  let projectID: String?
+  let googleAppID: String
 
   /// The default initializer.
   /// - Parameter app: A `FirebaseApp` instance.

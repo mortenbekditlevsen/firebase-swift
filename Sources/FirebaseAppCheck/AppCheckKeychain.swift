@@ -17,9 +17,10 @@ import Foundation
 /// Secure storage for what App Check keeps between launches: the cached App Check token and, with
 /// `AppAttestProvider`, the App Attest artifact. Both are secrets.
 ///
-/// Upstream stores them in the keychain. This port has no storage of its own: the app passes one
-/// to `AppCheck.setAppCheckProviderFactory(_:keychain:)`, for example a keychain on Apple
-/// platforms or libsecret on Linux.
+/// Upstream stores them in the keychain. On Apple platforms this port does too, with
+/// `AppCheckSystemKeychain`, unless the app passes its own storage to
+/// `AppCheck.setAppCheckProviderFactory(_:keychain:)`. Elsewhere the app must pass one, for
+/// example backed by libsecret on Linux.
 ///
 /// Items are identified by `service` and `key`, and by `accessGroup` when it isn't nil (the
 /// `FirebaseOptions.appGroupID`, for sharing between an app and its extensions).

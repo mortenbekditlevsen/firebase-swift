@@ -111,21 +111,28 @@ other SDKs then send App Check tokens with their requests.
 ```swift
 import FirebaseAppCheck
 
-AppCheck.setAppCheckProviderFactory(AppAttestProviderFactory(), keychain: MyKeychain())
+AppCheck.setAppCheckProviderFactory(AppAttestProviderFactory())
 FirebaseApp.configure()
 ```
 
-Upstream keeps App Check's token (and App Attest's key artifact) in the
-keychain through GoogleUtilities. This port doesn't include a keychain:
-`keychain:` takes your own `AppCheckKeychain`, three async methods that get,
-set and remove `Data` by service, key and access group. Back it with the
-Keychain on Apple platforms, libsecret or a protected file on Linux, or
-memory if you don't need tokens to outlive the process. If you store items as
-generic passwords with the service as `kSecAttrService` and the key as
-`kSecAttrAccount`, they're the items the upstream SDK stored.
+App Check keeps its token (and App Attest's key artifact) between launches.
+On Apple platforms it uses the keychain, as upstream does
+(`AppCheckSystemKeychain`): the items are upstream's, so tokens survive a
+switch from the official SDK. Processes that can't use the data protection
+keychain, such as unsigned command line tools on macOS, keep them in memory
+instead (upstream fails to get tokens there).
+
+Elsewhere, or to store them somewhere else, pass your own `AppCheckKeychain`,
+three async methods that get, set and remove `Data` by service, key and
+access group, backed by libsecret or a protected file on Linux, or memory if
+you don't need tokens to outlive the process:
+
+```swift
+AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory(), keychain: MyKeychain())
+```
 
 Upstream also sets a default factory when the module loads; here App Check
-is off until you call `setAppCheckProviderFactory(_:keychain:)`.
+is off until you call `setAppCheckProviderFactory`.
 
 ## Differences from the upstream SDK
 

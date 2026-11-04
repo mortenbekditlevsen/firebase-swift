@@ -23,7 +23,7 @@ import Testing
 
 // Ported from upstream's FirebaseFunctions/Tests/Integration/IntegrationTests.swift.
 // The callable functions are in Tests/Emulator/functions/index.js, which is
-// upstream's FirebaseFunctions/Backend/index.js plus `authTest`. Upstream's
+// upstream's FirebaseFunctions/Backend/index.js plus `authTest` and `appCheckTest`. Upstream's
 // completion-handler, main-thread and FCM token tests have no counterpart:
 // this port only has the async API and no Messaging.
 

@@ -74,13 +74,8 @@
     /// - Returns: An instance of `AppAttestProvider` if the provided `FirebaseApp` instance
     ///   contains all required parameters.
     public init?(app: FirebaseApp) {
-      guard let keychain = AppCheck.keychain else {
-        logger.error("""
-        I-FAA005001: Cannot instantiate `FIRAppAttestProvider` for app: \(app.name) without \
-        storage. Set it with `AppCheck.setAppCheckProviderFactory(_:keychain:)` first.
-        """)
-        return nil
-      }
+      // The artifact goes where App Check's token does.
+      let keychain = AppCheck.keychain ?? AppCheckSystemKeychain()
       appAttestProvider = AppCheckCoreAppAttestProvider(serviceName: app.name,
                                                         resourceName: app.appCheckResourceName,
                                                         baseURL: nil,
