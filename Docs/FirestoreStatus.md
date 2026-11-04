@@ -119,7 +119,8 @@ aggregations → listeners → bundles → BSON types → pipelines.
       microseconds), `GeoPoint`, `VectorValue`, `DocumentReference` (rejected if from another
       database), arrays, maps. Anything else fails with "Unsupported type".
 - [x] Read: numbers as `NSNumber`, so `as? Int`, `as? Int64` and `as? Double` all work
-- [ ] `GeoPoint` is a struct here, a class upstream (keep; note in the docs)
+- [x] `GeoPoint` is a struct here, a class upstream; it checks the coordinate ranges as upstream
+      does (decoding throws), see Docs/UpstreamPatches.md
 - [x] BSON types (13.0): `MinKey`, `MaxKey`, `RegexValue`, `Int32Value`, `BSONObjectId`,
       `BSONTimestamp`, `Decimal128Value` (equal when they're the same number, as upstream),
       `Blob` (subtype 0 is plain bytes and reads back as `Data`, as upstream), written and read
