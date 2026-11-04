@@ -1,5 +1,5 @@
 {
-  "originHash" : "076229bb19d377ed4ceaefdeca41d894e0f1312c9256836b0d84d9c2efaee6a6",
+  "originHash" : "612d0d94c992b96887bdb72893ed760dc8d8ffaae17c4ad701d15d9a664b9426",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
       "state" : {
         "branch" : "linux-fixes-0.20250512.1",
-        "revision" : "157b285096c1ef773e386809f9f1b0dbd8d59632"
+        "revision" : "781d2d732b8259599e6dc89898fe23accb7ef873"
       }
     },
     {

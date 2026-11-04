@@ -242,9 +242,6 @@ let package = Package(
             ),
             .linkedFramework("UIKit", .when(platforms: [.iOS, .tvOS, .visionOS])),
             .linkedLibrary("c++", .when(platforms: [.iOS, .macOS, .tvOS, .visionOS, .macCatalyst, .watchOS])),
-            // abseil's Android log sink calls __android_log_write, from liblog.
-            // TODO: link it in the abseil-cpp-SwiftPM fork instead.
-            .linkedLibrary("log", .when(platforms: [.android])),
           ]
         ),
         .target(

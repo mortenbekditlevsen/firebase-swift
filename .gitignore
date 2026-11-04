@@ -14,3 +14,4 @@ node_modules/
 .ccache/
 .build-firestore-core-linux-gcc/
 __pycache__/
+.build-android-x86/
