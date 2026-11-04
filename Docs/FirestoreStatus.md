@@ -131,8 +131,17 @@ aggregations → listeners → bundles → BSON types → pipelines.
 
 ## Pipelines
 
-- [ ] All of `Swift/Source/SwiftAPI/Pipeline` is wired to stubs in `Bridge/BridgeTypes.swift`
-      that return empty results. Last, since the API is still in preview upstream.
+- [x] `Firestore.pipeline()` and all of `Swift/Source/SwiftAPI/Pipeline` (upstream's Swift API,
+      unchanged): every source and stage, expressions, aggregates, subqueries, the DML stages,
+      `create(from: Query)`, and atomic execution. `Bridge/BridgeTypes.swift` has upstream's
+      `__…Bridge` classes, which build the core's expressions and stages through
+      `include/PipelineBridge.h` (`core/src/api/pipeline_bridge.cc`, a port of upstream's
+      `FIRPipelineBridge.mm`) when a pipeline runs. A `Field` keeps its path's segments, where
+      upstream re-parses the canonical string and so splits a segment that contains a dot.
+- [x] Realtime pipelines (`realtimePipeline()`, internal upstream too): listeners, changes,
+      metadata and listen options.
+- They need an Enterprise-edition database. The emulator's Enterprise edition runs everything
+  except search (`document_matches`, `geo_distance`), which it doesn't have.
 
 ## Platform notes
 
@@ -143,14 +152,27 @@ aggregations → listeners → bundles → BSON types → pipelines.
 
 ## Tests
 
-Upstream's Swift integration tests (`Swift/Tests/Integration/`, minus the pipeline and search
-ones) run as `FirebaseFirestoreIntegrationTests` against the Firestore emulator, on
+Upstream's Swift integration tests (`Swift/Tests/Integration/`) run as
+`FirebaseFirestoreIntegrationTests` against the Firestore emulator, on
 `Swift/Tests/IntegrationSupport/FSTIntegrationTestCase.swift`, a Swift port of upstream's
 Objective-C `FSTIntegrationTestCase` and `FSTEventAccumulator`. Port notes in the test files mark
 the changes: removed deprecated settings, throwing transaction blocks, a continuation instead of
 Combine's `Future`, error codes the port reports differently, and two tests skipped because they
 expect an exception (the port stops the process instead). Enterprise-only tests skip themselves,
 as upstream's do; the BSON binary tests need firebase-tools 15.34 or later.
+
+The pipeline tests (`Pipeline*Tests`, `QueryToPipelineTests`, `SearchIntegrationTests`) run
+against the emulator's Enterprise edition (`BACKEND_EDITION=enterprise`, see
+`Tests/Emulator/README.md`): 313 tests, 20 skipped. Port notes: the subquery tests, which
+upstream only runs against its nightly backend, also run against the emulator, accepting its
+wording of two errors; two tests that expect an exception and two that expect the backend to
+refuse an unknown forced index (the emulator accepts any) are skipped; one result order the
+emulator leaves open isn't checked there; and `QueryToPipelineTests` compares results in a
+normalized form, as the port's arrays and dictionaries aren't hashable. The search tests stay
+skipped, as upstream's. `Swift/Tests/Port/RealtimePipelineTests.swift` covers realtime
+pipelines, which upstream has no Swift tests for.
+
+They found: constants that are `Substring`s were refused (upstream gets them as `NSString`s).
 
 They found: reading an empty `Data` field crashed (nanopb stores empty bytes as null), and
 `VectorValue` and `PersistentCacheIndexManager` weren't `Equatable` as upstream's are.

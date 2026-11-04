@@ -235,21 +235,25 @@ class AppCheckCoreTests: XCTestCase {
     let expectedToken = validToken()
     fakeAppCheckProvider.tokenToReturn = expectedToken
 
-    let continuationSetExpectation = expectation(description: "continuation set")
-    var storeTokenContinuation: CheckedContinuation<AppCheckCoreToken?, Error>?
+    // Port note: upstream holds the store open with a continuation that a
+    // second task resumes once the store has started. If the store hadn't
+    // started within the timeout (or started twice), nothing ever resumed it
+    // and the test hung. The gate always opens, so the test fails instead.
+    let storeStartedExpectation = expectation(description: "store started")
+    storeStartedExpectation.assertForOverFulfill = false
+    let storeGate = AsyncGate()
     fakeStorage.setTokenHandler = { token in
-      try await withCheckedThrowingContinuation { continuation in
-        storeTokenContinuation = continuation
-        continuationSetExpectation.fulfill()
-      }
+      storeStartedExpectation.fulfill()
+      await storeGate.wait()
+      return expectedToken
     }
 
     let getTokenCallsCount = 10
 
     // Request token several times concurrently
     Task {
-      await fulfillment(of: [continuationSetExpectation], timeout: 5.0)
-      storeTokenContinuation?.resume(returning: expectedToken)
+      await fulfillment(of: [storeStartedExpectation], timeout: 5.0)
+      await storeGate.open()
     }
 
     await withTaskGroup(of: Void.self) { group in
@@ -278,21 +282,22 @@ class AppCheckCoreTests: XCTestCase {
     let expectedToken = validToken()
     fakeAppCheckProvider.tokenToReturn = expectedToken
 
-    let continuationSetExpectation = expectation(description: "continuation set")
-    var storeTokenContinuation: CheckedContinuation<AppCheckCoreToken?, Error>?
+    // Port note: a gate instead of upstream's continuation, as above.
+    let storageError = NSError(domain: name, code: 0, userInfo: nil)
+    let storeStartedExpectation = expectation(description: "store started")
+    storeStartedExpectation.assertForOverFulfill = false
+    let storeGate = AsyncGate()
     fakeStorage.setTokenHandler = { token in
-      try await withCheckedThrowingContinuation { continuation in
-        storeTokenContinuation = continuation
-        continuationSetExpectation.fulfill()
-      }
+      storeStartedExpectation.fulfill()
+      await storeGate.wait()
+      throw storageError
     }
 
-    let storageError = NSError(domain: name, code: 0, userInfo: nil)
     let getTokenCallsCount = 10
 
     Task {
-      await fulfillment(of: [continuationSetExpectation], timeout: 5.0)
-      storeTokenContinuation?.resume(throwing: storageError)
+      await fulfillment(of: [storeStartedExpectation], timeout: 5.0)
+      await storeGate.open()
     }
 
     await withTaskGroup(of: Void.self) { group in

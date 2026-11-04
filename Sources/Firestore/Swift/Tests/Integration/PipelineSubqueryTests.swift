@@ -22,7 +22,9 @@ import XCTest
 class PipelineSubqueryTests: FSTIntegrationTestCase {
   override func setUpWithError() throws {
     try super.setUpWithError()
-    if FSTIntegrationTestCase.targetBackend() != .nightly || FSTIntegrationTestCase
+    // Port note: the Enterprise emulator supports subqueries too.
+    if FSTIntegrationTestCase.targetBackend() != .nightly &&
+      !FSTIntegrationTestCase.isRunningAgainstEmulator() || FSTIntegrationTestCase
       .backendEdition() == .standard {
       throw XCTSkip("Skip PipelineSubqueryTests on non-nightly or standard environment")
     }
@@ -287,7 +289,8 @@ class PipelineSubqueryTests: FSTIntegrationTestCase {
         .execute()
       XCTFail("Should throw error")
     } catch {
-      XCTAssertTrue(error.localizedDescription.contains("Subpipeline returned multiple results."))
+      // Port note: without the period, which the emulator's message lacks.
+      XCTAssertTrue(error.localizedDescription.contains("Subpipeline returned multiple results"))
     }
   }
 
@@ -459,7 +462,11 @@ class PipelineSubqueryTests: FSTIntegrationTestCase {
         .execute()
       XCTFail("Should throw error")
     } catch {
-      XCTAssertTrue(error.localizedDescription.contains("unknown variable"))
+      // Port note: the emulator words it "The variable 'unknown_var' was
+      // either never defined, …".
+      XCTAssertTrue(error.localizedDescription.contains("unknown variable") ||
+        FSTIntegrationTestCase.isRunningAgainstEmulator() &&
+        error.localizedDescription.contains("'unknown_var' was either never defined"))
     }
   }
 
