@@ -189,11 +189,17 @@ extension String: Slice {
         }
     }
 
+    // Without the C terminator, which `utf8CString` includes, as upstream
+    // stores strings.
     fileprivate func data() -> Data {
-        self.utf8CString.withUnsafeBufferPointer {
-            Data(buffer: $0)
-        }
+        Data(self.utf8)
     }
+}
+
+/// A stored string value. Values written by earlier versions end in the C
+/// terminator, which is dropped.
+private func storedString(_ data: Data) -> String? {
+    String(data: data.last == 0 ? data.dropLast() : data, encoding: .utf8)
 }
 
 fileprivate enum ReadOption: Option {
@@ -291,7 +297,7 @@ class APLevelDBIterator {
     }
 
     func valueAsString() -> String? {
-        iterator.value.flatMap { String(data: $0, encoding: .utf8) }
+        iterator.value.flatMap(storedString)
     }
 
     func valueAsData() -> Data? {
@@ -595,7 +601,7 @@ class APLevelDB {
     }
 
     func string(forKey key: String) -> String? {
-        data(forKey: key).flatMap { String(data: $0, encoding: .utf8) }
+        data(forKey: key).flatMap(storedString)
     }
 
     func allKeys() -> [String] {
@@ -638,7 +644,7 @@ class APLevelDB {
             guard let keyData = iterator.key, let data = iterator.value else { break }
             guard let key = String(data: keyData, encoding: .utf8) else { break }
             guard key.starts(with: prefix) else { break }
-            guard let stringValue = String(data: data, encoding: .utf8) else { break }
+            guard let stringValue = storedString(data) else { break }
 
             block(key, stringValue, &stop)
 

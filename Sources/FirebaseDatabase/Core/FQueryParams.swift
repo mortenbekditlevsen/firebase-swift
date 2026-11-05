@@ -41,6 +41,29 @@ private struct QueryParams: Hashable, Equatable {
     var indexEndValue: FNode?
     var indexEndKey: String?
     var index: FIndex
+
+    // As upstream: the direction counts, not whether it was set explicitly,
+    // so `limitTo(_:)` equals `limitToLast(_:)`.
+    static func == (lhs: QueryParams, rhs: QueryParams) -> Bool {
+        lhs.limitSet == rhs.limitSet &&
+            lhs.limit == rhs.limit &&
+            lhs.index == rhs.index &&
+            lhs.indexStartKey == rhs.indexStartKey &&
+            lhs.indexStartValue == rhs.indexStartValue &&
+            lhs.indexEndKey == rhs.indexEndKey &&
+            lhs.indexEndValue == rhs.indexEndValue &&
+            lhs.isViewFromLeft == rhs.isViewFromLeft
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(limitSet ? limit : 0)
+        hasher.combine(isViewFromLeft)
+        hasher.combine(indexStartKey)
+        hasher.combine(indexStartValue)
+        hasher.combine(indexEndKey)
+        hasher.combine(indexEndValue)
+        hasher.combine(index)
+    }
 }
 
 public struct FQueryParams: Hashable, Sendable {

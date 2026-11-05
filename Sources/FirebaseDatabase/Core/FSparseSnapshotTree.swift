@@ -55,28 +55,28 @@ struct FSparseSnapshotTree {
             return true
         }
         if let value {
-            switch value.type {
-            case .leaf:
+            if value.isLeafNode() {
+                // non-empty path at leaf. the path leads to nowhere
                 return false
-            case .children(let children):
-                for child in children {
-                    self.rememberData(child.value, onPath: FPath(with: child.key.key))
-                }
-                // we've cleared out the value and set children. Call ourself
-                // again to hit the next case
-                return self.forgetPath(path)
-
-            case .empty:
-                // we've cleared out the value and set children. Call ourself
-                // again to hit the next case
-                return self.forgetPath(path)
             }
+            // Clear the value first, or the recursive call below lands here
+            // again (and never returns).
+            self.value = nil
+            for child in value.children {
+                self.rememberData(child.value, onPath: FPath(with: child.key.key))
+            }
+            // we've cleared out the value and set children. Call ourself
+            // again to hit the next case
+            return self.forgetPath(path)
         } else if !children.isEmpty {
             let p = path.popFront()
             if var child = children[childKey] {
                 let safeToRemove = child.forgetPath(p)
                 if safeToRemove {
                     children.removeValue(forKey: childKey)
+                } else {
+                    // The tree is a value type: store the changed child.
+                    children[childKey] = child
                 }
             }
             if children.isEmpty {

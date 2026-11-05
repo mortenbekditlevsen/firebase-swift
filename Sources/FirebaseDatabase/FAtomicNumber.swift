@@ -16,8 +16,9 @@ import Atomics
 
 final class FAtomicNumber: Sendable {
     let counter = ManagedAtomic<Int>(1)
+    /// Returns the current number (starting at 1) and increments it, in one
+    /// atomic step, so concurrent callers never get the same number.
     func getAndIncrement() -> Int {
-        counter.wrappingIncrement(ordering: .relaxed)
-        return counter.load(ordering: .relaxed)
+        counter.loadThenWrappingIncrement(ordering: .relaxed)
     }
 }
