@@ -107,7 +107,7 @@ public enum FSnapshotUtilities {
                  // Check Bool before NSNumber since Bool bridges to NSNumber
                  leafValue = .bool(boolVal)
              } else if let numVal = value as? NSNumber {
-                 leafValue = .double(numVal.doubleValue)
+                 leafValue = .number(numVal)
              } else if let strVal = value as? String {
                  leafValue = .string(strVal)
              } else if let dict = value as? [String: Any], let svValue = dict[kServerValueSubKey] {
@@ -117,7 +117,7 @@ public enum FSnapshotUtilities {
                      op = .timestamp
                  } else if let complex = svValue as? [String: Any],
                            let delta = complex[ServerValues.incrementKey] as? NSNumber {
-                     op = .increment(delta.doubleValue)
+                     op = .increment(.number(delta))
                  } else {
                      fatalError("(\(fn)) Unexpected server value type: \(type(of: svValue))")
                  }
@@ -182,7 +182,7 @@ public enum FSnapshotUtilities {
     static func validatePriorityNode(_ priorityNode: FNode) {
         if case let .leaf(leafValue) = priorityNode.type {
             switch leafValue {
-            case .string, .double:
+            case .string, .int64, .double:
                 break // valid priority types
             case .bool:
                 assertionFailure("Priority of unexpected type (bool).")
@@ -218,8 +218,8 @@ public enum FSnapshotUtilities {
         // prefer performance over exact value
         let valueSize: Int
         switch value {
-        case .double:
-            valueSize = 8 // estimate each float with 8 bytes
+        case .int64, .double:
+            valueSize = 8 // estimate each number with 8 bytes
         case .bool:
             valueSize = 4 // true or false need roughly 4 bytes
         case .string(let s):
@@ -256,9 +256,10 @@ public enum FSnapshotUtilities {
         case .bool(let v):
             output += "boolean:"
             output += v ? "true" : "false"
-        case .double(let v):
+        case .int64, .double:
+            // As doubles, as the server (and upstream, and Android) hash numbers.
             output += "number:"
-            output += FUtilities.ieee754String(for: NSNumber(value: v))
+            output += FUtilities.ieee754String(for: NSNumber(value: leafValue.doubleValue!))
         case .string(let v):
             output += "string:"
             switch hashVersion {
