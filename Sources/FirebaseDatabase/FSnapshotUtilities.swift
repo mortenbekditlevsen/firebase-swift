@@ -291,6 +291,14 @@ private func isBoolean(_ value: Any) -> Bool {
     if let number = value as? NSNumber {
         return number === kCFBooleanTrue || number === kCFBooleanFalse
     }
+    #else
+    if type(of: value) == Bool.self { return true }
+    // swift-corelibs-foundation's JSONSerialization decodes booleans as
+    // instances of the class `NSNumber(value: true)` has, numbers as plain
+    // `NSNumber`s.
+    if value is NSNumber {
+        return type(of: value as AnyObject) == type(of: NSNumber(value: true))
+    }
     #endif
     return type(of: value) == Bool.self
 }

@@ -509,7 +509,7 @@ class FLevelDBStorageEngine: FStorageEngine {
         }
     }
 
-    private static func ensureDir(_ path: inout URL, markAsDoNotBackup: Bool) {
+    static func ensureDir(_ path: inout URL, markAsDoNotBackup: Bool) {
         do {
             try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         } catch {

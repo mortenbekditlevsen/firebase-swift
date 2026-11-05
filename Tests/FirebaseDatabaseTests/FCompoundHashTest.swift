@@ -17,13 +17,6 @@ import Foundation
 @testable import FirebaseDatabase
 import XCTest
 
-func NODE(_ dict: [String: Any]) -> FNode {
-    FSnapshotUtilities.nodeFrom(dict)
-}
-func PATH(_ pathString: String) -> FPath {
-    FPath(with: pathString)
-}
-
 var NEVER_SPLIT_STRATEGY: FCompoundHashSplitStrategy { { _ in false } }
 
 func splitAtPaths(_ paths: [FPath]) -> FCompoundHashSplitStrategy {

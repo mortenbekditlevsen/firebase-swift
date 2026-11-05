@@ -51,6 +51,19 @@ public struct FPath: Hashable, Sendable, CustomStringConvertible {
         self.pieceNum = pieceNum
     }
 
+    // Equal when the remaining segments are, as upstream; synthesized
+    // conformance compared the skipped segments too, so a path from
+    // `popFront()` never equaled the same path built from a string.
+    public static func == (lhs: FPath, rhs: FPath) -> Bool {
+        lhs.pieces[lhs.pieceNum...] == rhs.pieces[rhs.pieceNum...]
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        for piece in pieces[pieceNum...] {
+            hasher.combine(piece)
+        }
+    }
+
     var components: [String] {
         Array(pieces[pieceNum...])
     }

@@ -302,6 +302,7 @@ let package = Package(
             name: "FirebaseDatabaseTests",
             dependencies: ["FirebaseDatabase"],
             path: "Tests/FirebaseDatabaseTests",
+            resources: [.copy("Resources/syncPointSpec.json")],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
             ]

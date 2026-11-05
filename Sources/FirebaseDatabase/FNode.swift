@@ -98,6 +98,42 @@ struct FNode: Equatable, Hashable, Sendable {
     var isMax: Bool = false
     private var priorityNode: NodeBox?
 
+    // As upstream: an empty node equals a children node without children,
+    // and the cached hash doesn't count.
+    static func == (lhs: FNode, rhs: FNode) -> Bool {
+        guard lhs.isMax == rhs.isMax else { return false }
+        // The stored priorities: `getPriority()` of an empty node is an empty
+        // node, so comparing those would recurse forever.
+        switch (lhs.priorityNode?.node, rhs.priorityNode?.node) {
+        case (nil, nil):
+            break
+        case let (lhsPriority?, rhsPriority?):
+            guard lhsPriority == rhsPriority else { return false }
+        case let (priority?, nil), let (nil, priority?):
+            guard priority.isEmpty else { return false }
+        }
+        switch (lhs.type, rhs.type) {
+        case let (.leaf(lhsValue), .leaf(rhsValue)):
+            return lhsValue == rhsValue
+        case (.leaf, _), (_, .leaf):
+            return false
+        default:
+            return lhs.children == rhs.children
+        }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(isMax)
+        if case .leaf(let value) = type {
+            hasher.combine(value)
+        } else {
+            hasher.combine(children)
+        }
+        if let priority = priorityNode?.node, !priority.isEmpty {
+            hasher.combine(priority)
+        }
+    }
+
     func isLeafNode() -> Bool {
         if case .leaf = type { return true } else { return false }
     }
@@ -222,7 +258,9 @@ struct FNode: Equatable, Hashable, Sendable {
     var isEmpty: Bool {
         switch type {
         case .empty:
-            return true
+            // As upstream's FMaxNode: the max node isn't empty, so it can be
+            // put under a path (the max post of a path index).
+            return !isMax
         case .leaf:
             return false
         case .children(let children):

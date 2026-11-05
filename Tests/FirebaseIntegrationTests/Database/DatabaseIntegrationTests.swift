@@ -73,6 +73,11 @@ struct DatabaseIntegrationTests {
       .child(ref.key!).getData()
     #expect(fromServer.childSnapshot(forPath: "yes").value as? Bool == true)
     #expect(fromServer.childSnapshot(forPath: "no").value as? Bool == false)
+    // `as? Bool` also matches the numbers 0 and 1 on Linux, so check the type.
+    for key in ["yes", "no"] {
+      let value = try #require(fromServer.childSnapshot(forPath: key).value as? NSNumber)
+      #expect(isBoolean(value), "\(key) came back as a number")
+    }
     for key in ["one", "zero"] {
       let value = try #require(fromServer.childSnapshot(forPath: key).value as? NSNumber)
       #expect(!isBoolean(value), "\(key) came back as a Boolean")
