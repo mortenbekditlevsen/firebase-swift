@@ -462,7 +462,12 @@ class FLevelDBStorageEngine: FStorageEngine {
             var original: Decimal = decimal.decimalValue
             var rounded: Decimal = 0
             NSDecimalRound(&rounded, &original, 0, .plain);
-            if (NSDecimalCompare(&original, &rounded) != .orderedSame) {
+            // Integers beyond Int64 (which swift-corelibs-foundation parses as
+            // decimals) are doubles too: `int64Value` would overflow.
+            var int64Min = Decimal(Int64.min), int64Max = Decimal(Int64.max)
+            if NSDecimalCompare(&original, &rounded) != .orderedSame ||
+                NSDecimalCompare(&original, &int64Min) == .orderedAscending ||
+                NSDecimalCompare(&original, &int64Max) == .orderedDescending {
                 let doubleString = decimal.stringValue as NSString
                 return NSNumber(value: doubleString.doubleValue)
             } else {

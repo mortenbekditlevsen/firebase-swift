@@ -23,43 +23,35 @@ struct ServerValues: Sendable {
     static let incrementKey = "increment"
 
     /// The server timestamp in milliseconds since epoch.
-    let timestamp: Double
+    let timestamp: Int64
 
     /// Resolves a server value operation to a concrete leaf value.
     func resolve(_ op: ServerValueOp, withExisting existing: ValueProvider) -> LeafValue {
         switch op {
         case .timestamp:
-            return .double(timestamp)
+            return .int64(timestamp)
         case .increment(let delta):
             return Self.resolveIncrement(delta, withExisting: existing)
         }
     }
 
-    private static func resolveIncrement(_ delta: Double, withExisting jitExisting: ValueProvider) -> LeafValue {
+    /// As upstream: integers add up to an integer unless that overflows;
+    /// anything else adds up as doubles.
+    private static func resolveIncrement(_ delta: LeafValue, withExisting jitExisting: ValueProvider) -> LeafValue {
         // Incrementing a non-number sets the value to the incremented amount
-        guard case let .leaf(existingValue) = jitExisting.value?.type else {
-            return .double(delta)
+        guard case let .leaf(existingValue) = jitExisting.value?.type,
+              let existingDouble = existingValue.doubleValue,
+              let deltaDouble = delta.doubleValue else {
+            return delta
         }
-        guard case let .double(existingDouble) = existingValue else {
-            return .double(delta)
-        }
-        if isIntegerDouble(delta) && isIntegerDouble(existingDouble) {
-            let x = Int64(delta)
-            let y = Int64(existingDouble)
+        if case let .int64(x) = delta, case let .int64(y) = existingValue {
             let (r, overflow) = x.addingReportingOverflow(y)
             if !overflow {
-                return .double(Double(r))
+                return .int64(r)
             }
         }
-        return .double(delta + existingDouble)
+        return .double(deltaDouble + existingDouble)
     }
-}
-
-/// Checks if a Double value can be exactly represented as an integer (Int64).
-private func isIntegerDouble(_ value: Double) -> Bool {
-    value == value.rounded(.towardZero) &&
-    value >= Double(Int64.min) &&
-    value <= Double(Int64.max)
 }
 
 protocol ValueProvider {
@@ -141,7 +133,7 @@ class FServerValues {
     }
 
     static func generateServerValues(_ clock: FClock) -> ServerValues {
-        let millis = Double(UInt64(clock.currentTime * 1000))
+        let millis = Int64(clock.currentTime * 1000)
         return ServerValues(timestamp: millis)
     }
 

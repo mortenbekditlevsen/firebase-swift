@@ -33,31 +33,111 @@ private final class NodeBox: Hashable, Sendable {
 
 /// Represents the server operation inside a deferred value placeholder.
 /// For example, `{".sv": "timestamp"}` becomes `.timestamp`,
-/// and `{".sv": {"increment": 1}}` becomes `.increment(1.0)`.
+/// and `{".sv": {"increment": 1}}` becomes `.increment(.int64(1))`.
 enum ServerValueOp: Hashable, Sendable {
     case timestamp
-    case increment(Double)
+    /// The delta is a number (`.int64` or `.double`).
+    indirect case increment(LeafValue)
 }
 
 /// Represents the value stored in a leaf node of the Firebase Realtime Database tree.
-/// Firebase leaf values are always one of: boolean, number (double), string,
+/// Firebase leaf values are always one of: boolean, number, string,
 /// or a deferred server value placeholder (e.g. `{".sv": "timestamp"}`).
+///
+/// Numbers are 64-bit integers when they are integers, else doubles, as
+/// upstream keeps NSNumbers and Android has LongNode and DoubleNode: the two
+/// are one type for ordering, compare by value, and hash as doubles (as the
+/// server does).
 enum LeafValue: Hashable, Sendable {
     case bool(Bool)
+    case int64(Int64)
     case double(Double)
     case string(String)
     /// Server value placeholders like `{".sv": "timestamp"}` or `{".sv": {"increment": 1}}`.
     /// These exist transiently before being resolved to concrete values.
     case deferredValue(ServerValueOp)
 
+    /// A number as `.int64` or `.double`, by its type, as upstream's
+    /// `canBeRepresentedAsLong`: floats and doubles, and unsigned integers
+    /// beyond `Int64.max`, are doubles.
+    static func number(_ number: NSNumber) -> LeafValue {
+        switch UInt8(bitPattern: number.objCType.pointee) {
+        case UInt8(ascii: "f"), UInt8(ascii: "d"):
+            return .double(number.doubleValue)
+        case UInt8(ascii: "L"), UInt8(ascii: "Q"):
+            let value = number.uint64Value
+            return value <= UInt64(Int64.max) ? .int64(Int64(value)) : .double(number.doubleValue)
+        default:
+            return .int64(number.int64Value)
+        }
+    }
+
+    /// The number as a double (for hashing, as the server hashes numbers).
+    var doubleValue: Double? {
+        switch self {
+        case .int64(let v): return Double(v)
+        case .double(let v): return v
+        default: return nil
+        }
+    }
+
     /// The ordering index for Firebase's JavaScript type system.
-    /// Order: deferredValue (object) < bool < double (number) < string
+    /// Order: deferredValue (object) < bool < number < string
     var typeOrder: Int {
         switch self {
         case .deferredValue: return 0
         case .bool: return 1
-        case .double: return 2
+        case .int64, .double: return 2
         case .string: return 3
+        }
+    }
+
+    static func == (lhs: LeafValue, rhs: LeafValue) -> Bool {
+        switch (lhs, rhs) {
+        case let (.bool(l), .bool(r)): return l == r
+        case let (.int64(l), .int64(r)): return l == r
+        case let (.double(l), .double(r)): return l == r
+        // By value, as NSNumber compares them: 1 equals 1.0.
+        case let (.int64(i), .double(d)), let (.double(d), .int64(i)): return Int64(exactly: d) == i
+        case let (.string(l), .string(r)): return l == r
+        case let (.deferredValue(l), .deferredValue(r)): return l == r
+        default: return false
+        }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(typeOrder)
+        switch self {
+        case .bool(let v): hasher.combine(v)
+        // Equal numbers have the same double.
+        case .int64, .double: hasher.combine(doubleValue)
+        case .string(let v): hasher.combine(v)
+        case .deferredValue(let v): hasher.combine(v)
+        }
+    }
+
+    /// Orders two numbers by value, exactly (not through doubles, which can't
+    /// tell large integers apart).
+    static func compareNumbers(_ lhs: LeafValue, _ rhs: LeafValue) -> ComparisonResult {
+        func compare<T: Comparable>(_ l: T, _ r: T) -> ComparisonResult {
+            l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
+        }
+        switch (lhs, rhs) {
+        case let (.int64(l), .int64(r)):
+            return compare(l, r)
+        case let (.int64(i), .double(d)):
+            let result = compare(Double(i), d)
+            guard result == .orderedSame else { return result }
+            // Equal as doubles: compare exactly; a double beyond Int64 is larger.
+            return Int64(exactly: d).map { compare(i, $0) } ?? .orderedAscending
+        case (.double, .int64):
+            switch compareNumbers(rhs, lhs) {
+            case .orderedAscending: return .orderedDescending
+            case .orderedDescending: return .orderedAscending
+            case .orderedSame: return .orderedSame
+            }
+        default:
+            return compare(lhs.doubleValue ?? 0, rhs.doubleValue ?? 0)
         }
     }
 
@@ -65,6 +145,7 @@ enum LeafValue: Hashable, Sendable {
     var foundationValue: AnyHashable {
         switch self {
         case .bool(let v): return NSNumber(booleanLiteral: v)
+        case .int64(let v): return NSNumber(value: v)
         case .double(let v): return NSNumber(value: v)
         case .string(let v): return v as AnyHashable
         case .deferredValue(let op):
@@ -72,7 +153,7 @@ enum LeafValue: Hashable, Sendable {
             case .timestamp:
                 return [kServerValueSubKey: ServerValues.timestampKey] as [String: AnyHashable] as AnyHashable
             case .increment(let delta):
-                return [kServerValueSubKey: [ServerValues.incrementKey: delta] as [String: Double]] as [String: AnyHashable] as AnyHashable
+                return [kServerValueSubKey: [ServerValues.incrementKey: delta.foundationValue] as [String: AnyHashable]] as [String: AnyHashable] as AnyHashable
             }
         }
     }
@@ -511,8 +592,8 @@ struct FNode: Equatable, Hashable, Sendable {
         switch (lhs, rhs) {
         case (.bool(let l), .bool(let r)):
             return l == r ? .orderedSame : (l ? .orderedDescending : .orderedAscending)
-        case (.double(let l), .double(let r)):
-            return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
+        case (.int64, .int64), (.int64, .double), (.double, .int64), (.double, .double):
+            return LeafValue.compareNumbers(lhs, rhs)
         case (.string(let l), .string(let r)):
             return l.compare(r, options: .literal)
         case (.deferredValue, .deferredValue):

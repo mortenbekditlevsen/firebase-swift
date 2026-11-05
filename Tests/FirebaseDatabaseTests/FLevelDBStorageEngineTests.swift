@@ -424,10 +424,7 @@ class FLevelDBStorageEngineTests: XCTestCase {
     XCTAssertEqual(engine.serverCache(atPath: PATH("foo")), NODE(["deep": "deep-value"]))
   }
 
-  func testLongValuesDontLosePrecision() throws {
-    // Port note: the port keeps numbers as doubles, so integers beyond 2^53
-    // lose precision (upstream keeps 64-bit integers).
-    throw XCTSkip("The port stores numbers as doubles")
+  func testLongValuesDontLosePrecision() {
     let longValue = NSNumber(value: 1_542_405_709_418_655_810 as Int64)
     let floatValue = NSNumber(value: 2.47)
     let expectedData = NODE(["long": longValue, "float": floatValue])
@@ -475,14 +472,39 @@ class FLevelDBStorageEngineTests: XCTestCase {
     let actualDecimal = actualData.val() as? NSNumber
     // Port note: by value, as Linux prints the double 1000 as "1000.0".
     XCTAssertEqual(actualDecimal?.doubleValue, expectedDecimalValue.doubleValue)
-    // Port note: upstream also checks that it's a 64-bit float NSNumber; the
-    // port's numbers are doubles, which Foundation may represent either way.
+    // Port note: upstream also checks that it comes back as a double. The port
+    // turns decimals into doubles when they're written, and a whole double
+    // (1000.0) is stored as the JSON number 1000, so it comes back as an
+    // integer (as any whole double does upstream too).
   }
 
-  func testIntegersAreReturnedsAsIntegers() throws {
-    // Port note: the port keeps numbers as doubles, so integers aren't kept
-    // as 64-bit integers.
-    throw XCTSkip("The port stores numbers as doubles")
+  func testIntegersAreReturnedsAsIntegers() {
+    let intValue = NSNumber(value: 247)
+    let longValue = NSNumber(value: 1_542_405_709_418_655_810 as Int64)
+    let doubleValue = NSNumber(value: UInt64.max) // This number can't be represented as a signed long.
+    let expectedData = NODE(["int": intValue, "long": longValue, "double": doubleValue])
+    let engine = cleanStorageEngine()
+    engine.updateServerCache(expectedData, atPath: PATH("foo"), merge: false)
+    let actualData = engine.serverCache(atPath: PATH("foo"))
+    let value = actualData.val() as? [String: AnyHashable]
+    let actualInt = value?["int"] as? NSNumber
+    let actualLong = value?["long"] as? NSNumber
+    let actualDouble = value?["double"] as? NSNumber
+
+    // Port note: integer NSNumbers are checked through objCType (Linux has no
+    // CFNumberGetType, and reports small integers as "i").
+    func isInteger(_ number: NSNumber?) -> Bool {
+      guard let number else { return false }
+      return !["d", "f"].contains(String(cString: number.objCType))
+    }
+    XCTAssertEqual(actualInt?.stringValue, intValue.stringValue)
+    XCTAssertTrue(isInteger(actualInt))
+    XCTAssertEqual(actualLong?.stringValue, longValue.stringValue)
+    XCTAssertTrue(isInteger(actualLong))
+    // Port note: upstream gets an integer NSNumber back; the port stores
+    // unsigned values beyond Int64.max as doubles (upstream's
+    // `canBeRepresentedAsLong`), so it's the closest double.
+    XCTAssertEqual(actualDouble?.doubleValue, Double(UInt64.max))
   }
 
   // TODO[offline]: Somehow test estimated server size?

@@ -84,6 +84,21 @@ struct DatabaseIntegrationTests {
     }
   }
 
+  /// 64-bit integers keep every digit through the server (doubles have 53
+  /// bits), as upstream's and Android's.
+  @Test func largeIntegersKeepTheirPrecision() async throws {
+    let big: Int64 = 1_542_405_709_418_655_810
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValue(["big": big, "counter": big])
+    try await ref.child("counter").setValue(ServerValue.increment(1))
+
+    let fromServer = try await EmulatorApp().database().reference().child(ref.parent!.key!)
+      .child(ref.key!).getData()
+    #expect((fromServer.childSnapshot(forPath: "big").value as? NSNumber)?.int64Value == big)
+    #expect((fromServer.childSnapshot(forPath: "counter").value as? NSNumber)?.int64Value
+      == big + 1)
+  }
+
   @Test func updatesMergeAndRemovalsDelete() async throws {
     let ref = try scratchRef(EmulatorApp().database())
 
