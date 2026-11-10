@@ -43,6 +43,12 @@ public struct DatabaseConfig: Sendable {
 
     var forceStorageEngine: FStorageEngine? { nil }
 
+    /// The connection's time source (a manual clock in tests).
+    var clock: DatabaseClock = .continuous
+
+    /// Tells the connection about network changes; nil where there's none.
+    var connectivity: (any ConnectivityMonitor)? = platformConnectivityMonitor
+
     /**
      * By default the Firebase Database client will keep data in memory while your
      * application is running, but not when it is restarted. By setting this value
