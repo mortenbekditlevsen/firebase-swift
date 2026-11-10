@@ -40,7 +40,7 @@ class FRepo: FPersistentConnectionDelegate {
     let config: DatabaseConfig
 
     private let repoInfo: FRepoInfo
-    private let connection: FPersistentConnection
+    let connection: FPersistentConnection
     private var infoData: FSnapshotHolder
     private var onDisconnect: FSparseSnapshotTree
     private let eventRaiser: FEventRaiser
@@ -231,7 +231,7 @@ class FRepo: FPersistentConnectionDelegate {
     // block to make sure that ARC kicks in and cleans up things no longer
     // referenced (i.e. pendingPutsDB).
     func dispose() {
-        connection.interruptForReason(kFInterruptReasonRepoInterrupt)
+        connection.shutdown()
 
         // We need to nil out any references to LevelDB, to make sure the
         // LevelDB exclusive locks are released.
@@ -388,6 +388,7 @@ class FRepo: FPersistentConnectionDelegate {
         }
         let result = await connection.getDataAtPath(querySpec.path.description,
                                  withParams: querySpec.params.wireProtocolParams)
+        try Task.checkCancellation()
         let status = result.status
         let errorReason = result.errorReason
         let data = result.data

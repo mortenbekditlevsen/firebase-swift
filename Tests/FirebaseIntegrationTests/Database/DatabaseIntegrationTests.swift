@@ -296,6 +296,17 @@ struct DatabaseIntegrationTests {
     #expect((fromServer.childSnapshot(forPath: "a").priority as? NSNumber)?.intValue == 2)
   }
 
+  /// After a network change the connection checks it's alive with a request
+  /// (empty stats) that the server must answer, or it reconnects.
+  @Test func theServerAnswersConnectionChecks() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValue(1)
+    let connection = await ref.repo.connection
+    await connection.networkMayHaveChanged()
+    #expect(await connection.isCheckingConnection)
+    try await eventually(timeout: .seconds(5)) { await !connection.isCheckingConnection }
+  }
+
   @Test func onDisconnectWritesApplyWhenTheClientDisconnects() async throws {
     let ref = try scratchRef(EmulatorApp().database())
     try await ref.setValue(["online": true, "session": "abc", "kept": "yes"])
