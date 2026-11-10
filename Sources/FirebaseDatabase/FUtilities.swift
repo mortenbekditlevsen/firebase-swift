@@ -17,20 +17,23 @@ import Logging
 
 nonisolated(unsafe) var logger = Logger(label: "[FirebaseDatabase]")
 
-internal func FFLog(_ id: String, _ log: String) {
-    logger.trace("\(id): \(log)")
+// The messages are autoclosures, so payloads are only formatted when their
+// level is logged.
+
+internal func FFLog(_ id: String, _ log: @autoclosure () -> String) {
+    logger.trace("\(id): \(log())")
 }
 
-internal func FFInfo(_ id: String, _ log: String) {
-    logger.info("\(id): \(log)")
+internal func FFInfo(_ id: String, _ log: @autoclosure () -> String) {
+    logger.info("\(id): \(log())")
 }
 
-internal func FFWarn(_ id: String, _ log: String) {
-    logger.warning("\(id): \(log)")
+internal func FFWarn(_ id: String, _ log: @autoclosure () -> String) {
+    logger.warning("\(id): \(log())")
 }
 
-internal func FFDebug(_ id: String, _ log: String) {
-    logger.debug("\(id): \(log)")
+internal func FFDebug(_ id: String, _ log: @autoclosure () -> String) {
+    logger.debug("\(id): \(log())")
 }
 
 func tryParseStringToInt(_ str: String, integer: inout Int) -> Bool {

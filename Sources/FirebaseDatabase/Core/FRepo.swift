@@ -1128,19 +1128,21 @@ offline for more details.
                     callbacks.append(callback)
                 }
             }
-            if lastSent == -1 {
-                // We're not waiting for any sent transactions. We can clear the
-                // queue.
-                node.setValue(nil)
-            } else {
-                // Remove the transactions we aborted
-                queue.removeLast(queue.count - (lastSent + 1))
-            }
-            // Now fire the callbacks
-//            self.eventRaiser.raiseCallbacks(callbacks)
-            for callback in callbacks {
-                callback()
-            }
+        }
+        if lastSent == -1 {
+            // We're not waiting for any sent transactions. We can clear the
+            // queue.
+            node.setValue(nil)
+        } else {
+            // Remove the transactions we aborted
+            queue.removeLast(queue.count - (lastSent + 1))
+            node.setValue(queue)
+        }
+        // Now fire the callbacks
+        eventRaiser.raiseEvents(events)
+//        self.eventRaiser.raiseCallbacks(callbacks)
+        for callback in callbacks {
+            callback()
         }
     }
 

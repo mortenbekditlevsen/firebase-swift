@@ -150,7 +150,7 @@ public struct FIndexedNode: Sendable {
             return node.predecessorChildKey(childKey)
         case .indexed(let set):
             let entry = IndexedNamedNode(wrapped: FNamedNode(name: childKey, andNode: childNode), index: self.index)
-            guard let index = set.firstIndex(of: entry), index != set.startIndex else {
+            guard let index = set.index(of: entry), index != set.startIndex else {
                 return nil
             }
             return set[set.index(before: index)].wrapped.name

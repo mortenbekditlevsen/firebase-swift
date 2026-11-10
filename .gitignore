@@ -15,3 +15,5 @@ node_modules/
 .build-firestore-core-linux-gcc/
 __pycache__/
 .build-android-x86/
+Benchmarks/*/.build/
+Benchmarks/results/*.log

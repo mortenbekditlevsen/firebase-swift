@@ -266,11 +266,11 @@ struct FNode: Equatable, Hashable, Sendable {
         case .leaf, .empty:
             return nil
         case .children(let children):
-            let wrapped = KeyIndex(key: childKey)
-            guard let keyIndex = children.keys.firstIndex(of: wrapped), keyIndex != children.keys.startIndex else {
+            // index(forKey:) is a B-tree lookup; firstIndex(of:) would scan.
+            guard let index = children.index(forKey: KeyIndex(key: childKey)), index != children.startIndex else {
                 return nil
             }
-            return children.keys[children.keys.index(before: keyIndex)].key
+            return children[children.index(before: index)].key.key
         }
     }
     private func updateImmediateChild(_ childKey: String, withNewChild newChildNode: FNode, children: SortedDictionary<KeyIndex, FNode>) -> FNode {

@@ -71,18 +71,17 @@ internal final class FTree<T: Sendable> {
     parent.map { $0.path.child(fromString: name) } ?? FPath(with: name)
   }
 
+  // firebase-swift: FTreeNode is a value type, so unlike upstream (which only
+  // links new children, sharing the node objects) every change is copied up
+  // to the root, including changes to children that already exist.
   func updateChild(_ childName: String, withNode child: FTree<T>) {
-    let childEmpty = child.isEmpty
-    let childExists = node.children[childName] != nil
-    if childEmpty && childExists {
-      node.children.removeValue(forKey: childName)
+    if child.isEmpty {
+      guard node.children.removeValue(forKey: childName) != nil else { return }
       node.childCount -= 1
-      updateParents()
-    } else if !childEmpty && !childExists {
-      node.children[childName] = child.node
+    } else if node.children.updateValue(child.node, forKey: childName) == nil {
       node.childCount += 1
-      updateParents()
     }
+    updateParents()
   }
 
   func valueExistsAtOrAbove(path: FPath) -> Bool {
