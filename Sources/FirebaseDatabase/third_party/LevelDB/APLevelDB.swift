@@ -3,7 +3,7 @@
  *
  */
 
-import leveldb
+internal import leveldb
 import Foundation
 
 fileprivate class WriteBatch {

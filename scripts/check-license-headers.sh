@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Fails if any Swift file under Sources/ or Tests/ lacks the Google
+# Fails if any Swift file under Sources/, Tests/ or Benchmarks/ lacks the Google
 # Apache-2.0 copyright header. Vendored third_party code keeps its own
 # license and is skipped.
 
@@ -25,7 +25,8 @@ while IFS= read -r -d '' file; do
   if ! head -n 20 "$file" | grep -Eq "Copyright [0-9]{4}(-[0-9]{4})? Google( LLC)?"; then
     missing+=("$file")
   fi
-done < <(find Sources Tests -name '*.swift' \
+done < <(find Sources Tests Benchmarks -name '*.swift' \
+  -not -path '*/.build/*' \
   -not -path '*/third_party/*' \
   -not -path 'Sources/old/*' \
   -print0)
