@@ -26,6 +26,7 @@ public struct DatabaseConfig: Sendable {
         self.contextProvider = contextProvider
         self.persistenceCacheSizeBytes = 10 * 1024 * 1024 // Default cache size is 10MB
         self.persistenceEnabled = false
+        self.transport = Database.defaultTransport
     }
 
     private var isFrozen: Bool = false
@@ -75,6 +76,14 @@ public struct DatabaseConfig: Sendable {
      * Note that the specified cache size is only an approximation and the size on
      * disk may temporarily exceed it at times.
      */
+
+    /// Opens the connections to the server. Must be set before the database
+    /// is used.
+    public var transport: any DatabaseTransport {
+        willSet {
+            assertUnfrozen()
+        }
+    }
 
     public var persistenceCacheSizeBytes: Int {
         willSet {

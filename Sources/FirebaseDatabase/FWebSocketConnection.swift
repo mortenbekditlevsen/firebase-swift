@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import Foundation
-import NIOHTTP1
 
 @DatabaseActor
 protocol FWebSocketDelegate: AnyObject {
@@ -52,21 +51,27 @@ class FWebSocketConnection {
     var isClosed: Bool
     var keepAlive: Task<Void, Never>?
     var keepAliveFireDate: Date?
-    var client: WebSocketClient?
+
+    private let transport: any DatabaseTransport
+    private let request: DatabaseTransportRequest?
+    /// Runs the connection: connects, reads frames and sends the outbox.
+    private var connectionTask: Task<Void, Never>?
+    /// Messages to send, in order; sent once connected.
+    private let outbox: AsyncStream<DatabaseFrame>
+    private let outboxContinuation: AsyncStream<DatabaseFrame>.Continuation
 
     public weak var delegate: FWebSocketDelegate?
     func open() {
         FFLog("I-RDB083002", "(wsc:\(self.connectionId)) FWebSocketConnection open)")
         assert(delegate != nil)
         everConnected = false
-        guard client != nil else {
-            Task { @DatabaseActor in self.closeIfNeverConnected() }
+        guard let request else {
+            // The URL couldn't be parsed: report a failed connection attempt.
+            Task { @DatabaseActor in self.onClose() }
             return
         }
-        do {
-            try client?.open()
-        } catch {
-            // print("ERROR connecting: \(error)")
+        connectionTask = Task { @DatabaseActor in
+            await self.run(transport, request: request)
         }
         Task { @DatabaseActor in
             try? await Task.sleep(for: .seconds(kWebsocketConnectTimeout))
@@ -74,21 +79,52 @@ class FWebSocketConnection {
         }
     }
 
+    private func run(_ transport: some DatabaseTransport, request: DatabaseTransportRequest) async {
+        do {
+            try await transport.withConnection(to: request, isolation: #isolation) { connection in
+                self.didOpen()
+                try await withThrowingDiscardingTaskGroup { group in
+                    let outbox = self.outbox
+                    group.addTask {
+                        for await frame in outbox {
+                            try await connection.send(frame)
+                        }
+                    }
+                    for try await frame in connection.inbound {
+                        self.handleIncomingFrame(frame.string)
+                    }
+                    // The server closed the connection.
+                    group.cancelAll()
+                }
+            }
+        } catch {
+            FFLog("I-RDB083023", "(wsc:\(connectionId)) Websocket failed: \(error)")
+        }
+        onClose()
+    }
+
+    private func didOpen() {
+        FFLog("I-RDB083008", "(wsc:\(self.connectionId)) webSocketDidOpen")
+        everConnected = true
+        startKeepAlive()
+        FFLog("I-RDB083009", "(wsc:\(self.connectionId) nop timer kicked off")
+    }
+
     private func closeIfNeverConnected() {
         if !everConnected {
             FFLog("I-RDB083012", "(wsc:\(connectionId)) Websocket timed out on connect")
-            client?.close()
+            connectionTask?.cancel()
         }
     }
 
     func close() {
         FFLog("I-RDB083003", "(wsc:\(connectionId)) FWebSocketConnection is being closed.")
         isClosed = true
-        client?.close()
+        outboxContinuation.finish()
+        connectionTask?.cancel()
     }
 
     func start() {
-//        print("START")
     }
 
     private func resetKeepAlive() {
@@ -121,7 +157,7 @@ class FWebSocketConnection {
                     FFLog("I-RDB083004", "(wsc:\(self.connectionId)) nop")
                     // Note: the backend is expecting a string "0" here, not any special
                     // ping/pong from build in websocket APIs.
-                    self.client?.send(string: "0")
+                    self.outboxContinuation.yield(DatabaseFrame("0"))
                     self.keepAliveFireDate = Date(timeIntervalSinceNow: kWebsocketKeepaliveInterval)
                 } else {
                     FFLog("I-RDB083005",
@@ -145,62 +181,42 @@ class FWebSocketConnection {
 
         let chunks = string.split(by: kWebsocketMaxFrameSize)
         if chunks.count > 1 {
-            client?.send(string: "\(chunks.count)")
+            outboxContinuation.yield(DatabaseFrame("\(chunks.count)"))
         }
         for chunk in chunks {
-            client?.send(string: chunk)
+            outboxContinuation.yield(DatabaseFrame(String(chunk)))
         }
     }
 
     init(with connectionURL: String,
          googleAppID: String,
          appCheckToken: String?,
-         userAgent: String) {
+         userAgent: String,
+         transport: any DatabaseTransport) {
         self.everConnected = false
         self.isClosed = false
         self.connectionId =  FUtilities.LUIDGenerator()
         self.totalFrames = 0
         self.frame = nil
+        self.transport = transport
+        (outbox, outboxContinuation) = AsyncStream.makeStream()
 
         FFLog("I-RDB083001", "(wsc: \(connectionId)) Connecting to:\(connectionURL) as \(userAgent))")
 
         guard let url = URL(string: connectionURL) else {
-            // No client; open() reports a failed connection attempt instead.
+            // No request; open() reports a failed connection attempt instead.
             // Don't log the URL, since it can include the session ID.
             FFWarn("I-RDB083022", "(wsc:\(connectionId)) Couldn't parse the connection URL")
+            self.request = nil
             return
         }
 
-        let headers = createHeaders(with: connectionURL,
-                                    userAgent: userAgent,
-                                    googleAppID: googleAppID,
-                                    appCheckToken: appCheckToken)
-
-        self.client = WebSocketClient(url: url,
-                                      headers: headers,
-                                      onOpen: { [weak self] in
-
-            Task { @DatabaseActor in
-                guard let self = self else { return }
-                FFLog("I-RDB083008", "(wsc:\(self.connectionId)) webSocketDidOpen")
-                self.everConnected = true
-
-                self.startKeepAlive()
-                FFLog("I-RDB083009", "(wsc:\(self.connectionId) nop timer kicked off")
-            }
-        }, onMessage: { [weak self] message in
-            guard let self else { return }
-            // XXX TODO?
-            Task { @DatabaseActor in
-                self.handleIncomingFrame(message)
-            }
-        }, onClose: { [weak self] in
-            guard let self  else { return }
-            // XXX TODO?
-            Task { @DatabaseActor in
-                self.onClose()
-            }
-        })
+        self.request = DatabaseTransportRequest(
+            url: url,
+            headers: createHeaders(userAgent: userAgent,
+                                   googleAppID: googleAppID,
+                                   appCheckToken: appCheckToken)
+        )
     }
 
     private func shutdown() {
@@ -213,7 +229,7 @@ class FWebSocketConnection {
             FFLog("I-RDB083013", "Websocket is closing itself")
             self.shutdown()
         }
-        client = nil
+        outboxContinuation.finish()
         keepAlive?.cancel()
         keepAlive = nil
     }
@@ -267,17 +283,16 @@ class FWebSocketConnection {
     }
 }
 
-private  func createHeaders(with url: String,
-                            userAgent: String,
-                            googleAppID: String,
-                            appCheckToken: String?) -> HTTPHeaders {
-
-    var headers = HTTPHeaders()
-    if let appCheckToken = appCheckToken {
-        headers.add(name: kAppCheckTokenHeader, value: appCheckToken)
+private func createHeaders(userAgent: String,
+                           googleAppID: String,
+                           appCheckToken: String?) -> [String: String] {
+    var headers = [
+        kUserAgentHeader: userAgent,
+        kGoogleAppIDHeader: googleAppID,
+    ]
+    if let appCheckToken {
+        headers[kAppCheckTokenHeader] = appCheckToken
     }
-    headers.add(name: kUserAgentHeader, value: userAgent)
-    headers.add(name: kGoogleAppIDHeader, value: googleAppID)
     return headers
 }
 

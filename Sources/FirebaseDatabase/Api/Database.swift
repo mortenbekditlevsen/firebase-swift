@@ -238,6 +238,22 @@ public final class Database:  Sendable {
         }
     }
 
+    /**
+     * Opens the WebSocket connections to the server: by default
+     * `NIODatabaseTransport` (`URLSessionDatabaseTransport` on watchOS). Set it
+     * to another transport, e.g. your own `DatabaseTransport`, before any
+     * other usage of the Database instance.
+     */
+    public var transport: any DatabaseTransport {
+        set {
+            assertUnfrozen("setTransport")
+            config.transport = newValue
+        }
+        get {
+            config.transport
+        }
+    }
+
     private func assertUnfrozen(_ methodName: String) {
         guard repo == nil else {
             fatalError("Calls to \(methodName) must be made before any other usage of FIRDatabase instance.")

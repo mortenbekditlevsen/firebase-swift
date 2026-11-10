@@ -6,6 +6,19 @@
 internal import leveldb
 import Foundation
 
+// firebase-swift: LevelDB's error strings and `leveldb_get` results are
+// malloc'ed by LevelDB and must be freed with `leveldb_free`.
+
+/// Takes a LevelDB error string: returns it and frees it.
+private func takeError(_ error: inout UnsafeMutablePointer<Int8>?) -> String? {
+    guard let pointer = error else { return nil }
+    defer {
+        leveldb_free(pointer)
+        error = nil
+    }
+    return String(cString: pointer)
+}
+
 fileprivate class WriteBatch {
     let pointer: OpaquePointer
 
@@ -128,21 +141,23 @@ final fileprivate class DBIterator {
 
     var value: Data? {
         var length: Int = 0
-        let bytes = leveldb_iter_value(db_pointer, &length)
-        guard length > 0, let bytes else {
+        guard let bytes = leveldb_iter_value(db_pointer, &length) else {
             return nil
         }
-
+        // firebase-swift: an empty value is a value, as upstream.
         return Data(bytes: bytes, count: length)
     }
 
     var error: String? {
         var error: UnsafeMutablePointer<Int8>? = nil
         leveldb_iter_get_error(db_pointer, &error)
+        return takeError(&error)
+    }
+
+    /// Logs an error that ended an iteration early.
+    func logError() {
         if let error {
-            return String(cString: error)
-        } else {
-            return nil
+            FFWarn("I-RDB076100", "LevelDB iteration failed: \(error)")
         }
     }
 
@@ -339,9 +354,9 @@ class APLevelDBWriteBatchImpl: APLevelDBWriteBatch {
         let options = WriteOptions(options: WriteOption.standard)
         //
         leveldb_write(db.dbPointer, options.pointer, batch.pointer, &error)
-        if error != nil {
+        if let message = takeError(&error) {
+            FFWarn("I-RDB076101", "LevelDB write batch failed: \(message)")
             return false
-//            throw LevelDBError.writeError(message: String(cString: error!))
         }
         return true
     }
@@ -487,8 +502,8 @@ class APLevelDB {
 
         // check if error
         guard let pointer = dbPointer else {
-            if let error = error {
-                throw LevelDBError.openError(message: String(cString: error))
+            if let message = takeError(&error) {
+                throw LevelDBError.openError(message: message)
             }
 
             throw LevelDBError.undefinedError
@@ -536,18 +551,11 @@ class APLevelDB {
             }
         }
 
-        return error == nil
-//        guard error == nil else {
-//            throw LevelDBError.writeError(message: String(cString: error!))
-//        }
-
-
-        //    leveldb::Slice keySlice = SliceFromString(key);
-        //    leveldb::Slice valueSlice = leveldb::Slice((const char *)[data bytes], (size_t)[data length]);
-        //    leveldb::Status status = _db->Put(_writeOptions, keySlice, valueSlice);
-        //    return (status.ok() == true);
-
-
+        if let message = takeError(&error) {
+            FFWarn("I-RDB076102", "LevelDB write failed: \(message)")
+            return false
+        }
+        return true
     }
 
     func setData(_ data: Data?, forKey key: String) -> Bool {
@@ -569,7 +577,11 @@ class APLevelDB {
                            keyCount,
                            &error)
         }
-        return error == nil
+        if let message = takeError(&error) {
+            FFWarn("I-RDB076103", "LevelDB delete failed: \(message)")
+            return false
+        }
+        return true
     }
 
     func beginWriteBatch() -> APLevelDBWriteBatch {
@@ -586,18 +598,16 @@ class APLevelDB {
             value = leveldb_get(dbPointer, options.pointer, keyBytes.baseAddress, keyCount, &valueLength, &error)
         }
 
-        // throw if error
-//        guard error == nil else {
-//            throw LevelDBError.readError(message: String(cString: error!))
-//        }
-
-        // check fetch value lenght
-        guard valueLength > 0 else {
+        if let message = takeError(&error) {
+            FFWarn("I-RDB076104", "LevelDB read failed: \(message)")
             return nil
         }
-
-        // create data
-        return Data(bytes: value!, count: valueLength)
+        // Not found. (An empty value is a non-nil pointer.)
+        guard let value else {
+            return nil
+        }
+        defer { leveldb_free(value) }
+        return Data(bytes: value, count: valueLength)
     }
 
     func string(forKey key: String) -> String? {
@@ -630,6 +640,7 @@ class APLevelDB {
 
             guard !stop, iterator.nextRow() else { break }
         }
+        iterator.logError()
     }
 
     func enumerateKeysAndValues(asStrings block: @escaping (_ key: String, _ value: String, _ stop: inout Bool) -> Void) {
@@ -650,6 +661,7 @@ class APLevelDB {
 
             guard !stop, iterator.nextRow() else { break }
         }
+        iterator.logError()
     }
 
     func enumerateKeysAndValues(asData block: @escaping (_ key: String, _ value: Data, _ stop: inout Bool) -> Void) {
@@ -670,16 +682,21 @@ class APLevelDB {
 
             guard !stop, iterator.nextRow() else { break }
         }
+        iterator.logError()
 
     }
 
     func exactSize(from: String, to: String) -> Int {
         var size = 0
         let iterator = DBIterator(query: SequenceQuery(db: self, startKey: from, endKey: to, descending: false, options: ReadOption.standard))
-        while iterator.isValid, let key = iterator.key, self.compare(key, to) != .orderedAscending {
+        // firebase-swift: keys up to and including `to`, as upstream (this
+        // compared the wrong way, so the size was always about 0 and the
+        // server cache was never pruned).
+        while iterator.isValid, let key = iterator.key, self.compare(key, to) != .orderedDescending {
             size += iterator.value?.count ?? 0
             iterator.nextRow()
         }
+        iterator.logError()
         return size
     }
 

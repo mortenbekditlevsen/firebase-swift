@@ -131,6 +131,9 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Atomics", package: "swift-atomics"),
                 .product(name: "SortedCollections", package: "swift-collections"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(
@@ -297,7 +300,13 @@ let package = Package(
         ),
         .testTarget(
             name: "FirebaseDatabaseTests",
-            dependencies: ["FirebaseDatabase"],
+            dependencies: [
+                "FirebaseDatabase",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOWebSocket", package: "swift-nio"),
+            ],
             path: "Tests/FirebaseDatabaseTests",
             resources: [.copy("Resources/syncPointSpec.json")],
             swiftSettings: [

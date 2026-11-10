@@ -299,8 +299,11 @@ public class DatabaseQuery: @unchecked Sendable {
         let handle: Mutex<DatabaseHandle> = .init(0)
         let firstCall: Mutex<Bool> = .init(true)
         let wrappedCallback: @Sendable (DataSnapshot, String?) -> Void = { snapshot, prevName in
-            guard firstCall.withLock({ $0 }) else { return }
-            firstCall.withLock { $0 = false }
+            // Checked and cleared in one step, so only one event gets through.
+            guard firstCall.withLock({ first in
+                defer { first = false }
+                return first
+            }) else { return }
             self.removeObserverWithHandle(handle.withLock { $0 })
             block(snapshot, prevName)
         }
