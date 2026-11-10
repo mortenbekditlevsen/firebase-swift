@@ -32,15 +32,17 @@ extension DatabaseQuery {
                            decoder: Database.Decoder =
                            Database.Decoder()) async throws -> sending T {
         try await withCheckedThrowingContinuation { continuation in
-            self.observeSingleEventOfType(.value) { snapshot in
+            self.observeSingleEventOfType(.value, withBlock: { snapshot in
                 do {
                     let data = try snapshot.data(as: T.self, decoder: decoder)
                     continuation.resume(returning: data)
                 } catch {
                     continuation.resume(throwing: error)
                 }
-            }
-
+            }, withCancelBlock: { error in
+                // E.g. permission denied; without this the caller waited forever.
+                continuation.resume(throwing: error)
+            })
         }
     }
 

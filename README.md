@@ -134,6 +134,24 @@ AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory(), keychain: My
 Upstream also sets a default factory when the module loads; here App Check
 is off until you call `setAppCheckProviderFactory`.
 
+## Database connections
+
+Realtime Database talks to its server over a WebSocket, opened by a
+`DatabaseTransport`. The default is `NIODatabaseTransport` (SwiftNIO with
+swift-nio-ssl), or `URLSessionDatabaseTransport` on watchOS. Set another one
+before using the database:
+
+```swift
+let database = Database.database()
+database.transport = URLSessionDatabaseTransport()
+```
+
+To bring your own WebSocket client, conform to `DatabaseTransport`: connect
+in `withConnection(to:isolation:_:)`, hand the body a connection with the
+server's text messages (`inbound`) and a `send` method, and close it when the
+body returns. Connecting must throw on failure, `inbound` must end when the
+connection does, and cancellation must close the connection.
+
 ## Differences from the upstream SDK
 
 - **Async only.** Methods that take a completion handler upstream are

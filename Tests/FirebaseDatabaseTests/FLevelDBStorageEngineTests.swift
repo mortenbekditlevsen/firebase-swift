@@ -181,6 +181,17 @@ class FLevelDBStorageEngineTests: XCTestCase {
     XCTAssertEqual(engine.serverCache(atPath: PATH("foo")), SAMPLE_NODE)
   }
 
+  // Port note: not in upstream. The estimate drives cache pruning.
+  func testServerCacheSizeGrowsWithTheCache() {
+    let engine = cleanStorageEngine()
+    XCTAssertEqual(engine.serverCacheEstimatedSizeInBytes, 0)
+    engine.updateServerCache(SAMPLE_NODE, atPath: PATH("foo"), merge: false)
+    let size = engine.serverCacheEstimatedSizeInBytes
+    XCTAssertGreaterThan(size, 0)
+    engine.updateServerCache(SAMPLE_NODE, atPath: PATH("bar"), merge: false)
+    XCTAssertGreaterThan(engine.serverCacheEstimatedSizeInBytes, size)
+  }
+
   func testCacheSavedIsReturnedAtRoot() {
     let engine = cleanStorageEngine()
     engine.updateServerCache(SAMPLE_NODE, atPath: PATH(""), merge: false)

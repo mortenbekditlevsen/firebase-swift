@@ -65,7 +65,8 @@ class FIRRetryHelper {
                 let newDelay = currentRetryDelay * retryExponent
                 currentRetryDelay = min(newDelay, maxRetryDelay)
             }
-            delay = .nanoseconds(Int(((1 - jitterFactor) * currentRetryDelay) + (jitterFactor * currentRetryDelay * FUtilities.randomDouble())) * 1_000_000_000)
+            // Not truncated to whole seconds, which made sub-second delays 0.
+            delay = .seconds(((1 - jitterFactor) * currentRetryDelay) + (jitterFactor * currentRetryDelay * FUtilities.randomDouble()))
             FFLog("I-RDB054002", "Scheduling retry in \(delay)")
         }
         lastWasSuccess = false

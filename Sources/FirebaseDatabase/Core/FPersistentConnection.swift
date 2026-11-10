@@ -441,6 +441,7 @@ class FPersistentConnection: FConnectionDelegate {
         realtime = nil
         cancelSentTransactions()
         requestCBHash.removeAll()
+        failSentGets()
         unackedListentsCount = 0
         if shouldReconnect {
             let timeSinceLastConnectSucceeded = Date().timeIntervalSince1970 - lastConnectionEstablishedTime
@@ -554,7 +555,8 @@ class FPersistentConnection: FConnectionDelegate {
                                      googleAppID: config.googleAppID,
                                      lastSessionID: lastSessionID,
                                      appCheckToken: context.appCheckToken,
-                                     userAgent: userAgent)
+                                     userAgent: userAgent,
+                                     transport: config.transport)
         connection.delegate = self
         connection.open()
         realtime = connection
@@ -773,18 +775,17 @@ class FPersistentConnection: FConnectionDelegate {
                 return
             }
             self.outstandingGets.removeValue(forKey: index)
-            let status: String? = data?[kFWPResponseForActionStatus] as? String
             var resultData: Any? = data?[kFWPResponseForActionData]
             if (resultData as? AnyObject) === NSNull() {
                 resultData = nil
             }
-            if let status {
-                if status == kFWPResponseForActionStatusOk {
-                    get.onComplete.resume(returning: .init(status: status, data: resultData, errorReason: nil))
-                    return
-                }
-                get.onComplete.resume(returning: .init(status: status, data: nil, errorReason: resultData as? String))
+            // Always resumes: a response without a status is a failure.
+            let status = data?[kFWPResponseForActionStatus] as? String ?? kFWPResponseForActionStatusFailed
+            if status == kFWPResponseForActionStatusOk {
+                get.onComplete.resume(returning: .init(status: status, data: resultData, errorReason: nil))
+                return
             }
+            get.onComplete.resume(returning: .init(status: status, data: nil, errorReason: resultData as? String))
         }
     }
 
@@ -820,6 +821,17 @@ class FPersistentConnection: FConnectionDelegate {
         } else {
             FFLog("I-RDB034025",
                   "Wasn't connected or writes paused, so added to outstanding puts only. Path: \(pathString)")
+        }
+    }
+
+    /// Fails the gets whose responses were lost with the connection, so their
+    /// callers fall back to the cache instead of waiting forever. (Upstream
+    /// leaves them marked as sent, so they are never resent or answered.)
+    private func failSentGets() {
+        for (index, get) in outstandingGets where get.sent {
+            outstandingGets.removeValue(forKey: index)
+            get.onComplete.resume(returning: .init(status: kFWPResponseForActionStatusFailed, data: nil,
+                                                   errorReason: kPersistentConnectionOffline))
         }
     }
 

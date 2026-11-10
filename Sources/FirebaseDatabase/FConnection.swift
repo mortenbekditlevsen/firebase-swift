@@ -32,7 +32,8 @@ final class FConnection: FWebSocketDelegate {
         googleAppID: String,
         lastSessionID: String?,
         appCheckToken: String?,
-        userAgent: String
+        userAgent: String,
+        transport: any DatabaseTransport
     ) {
         self.state = .connecting
         self.repoInfo = aRepoInfo
@@ -42,7 +43,8 @@ final class FConnection: FWebSocketDelegate {
             connectionURL,
             googleAppID: googleAppID,
             appCheckToken: appCheckToken,
-            userAgent: userAgent)
+            userAgent: userAgent,
+            transport: transport)
 
         conn?.delegate = self
     }
