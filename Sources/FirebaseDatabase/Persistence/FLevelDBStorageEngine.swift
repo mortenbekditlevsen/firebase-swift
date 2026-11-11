@@ -91,6 +91,15 @@ class FLevelDBStorageEngine: FStorageEngine {
             return URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent("firebase")
         }
+#elseif os(Android)
+            // Native code can't look up the app's files directory
+            // (Context.getFilesDir()) without JNI, and Foundation's documents
+            // directory is /Documents, which isn't writable. Apps set
+            // XDG_DATA_HOME to their files directory (README, Android), as
+            // Firestore and Auth need too.
+            let dataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"]
+                ?? NSHomeDirectory() + "/.local/share"
+            return URL(fileURLWithPath: dataHome).appendingPathComponent("firebase")
 #else
             // On other platforms like linux .documentsDirectory is a global /Users/xxx/Documents folder
             // This is likely ok since the database names include the firebase database url too.

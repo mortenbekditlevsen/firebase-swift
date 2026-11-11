@@ -26,7 +26,28 @@ private func node(_ json: String) throws -> FNode {
 /// FJSONScanner).
 private func referenceNode(_ json: String) throws -> FNode {
     let value = try JSONSerialization.jsonObject(with: Data(json.utf8), options: .fragmentsAllowed)
-    return FSnapshotUtilities.nodeFrom(value)
+    return FSnapshotUtilities.nodeFrom(correctlyRounded(value))
+}
+
+/// swift-corelibs-foundation's JSONSerialization reads long
+/// decimals as NSDecimalNumbers, whose `doubleValue` can be a unit in the last
+/// place off (-337033.0501634184 becomes -337033.05016341835). Darwin's, and
+/// FJSONScanner, round correctly, so the reference does too.
+private func correctlyRounded(_ value: Any) -> Any {
+    #if canImport(Darwin)
+    return value
+    #else
+    switch value {
+    case let decimal as NSDecimalNumber:
+        return NSNumber(value: Double(decimal.stringValue) ?? decimal.doubleValue)
+    case let dictionary as [String: Any]:
+        return dictionary.mapValues(correctlyRounded)
+    case let array as [Any]:
+        return array.map(correctlyRounded)
+    default:
+        return value
+    }
+    #endif
 }
 
 private func json(_ node: FNode) throws -> String {

@@ -284,7 +284,8 @@ Build with the [Swift SDK for Android](https://www.swift.org/documentation/artic
 look up an app's storage directories, so set these before using Firebase:
 
 - `XDG_DATA_HOME` to the app's files directory (`Context.getFilesDir()`). Auth
-  keeps the signed-in user there, and Firestore its cache.
+  keeps the signed-in user there, and Firestore and Realtime Database their
+  caches.
 - `TMPDIR` to the app's cache directory (`Context.getCacheDir()`).
 
 `google-services.json` is compiled into Android resources and can't be read as
