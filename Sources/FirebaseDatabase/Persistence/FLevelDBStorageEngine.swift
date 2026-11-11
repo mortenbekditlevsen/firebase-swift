@@ -66,8 +66,8 @@ private func trackedQueryKeysKey(trackedQueryId: Int, key: String) -> String {
 }
 
 class FLevelDBStorageEngine: FStorageEngine {
-    private var writesDB: APLevelDB!
-    private var serverCacheDB: APLevelDB!
+    private(set) var writesDB: APLevelDB!
+    private(set) var serverCacheDB: APLevelDB!
     private var basePath: URL
     
     public static var firebaseDir: URL {
@@ -280,30 +280,28 @@ class FLevelDBStorageEngine: FStorageEngine {
     }
 
     func saveUserOverwrite(_ node: FNode, atPath path: FPath, writeId: Int) {
-        let write: [String: Any] = [
-            kFUserWriteId : writeId,
-            kFUserWritePath : path.toStringWithTrailingSlash(),
-            kFUserWriteOverwrite : node.val(forExport: true)
-        ]
-        do {
-            let data = try JSONSerialization.data(withJSONObject: write, options: [])
-            _ = writesDB.setData(data, forKey: writeRecordKey(writeId: writeId))
-        } catch {
-            assertionFailure("Failed to serialize user overwrite: \(write), (Error: \(error)")
-        }
+        // The node in export form, as `val(forExport: true)` has it.
+        saveUserWrite([
+            kFUserWriteId: writeId,
+            kFUserWritePath: path.toStringWithTrailingSlash(),
+            kFUserWriteOverwrite: node,
+        ], writeId: writeId)
     }
 
     func saveUserMerge(_ merge: FCompoundWrite, atPath path: FPath, writeId: Int) {
-        let write: [String: Any] = [
-            kFUserWriteId : writeId,
-            kFUserWritePath : path.toStringWithTrailingSlash(),
-            kFUserWriteMerge : merge.valForExport(true)
-        ]
+        saveUserWrite([
+            kFUserWriteId: writeId,
+            kFUserWritePath: path.toStringWithTrailingSlash(),
+            kFUserWriteMerge: merge.nodesForExport(),
+        ], writeId: writeId)
+    }
+
+    private func saveUserWrite(_ write: [String: Any], writeId: Int) {
         do {
-            let data = try JSONSerialization.data(withJSONObject: write, options: [])
-            _ = writesDB.setData(data, forKey: writeRecordKey(writeId: writeId))
+            let bytes = try FJSONWriter.bytes(write)
+            _ = writesDB.setData(Data(bytes.readableBytesView), forKey: writeRecordKey(writeId: writeId))
         } catch {
-            assertionFailure("Failed to serialize user overwrite: \(write), (Error: \(error)")
+            assertionFailure("Failed to serialize user write: \(write), (Error: \(error)")
         }
     }
 
@@ -332,31 +330,14 @@ class FLevelDBStorageEngine: FStorageEngine {
         var writes: [FWriteRecord] = []
         writesDB.enumerateKeysAndValues { (key: String, data: Data, stop: inout Bool) in
             do {
-                guard let writeJSON = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-                guard let writeId = writeJSON[kFUserWriteId] as? Int else { return }
-                guard let pathString = writeJSON[kFUserWritePath] as? String else { return }
-                let path = FPath(with: pathString)
-                let writeRecord: FWriteRecord
-                if let dictionary = writeJSON[kFUserWriteMerge] as? [String: Any] {
-                    // It's a merge
-                    let merge = FCompoundWrite.compoundWrite(valueDictionary: dictionary)
-                    writeRecord = FWriteRecord(path: path, merge: merge, writeId: writeId)
-                } else if let overwrite = writeJSON[kFUserWriteOverwrite] {
-                    let node = FSnapshotUtilities.nodeFrom(overwrite)
-                    writeRecord = FWriteRecord(path: path, overwrite: node, writeId: writeId, visible: true)
-                } else {
-                    fatalError("Persisted write did not contain merge or overwrite!")
-                }
-                writes.append(writeRecord)
+                writes.append(try Self.writeRecord(data))
             } catch {
-                if (error as NSError).code == kFNanFailureCode {
-                    FFWarn("I-RDB076012",
-                           "Failed to deserialize write (\(String(data: data, encoding: .utf8) ?? "-"), likely because of out of range doubles (Error: \(error))")
-                    FFWarn("I-RDB076013", "Removing failed write with key \(key)")
-                    _ = self.writesDB.removeKey(key)
-                } else {
-                    fatalError("Failed to deserialize write: \(error)")
-                }
+                // Don't crash on a write that can't be read, as upstream did
+                // (except for doubles out of range): it can't be sent either.
+                FFWarn("I-RDB076012",
+                       "Failed to deserialize write \(String(decoding: data, as: UTF8.self)) (Error: \(error))")
+                FFWarn("I-RDB076013", "Removing failed write with key \(key)")
+                _ = self.writesDB.removeKey(key)
             }
         }
         // Make sure writes are sorted
@@ -365,152 +346,76 @@ class FLevelDBStorageEngine: FStorageEngine {
         return writes
     }
 
+    /// A stored write: {"id": id, "path": path, "o": overwrite} or {…, "m": merge}.
+    private static func writeRecord(_ data: Data) throws -> FWriteRecord {
+        try FJSONScanner.withScanner(data) { scanner in
+            var writeId: Int?
+            var path: FPath?
+            var overwrite: FNode?
+            var merge: [String: FNode]?
+            try scanner.beginObject()
+            var first = true
+            while let key = try scanner.nextKey(&first) {
+                switch key {
+                case kFUserWriteId:
+                    if case .int64(let id) = try scanner.readNumber() { writeId = Int(exactly: id) }
+                case kFUserWritePath:
+                    path = FPath(with: try scanner.readString())
+                case kFUserWriteOverwrite:
+                    overwrite = try scanner.readNode()
+                case kFUserWriteMerge:
+                    merge = try scanner.readMerge()
+                default:
+                    try scanner.skipValue()
+                }
+            }
+            try scanner.expectEnd()
+            guard let writeId, let path else { throw FLevelDBStorageEngineError.decodingError }
+            if let merge {
+                return FWriteRecord(path: path, merge: .compoundWrite(nodeDictionary: merge), writeId: writeId)
+            } else if let overwrite {
+                return FWriteRecord(path: path, overwrite: overwrite, writeId: writeId, visible: true)
+            }
+            throw FLevelDBStorageEngineError.decodingError
+        }
+    }
+
     func serverCache(atPath path: FPath) -> FNode {
         let start = Date()
-        let data = internalNestedData(for: path)
-        let node = FSnapshotUtilities.nodeFrom(data)
+        let node = storedNode(at: path)
         FFDebug("I-RDB076015", "Loaded node with \(node.numChildren()) children at \(path) in \(start.timeIntervalSinceNow * -1000)ms")
         return node
     }
 
-    private func internalNestedData(for path: FPath) -> Any? {
-        let baseKey = serverCacheKey(path)
-
-        // HACK to make sure iter is freed now to avoid race conditions (if self.db
-        // is deleted before iter, you get an access violation).
-        // NOTE: This hack only works on Darwin platforms (with Objective-C interop)
-        // and as Swift has deterministic release of objects after last use, this
-        // hack should no longer be necessary.
-//        return autoreleasepool {
-            let iter = APLevelDBIterator.iterator(levelDB: serverCacheDB)
-            _ = iter.seek(toKey: baseKey)
-            if let key = iter.key() {
-                if !key.hasPrefix(baseKey) {
-                    // No data.
-                    return nil
-                } else {
-                    return internalNestedDataFromIterator(iter,
-                                                          andKeyPrefix:baseKey)
-                }
-            } else {
-                // No data.
-                return nil
-
-            }
-//        }
-    }
-
-    private func internalNestedDataFromIterator(_ iterator: APLevelDBIterator, andKeyPrefix prefix: String) -> Any? {
-        var key = iterator.key()
-        if key == prefix {
-            let result = deserializePrimitive(iterator.valueAsData())
-            _ = iterator.nextKey()
-            return result
-        } else {
-            var dict: [String: Any] = [:]
-            while let aKey = key, (key?.hasPrefix(prefix) ?? false) {
-                let index = aKey.index(aKey.startIndex, offsetBy: prefix.count)
-                let relativePath = aKey[index...]
-                let pathPieces = relativePath.components(separatedBy: "/")
-                assert(pathPieces.count > 0)
-                let childName = pathPieces[0]
-                let childPath = "\(prefix)\(childName)/"
-                if let childValue = internalNestedDataFromIterator(iterator, andKeyPrefix: childPath) {
-                    dict[childName] = childValue
-                }
-                key = iterator.key()
-            }
-
-            return dict
+    /// The node at `path` in the server cache, from its leaves' keys and
+    /// values, read in place (one pass, nothing copied but the keys' names).
+    private func storedNode(at path: FPath) -> FNode {
+        let prefix = serverCacheKey(path)
+        let prefixLength = prefix.utf8.count
+        var builder = FLeafTreeBuilder()
+        serverCacheDB.forEach(withPrefix: prefix) { key, value in
+            builder.add(path: key.extracting(droppingFirst: prefixLength), leaf: Self.leaf(value, key: key))
+            return true
         }
+        return builder.finish()
     }
 
-    private func serializePrimitive(_ value: Any) -> Data {
+    /// A stored leaf value: JSON (a string, number or boolean).
+    private static func leaf(_ value: Span<UInt8>, key: Span<UInt8>) -> FNode {
+        var scanner = FJSONScanner(value)
         do {
-            return try JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
-        } catch {
-            fatalError("Failed to serialize primitive: \(error)")
-        }
-    }
-
-    private func fixDoubleParsing(_ value: Any) -> Any {
-        if let decimal = value as? NSDecimalNumber {
-            // In case the value is an NSDecimalNumber, we may be dealing with
-            // precisions that are higher than what can be represented in a double.
-            // In this case it does not suffice to check for integral numbers by
-            // casting the [value doubleValue] to an int64_t, because this will
-            // cause the compared values to be rounded to double precision.
-            // Coupled with a bug in [NSDecimalNumber longLongValue] that triggers
-            // when converting values with high precision, this would cause
-            // values of high precision, but with an integral 'doubleValue'
-            // representation to be converted to bogus values.
-            // A radar for the NSDecimalNumber issue can be found here:
-            // http://www.openradar.me/radar?id=5007005597040640
-            // Consider the NSDecimalNumber value: 999.9999999999999487
-            // This number has a 'doubleValue' of 1000. Using the previous version
-            // of this method would cause the value to be interpreted to be integral
-            // and then the resulting value would be based on the longLongValue
-            // which due to the NSDecimalNumber issue would turn out as -844.
-            // By using NSDecimal logic to test for integral values,
-            // 999.9999999999999487 will not be considered integral, and instead
-            // of triggering the 'longLongValue' issue, it will be returned as
-            // the 'doubleValue' representation (1000).
-            // Please note, that even without the NSDecimalNumber issue, the
-            // 'correct' longLongValue of 999.9999999999999487 is 999 and not 1000,
-            // so the previous code would cause issues even without the bug
-            // referenced in the radar.
-            var original: Decimal = decimal.decimalValue
-            var rounded: Decimal = 0
-            NSDecimalRound(&rounded, &original, 0, .plain);
-            // Integers beyond Int64 (which swift-corelibs-foundation parses as
-            // decimals) are doubles too: `int64Value` would overflow.
-            var int64Min = Decimal(Int64.min), int64Max = Decimal(Int64.max)
-            if NSDecimalCompare(&original, &rounded) != .orderedSame ||
-                NSDecimalCompare(&original, &int64Min) == .orderedAscending ||
-                NSDecimalCompare(&original, &int64Max) == .orderedDescending {
-                let doubleString = decimal.stringValue as NSString
-                return NSNumber(value: doubleString.doubleValue)
-            } else {
-                return NSNumber(value: decimal.int64Value)
+            let node = try scanner.readNode()
+            // Values written by earlier versions may end in a C terminator.
+            scanner.skipWhitespace()
+            if scanner.offset == value.count - 1, value[value.count - 1] == 0 {
+                return node
             }
-//        } else if let number = value as? NSNumber {
-            // The parser for double values in JSONSerialization at the root takes
-            // some short-cuts and delivers wrong results (wrong rounding) for some
-            // double values, including 2.47. Because we use the exact bytes for
-            // hashing on the server this will lead to hash mismatches. The parser
-            // of NSNumber seems to be more in line with what the server expects, so
-            // we use that here
-            // XXX TODO: Doesn't work on non-Darwin
-//            let type = CFNumberGetType(number as CFNumber)
-//            if (type == .doubleType || type == .floatType) {
-//                // The NSJSON parser returns all numbers as double values, even
-//                // those that contain no exponent. To make sure that the String
-//                // conversion below doesn't unexpectedly reduce precision, we make
-//                // sure that our number is indeed not an integer.
-//                if Double(Int64(number.doubleValue)) != number.doubleValue {
-//                    let doubleString = number.stringValue as NSString
-//                    return NSNumber(value: doubleString.doubleValue)
-//                } else {
-//                    return NSNumber(value: number.int64Value)
-//                }
-//            }
-        }
-        return value
-    }
-
-    private func deserializePrimitive(_ data: Data?) -> Any {
-        guard let data = data else { return NSNull() }
-        do {
-            let result = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
-            return fixDoubleParsing(result)
+            try scanner.expectEnd()
+            return node
         } catch {
-            if (error as NSError).code == kFNanFailureCode {
-                FFWarn("I-RDB076034",
-                       "Failed to load primitive \(String(data: data, encoding: .utf8) ?? "-"), likely because doubles where out of range (Error: \(error))")
-                return NSNull()
-            } else {
-                fatalError("Failed to deserialize primitive: \(error)")
-            }
+            let keyString = unsafe key.withUnsafeBufferPointer { unsafe String(decoding: $0, as: UTF8.self) }
+            FFWarn("I-RDB076034", "Failed to load primitive at \(keyString) (Error: \(error))")
+            return .empty
         }
     }
 
@@ -549,8 +454,7 @@ class FLevelDBStorageEngine: FStorageEngine {
         let start = Date()
         var node: FNode = .empty
         for key in keys {
-            let data = internalNestedData(for: path.child(fromString: key))
-            node = node.updateImmediateChild(key, withNewChild: FSnapshotUtilities.nodeFrom(data))
+            node = node.updateImmediateChild(key, withNewChild: storedNode(at: path.child(fromString: key)))
         }
         FFDebug("I-RDB076016",
                 "Loaded node with \(node.numChildren()) children for \(keys.count) keys at \(path) in \(start.timeIntervalSinceNow * -1000)ms")
@@ -568,7 +472,10 @@ class FLevelDBStorageEngine: FStorageEngine {
     }
 
     private func removeAllWrites(withPrefix prefix: String, batch: APLevelDBWriteBatch, database: APLevelDB) {
-        database.enumerateKeys(withPrefix: prefix, usingBlock: { key, stop in batch.removeKey(key) })
+        database.forEach(withPrefix: prefix) { key, _ in
+            batch.removeKey(bytes: key)
+            return true
+        }
     }
 
     func updateServerCache(_ node: FNode, atPath path: FPath, merge: Bool) {
@@ -617,23 +524,45 @@ class FLevelDBStorageEngine: FStorageEngine {
     }
 
     private func saveNodeInternal(_ node: FNode, atPath path: FPath, batch: APLevelDBWriteBatch, counter: inout Int) {
-        let data = node.val(forExport: true)
-        guard !(data is NSNull) else { return }
-
-        internalSetNestedData(data, forKey: serverCacheKey(path), withBatch: batch, counter: &counter)
+        var writer = FJSONWriter(capacity: 64)
+        saveNode(node, forKey: serverCacheKey(path), batch: batch, writer: &writer, counter: &counter)
     }
 
-    private func internalSetNestedData(_ value: Any, forKey key: String, withBatch batch: APLevelDBWriteBatch, counter: inout Int) {
-        if let dictionary = value as? [String: Any] {
-            for (childKey, obj) in dictionary {
-                let childPath = "\(key)\(childKey)/"
-                internalSetNestedData(obj, forKey: childPath, withBatch: batch, counter: &counter)
+    /// Stores a node's leaves, each at its path's key, as
+    /// `val(forExport: true)` has them: priorities at ".priority", and a leaf
+    /// with a priority at ".value".
+    private func saveNode(_ node: FNode, forKey key: String, batch: APLevelDBWriteBatch,
+                          writer: inout FJSONWriter, counter: inout Int) {
+        let priority = node.getPriority()
+        switch node.type {
+        case .empty:
+            return
+        case .leaf(let value):
+            if priority.isEmpty {
+                saveLeaf(value, forKey: key, batch: batch, writer: &writer, counter: &counter)
+                return
             }
-        } else {
-            let data = serializePrimitive(value)
-            batch.setData(data, forKey: key)
-            counter += 1
+            saveLeaf(value, forKey: key + kPayloadValue + "/", batch: batch, writer: &writer, counter: &counter)
+        case .children(let children):
+            for (childKey, child) in children {
+                saveNode(child, forKey: key + childKey.key + "/", batch: batch, writer: &writer, counter: &counter)
+            }
         }
+        if case .leaf(let value) = priority.type {
+            saveLeaf(value, forKey: key + kPayloadPriority + "/", batch: batch, writer: &writer, counter: &counter)
+        }
+    }
+
+    private func saveLeaf(_ value: LeafValue, forKey key: String, batch: APLevelDBWriteBatch,
+                          writer: inout FJSONWriter, counter: inout Int) {
+        writer.reset()
+        do {
+            try writer.write(FNode.leaf(value))
+        } catch {
+            fatalError("Failed to serialize primitive: \(error)")
+        }
+        writer.buffer.withUnsafeReadableBytes { batch.setBytes($0, forKey: key) }
+        counter += 1
     }
 
     var serverCacheEstimatedSizeInBytes: Int {
