@@ -206,6 +206,9 @@ struct PersistentConnectionTests {
         // The first stats request is the SDK's; the check follows.
         let check = probe.body["c"] as? [String: Any] == [:] ? probe : try await first.nextRequest("s")
         first.respond(to: check.number)
+        // Messages are handled in order: once this one is, so is the answer.
+        first.push(json: ["t": "d", "d": ["a": "d", "b": ["p": "after", "d": 1]]])
+        try await eventually("answer handled") { delegate.updates.count == 1 }
         try await eventually("probe timer") { clock.pendingSleeps.contains(.seconds(10)) }
         clock.advance(by: .seconds(10))
         try await Task.sleep(for: .milliseconds(20))

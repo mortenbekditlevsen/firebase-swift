@@ -34,9 +34,15 @@ let benchmarks: @Sendable () -> Void = {
   )
 
   // Inbound: what happens to a server payload before the sync tree has it.
-  Benchmark("parse: JSON bytes -> node (JSONSerialization + nodeFrom)") { benchmark in
+  Benchmark("parse: JSON bytes -> node (FJSONScanner)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(try DatabaseBenchmarking.parseNode(json))
+    }
+  }
+
+  Benchmark("parse: JSON bytes -> node (JSONSerialization + nodeFrom)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(try DatabaseBenchmarking.parseNodeWithJSONSerialization(json))
     }
   }
 
@@ -72,9 +78,15 @@ let benchmarks: @Sendable () -> Void = {
   }
 
   // Outbound: what a write does before the socket.
-  Benchmark("serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)") { benchmark in
+  Benchmark("serialize: node -> JSON bytes (FJSONWriter)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(try DatabaseBenchmarking.serialize(node))
+    }
+  }
+
+  Benchmark("serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(try DatabaseBenchmarking.serializeWithJSONSerialization(node))
     }
   }
 

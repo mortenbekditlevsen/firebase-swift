@@ -26,6 +26,13 @@ public enum DatabaseBenchmarking {
 
   /// The inbound path for a server payload: JSON bytes to a node.
   public static func parseNode(_ json: Data) throws -> Node {
+    try FJSONScanner.withScanner(json) { scanner in
+      Node(node: try scanner.readNode())
+    }
+  }
+
+  /// The inbound path before P4: JSONSerialization, then `nodeFrom`.
+  public static func parseNodeWithJSONSerialization(_ json: Data) throws -> Node {
     let object = try JSONSerialization.jsonObject(with: json, options: .fragmentsAllowed)
     return Node(node: FSnapshotUtilities.nodeFrom(object))
   }
@@ -47,7 +54,14 @@ public enum DatabaseBenchmarking {
   }
 
   /// The outbound path for a write: a node to JSON bytes.
-  public static func serialize(_ node: Node) throws -> Data {
+  public static func serialize(_ node: Node) throws -> Int {
+    var writer = FJSONWriter()
+    try writer.write(node.node)
+    return writer.buffer.readableBytes
+  }
+
+  /// The outbound path before P4: `val(forExport:)`, then JSONSerialization.
+  public static func serializeWithJSONSerialization(_ node: Node) throws -> Data {
     try JSONSerialization.data(withJSONObject: node.node.val(forExport: true),
                                options: .fragmentsAllowed)
   }

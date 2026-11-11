@@ -287,7 +287,7 @@ public enum FSnapshotUtilities {
 /// Whether `value` is a Boolean rather than a number. `as? Bool` alone isn't
 /// enough: on Darwin it also matches `NSNumber` 0 and 1, which is what JSON
 /// numbers from the server decode to.
-private func isBoolean(_ value: Any) -> Bool {
+func isBoolean(_ value: Any) -> Bool {
     #if canImport(Darwin)
     if let number = value as? NSNumber {
         return number === kCFBooleanTrue || number === kCFBooleanFalse

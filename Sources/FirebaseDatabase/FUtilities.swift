@@ -37,30 +37,28 @@ internal func FFDebug(_ id: String, _ log: @autoclosure () -> String) {
 }
 
 func tryParseStringToInt(_ str: String, integer: inout Int) -> Bool {
-    // First do some cheap checks (NOTE: The below checks are significantly
-    // faster than an equivalent regex :-( ).
-    let length = str.count
-    if length > 11 || length == 0 {
+    // Over the UTF-8 bytes: counting characters would cost more than the
+    // parse. A key with anything but ASCII digits isn't an integer anyway.
+    let utf8 = str.utf8
+    if utf8.count > 11 || utf8.isEmpty {
         return false
     }
     var value: Int64 = 0
     var negative = false
-    var i = str.startIndex
-    if str[i] == "-" {
-        if length == 1 {
+    var digits = utf8[...]
+    if digits.first == UInt8(ascii: "-") {
+        if utf8.count == 1 {
             return false
         }
         negative = true
-        i = str.index(after: i)
+        digits = digits.dropFirst()
     }
-    for c in str[i...] {
+    for byte in digits {
         // Must be a digit, or '-' if it's the first char.
-        if c < "0" || c > "9" {
+        guard byte >= UInt8(ascii: "0"), byte <= UInt8(ascii: "9") else {
             return false
-        } else {
-            let charValue = c.asciiValue! - ("0" as Character).asciiValue!
-            value = value * 10 + Int64(charValue)
         }
+        value = value * 10 + Int64(byte - UInt8(ascii: "0"))
     }
 
     value = (negative) ? -value : value;
@@ -70,6 +68,27 @@ func tryParseStringToInt(_ str: String, integer: inout Int) -> Bool {
     } else {
         integer = Int(value)
         return true
+    }
+}
+
+/// Orders strings by their UTF-16 code units, as upstream (NSString) does,
+/// comparing UTF-8 bytes: the two orders agree except between U+E000–U+FFFF
+/// and characters beyond U+FFFF, whose surrogates come first in UTF-16.
+func compareUTF16(_ a: String, _ b: String) -> ComparisonResult {
+    var a = a
+    var b = b
+    return a.withUTF8 { a in
+        b.withUTF8 { b in
+            for i in 0 ..< min(a.count, b.count) where a[i] != b[i] {
+                let x = a[i], y = b[i]
+                // Lead bytes EE–EF start U+E000–U+FFFF; F0–F4 start the others.
+                if x >= 0xEE, y >= 0xEE, (x >= 0xF0) != (y >= 0xF0) {
+                    return x >= 0xF0 ? .orderedAscending : .orderedDescending
+                }
+                return x < y ? .orderedAscending : .orderedDescending
+            }
+            return a.count == b.count ? .orderedSame : (a.count < b.count ? .orderedAscending : .orderedDescending)
+        }
     }
 }
 
@@ -217,43 +236,7 @@ enum FUtilities {
         return nil
     }
     static func compareKey(_ a: String, _ b: String) -> ComparisonResult {
-        if a == b { return .orderedSame }
-        else if a == FUtilities.minName || b == FUtilities.maxName { return .orderedAscending }
-        else if a == FUtilities.maxName || b == FUtilities.minName { return .orderedDescending }
-        else {
-            var aAsInt: Int = 0
-            var bAsInt: Int = 0
-            if tryParseStringToInt(a, integer: &aAsInt) {
-                if tryParseStringToInt(b, integer: &bAsInt) {
-                    if aAsInt > bAsInt {
-                        return .orderedDescending
-                    } else if aAsInt < bAsInt {
-                        return .orderedAscending
-                    } else if a.count > b.count {
-                        return .orderedDescending
-                    } else if a.count < b.count {
-                        return .orderedAscending
-                    } else {
-                        return .orderedSame
-                    }
-                } else {
-                    return .orderedAscending
-                }
-            } else if tryParseStringToInt(b, integer: &bAsInt) {
-                return .orderedDescending
-            } else {
-                // Perform literal character by character search to prevent a > b &&
-                // b > a issues. Note that calling -(NSString
-                // *)decomposedStringWithCanonicalMapping also works.
-                if a.utf16.lexicographicallyPrecedes(b.utf16) {
-                    return .orderedAscending
-                } else if b.utf16.lexicographicallyPrecedes(a.utf16) {
-                    return .orderedDescending
-                } else {
-                    return .orderedSame
-                }
-            }
-        }
+        KeyIndex.compare(KeyIndex(key: a), KeyIndex(key: b))
     }
 
     static func ieee754String(for number: NSNumber) -> String {

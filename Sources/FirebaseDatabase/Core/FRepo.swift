@@ -129,8 +129,6 @@ class FRepo: FPersistentConnectionDelegate {
         }
     }
 
-    private var interceptServerDataCallback: ((String, Any) -> Any)?
-
     private func deferredInit() {
 //        print("DEFERRED INIT")
         // TODO: cleanup on dealloc
@@ -149,7 +147,6 @@ class FRepo: FPersistentConnectionDelegate {
 
         dataUpdateCount = 0
         rangeMergeUpdateCount = 0
-        interceptServerDataCallback = nil
         if config.persistenceEnabled {
             let repoHashString = "\(repoInfo.host)/\(repoInfo.namespace)"
             let persistencePrefix = "\(config.sessionIdentifier)/\(repoHashString)"
@@ -225,7 +222,7 @@ class FRepo: FPersistentConnectionDelegate {
             switch write.record {
             case .overwrite(let overwrite):
                 FFLog("I-RDB038001", "Restoring overwrite with id \(writeId)")
-                connection.putData(overwrite.val(forExport: true), forPath: write.path.description,
+                connection.putData(overwrite, forPath: write.path.description,
                                    withHash: nil) { [self] status, _ in
                     warnIfWriteFailedAtPath(write.path, status: status, message: "Persisted write")
                     ackWrite(writeId, rerunTransactionsAtPath: write.path, status: status)
@@ -241,7 +238,7 @@ class FRepo: FPersistentConnectionDelegate {
                 FFLog("I-RDB038002", "Restoring merge with id \(writeId)")
                 // Acknowledged like overwrites, as upstream does (the port
                 // didn't, so a restored merge stayed pending).
-                connection.mergeData(merge.valForExport(true), forPath: write.path.description) { [self] status, _ in
+                connection.mergeData(merge.nodesForExport(), forPath: write.path.description) { [self] status, _ in
                     warnIfWriteFailedAtPath(write.path, status: status, message: "Persisted merge")
                     ackWrite(writeId, rerunTransactionsAtPath: write.path, status: status)
                 }
@@ -289,8 +286,7 @@ class FRepo: FPersistentConnectionDelegate {
     /// Applies the write locally and queues it for the server; `onComplete`
     /// follows the server's acknowledgement.
     func set(_ path: FPath, withNode node: FNode, onComplete: ((Error?) -> Void)? = nil) {
-        let value = node.val(forExport: true)
-        FFLog("I-RDB038003", "Setting: \(path) with \(value) pri: \(node.getPriority().val())")
+        FFLog("I-RDB038003", "Setting: \(path) with \(node.val(forExport: true)) pri: \(node.getPriority().val())")
 
         // TODO: Optimize this behavior to either (a) store flag to skip resolving
         // where possible and / or (b) store unresolved paths on JSON parse
@@ -303,7 +299,7 @@ class FRepo: FPersistentConnectionDelegate {
         persistenceManager?.saveUserOverwrite(node, atPath: path, writeId: writeId)
         let events = serverSyncTree.applyUserOverwriteAtPath(path, newData: newNode, writeId: writeId, isVisible: true)
         eventRaiser.raiseEvents(events)
-        connection.putData(value, forPath: path.description, withHash: nil) { [self] status, errorReason in
+        connection.putData(node, forPath: path.description, withHash: nil) { [self] status, errorReason in
             warnIfWriteFailedAtPath(path, status: status, message: "setValue: or removeValue:")
             ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
             onComplete?(writeError(status: status, reason: errorReason))
@@ -316,8 +312,8 @@ class FRepo: FPersistentConnectionDelegate {
     /// Applies the merge locally and queues it for the server; `onComplete`
     /// follows the server's acknowledgement.
     func update(_ path: FPath, withNodes nodes: FCompoundWrite, onComplete: ((Error?) -> Void)? = nil) {
-        let values = nodes.valForExport(true)
-        FFLog("I-RDB038004", "Updating: \(path) with \(values)")
+        let values = nodes.nodesForExport()
+        FFLog("I-RDB038004", "Updating: \(path) with \(nodes.valForExport(true))")
         let serverValues = FServerValues.generateServerValues(serverClock)
         let resolved = FServerValues.resolveDeferredValueCompoundWrite(nodes,
                                                                        withSyncTree: serverSyncTree,
@@ -365,7 +361,7 @@ class FRepo: FPersistentConnectionDelegate {
     }
 
     internal func onDisconnectSet(_ path: FPath, withNode node: FNode, withCallback callback: (@Sendable (Error?, DatabaseReference) -> Void)?) {
-        connection.onDisconnectPutData(node.val(forExport: true), forPath: path) { [weak self] status, errorReason in
+        connection.onDisconnectPutData(node, forPath: path) { [weak self] status, errorReason in
             let success = status == kFWPResponseForActionStatusOk
             if success {
                 self?.onDisconnect.rememberData(node, onPath: path)
@@ -387,8 +383,7 @@ class FRepo: FPersistentConnectionDelegate {
             }
             return
         }
-        let values = nodes.valForExport(true)
-        connection.onDisconnectMergeData(values, forPath: path) { [weak self] status, errorReason in
+        connection.onDisconnectMergeData(nodes.nodesForExport(), forPath: path) { [weak self] status, errorReason in
             let success = status == kFWPResponseForActionStatusOk
             if success {
                 nodes.enumerateWrites { relativePath, nodeUnresolved, stop in
@@ -450,7 +445,7 @@ class FRepo: FPersistentConnectionDelegate {
             
         } else {
             // status OK
-            let node = FSnapshotUtilities.nodeFrom(data)
+            let node = data ?? .empty
             let events = self.serverSyncTree.applyServerOverwriteAtPath(querySpec.path, newData: node)
             self.eventRaiser.raiseEvents(events)
             
@@ -543,31 +538,24 @@ class FRepo: FPersistentConnectionDelegate {
     // MARK: -
     // MARK: FPersistentConnectionDelegate methods
 
-    func onDataUpdate(_ fpconnection: FPersistentConnection, forPath pathString: String, message: Any, isMerge: Bool, tagId: Int?) {
-        FFLog("I-RDB038013", "onDataUpdateForPath: \(pathString) withMessage: \(message)")
+    func onDataUpdate(_ fpconnection: FPersistentConnection, forPath pathString: String, update: ServerUpdate, tagId: Int?) {
+        FFLog("I-RDB038013", "onDataUpdateForPath: \(pathString) withMessage: \(update)")
 
         // For testing.
         self.dataUpdateCount += 1
 
         let path = FPath(with: pathString)
-        let data = interceptServerDataCallback?(pathString, message) ?? message
         let events: [FEvent]
-        if let tagId = tagId {
-            if isMerge {
-                let taggedChildren = FCompoundWrite.compoundWrite(valueDictionary: data as? [String: Any] ?? [:])
-                events = serverSyncTree.applyTaggedQueryMergeAtPath(path, changedChildren: taggedChildren, tagId: tagId)
-            } else {
-                let taggedSnap = FSnapshotUtilities.nodeFrom(data)
-                events = serverSyncTree.applyTaggedQueryOverwriteAtPath(path, newData: taggedSnap, tagId: tagId)
-            }
-        } else {
-            if isMerge {
-                let changedChildren = FCompoundWrite.compoundWrite(valueDictionary: data as? [String: Any] ?? [:])
-                events = serverSyncTree.applyServerMergeAtPath(path, changedChildren: changedChildren)
-            } else {
-                let snap = FSnapshotUtilities.nodeFrom(data)
-                events = serverSyncTree.applyServerOverwriteAtPath(path, newData: snap)
-            }
+        switch (update, tagId) {
+        case (.overwrite(let node), let tagId?):
+            events = serverSyncTree.applyTaggedQueryOverwriteAtPath(path, newData: node, tagId: tagId)
+        case (.merge(let writes), let tagId?):
+            events = serverSyncTree.applyTaggedQueryMergeAtPath(path, changedChildren: .compoundWrite(nodeDictionary: writes),
+                                                                tagId: tagId)
+        case (.overwrite(let node), nil):
+            events = serverSyncTree.applyServerOverwriteAtPath(path, newData: node)
+        case (.merge(let writes), nil):
+            events = serverSyncTree.applyServerMergeAtPath(path, changedChildren: .compoundWrite(nodeDictionary: writes))
         }
         if !events.isEmpty {
             // Since we have a listener outstanding for each transaction, receiving
@@ -852,7 +840,7 @@ offline for more details.
             snapToSend = snapToSend.updateChild(relativePath, withNewChild: transaction.currentOutputSnapshotRaw)
         }
 
-        let dataToSend = snapToSend.val(forExport: true)
+        let dataToSend = snapToSend
         let pathToSend = path.description
         latestHash = hijackHash ? "badhash" : latestHash
 

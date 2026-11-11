@@ -233,6 +233,16 @@ struct FCompoundWrite: Hashable, Sendable {
         return dictionary
     }
 
+    /// The writes by wire-format path, for `FJSONWriter` (which writes the
+    /// nodes as `valForExport(true)` has them).
+    func nodesForExport() -> [String: FNode] {
+        var dictionary: [String: FNode] = [:]
+        writeTree.forEach { path, value in
+            dictionary[path.wireFormat()] = value
+        }
+        return dictionary
+    }
+
     /**
      * Return true if this CompoundWrite is empty and therefore does not modify any
      * nodes.

@@ -158,6 +158,8 @@ let package = Package(
                 // So the interop mode here is specifically a workaround for
                 // being able to consume leveldb public headers.
               .interoperabilityMode(.Cxx),
+              // `~Escapable` scanners over `Span` (FJSONScanner), as swift-nio does.
+              .enableExperimentalFeature("Lifetimes"),
             ],
         ),
 

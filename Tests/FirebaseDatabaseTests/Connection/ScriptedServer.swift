@@ -187,13 +187,13 @@ final class TestConnectivity: ConnectivityMonitor {
 final class RecordingConnectionDelegate: FPersistentConnectionDelegate {
     var connects = 0
     var disconnects = 0
-    var updates: [(path: String, message: Any)] = []
+    var updates: [(path: String, update: ServerUpdate)] = []
 
     nonisolated init() {}
 
-    func onDataUpdate(_ fpconnection: FPersistentConnection, forPath pathString: String, message: Any,
-                      isMerge: Bool, tagId: Int?) {
-        updates.append((pathString, message))
+    func onDataUpdate(_ fpconnection: FPersistentConnection, forPath pathString: String, update: ServerUpdate,
+                      tagId: Int?) {
+        updates.append((pathString, update))
     }
 
     func onRangeMerge(_ ranges: [FRangeMerge], forPath pathString: String, tagId: Int?) {}
