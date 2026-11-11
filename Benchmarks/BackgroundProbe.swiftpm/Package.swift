@@ -46,9 +46,7 @@ let package = Package(
                 .product(name: "FirebaseCore", package: "firebase-swift"),
                 .product(name: "FirebaseDatabase", package: "firebase-swift"),
             ],
-            path: "Sources",
-            // FirebaseDatabase's leveldb module has C++ headers (see Benchmarks/README.md).
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            path: "Sources"
         ),
     ]
 )

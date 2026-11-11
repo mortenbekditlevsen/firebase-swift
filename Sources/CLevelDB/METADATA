@@ -1,0 +1,14 @@
+name: "LevelDB"
+description:
+  "include/CLevelDB.h is leveldb's C API (include/leveldb/c.h), with "
+  "export.h inlined, so that Swift can import it without C++ interop. "
+  "Changes are marked \"firebase-swift:\"."
+
+third_party {
+  url {
+    type: GIT
+    value: "https://github.com/google/leveldb"
+  }
+  version: "1.22"
+  license_type: NOTICE
+}

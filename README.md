@@ -47,9 +47,15 @@ targets: [
   .target(name: "MyApp", dependencies: [
     .product(name: "FirebaseAuth", package: "firebase-swift"),
     .product(name: "FirebaseFirestore", package: "firebase-swift"),
+  ], swiftSettings: [
+    // Only for FirebaseFirestore, which wraps upstream's C++ core.
+    .interoperabilityMode(.Cxx),
   ]),
 ]
 ```
+
+Targets that import `FirebaseFirestore` need Swift's C++ interoperability.
+The other modules don't.
 
 Firestore brings gRPC, Abseil and nanopb, by far the largest dependencies. If
 you don't use it, turn off the package's `Firestore` trait and SwiftPM won't
