@@ -35,9 +35,7 @@ let package = Package(
         .product(name: "BenchmarkScenarios", package: "Scenarios"),
         .product(name: "FirebaseCore", package: "firebase-swift"),
         .product(name: "FirebaseDatabase", package: "firebase-swift"),
-      ],
-      // FirebaseDatabase's leveldb module has C++ headers (see Benchmarks/README.md).
-      swiftSettings: [.interoperabilityMode(.Cxx)]
+      ]
     ),
     .executableTarget(
       name: "DatabaseMicro",
@@ -47,7 +45,6 @@ let package = Package(
         .product(name: "Benchmark", package: "benchmark"),
       ],
       path: "Benchmarks/DatabaseMicro",
-      swiftSettings: [.interoperabilityMode(.Cxx)],
       plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
     ),
   ]

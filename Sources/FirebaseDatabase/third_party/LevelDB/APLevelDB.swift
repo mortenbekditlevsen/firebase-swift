@@ -3,7 +3,7 @@
  *
  */
 
-internal import leveldb
+internal import CLevelDB
 import Foundation
 
 // firebase-swift: LevelDB's error strings and `leveldb_get` results are

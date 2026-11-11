@@ -220,17 +220,10 @@ struct FJSONScanner: ~Escapable {
     private func firstIndex(of byte: UInt8, from start: Int, to end: Int? = nil) -> Int? {
         let end = end ?? bytes.count
         guard start < end else { return nil }
-        return unsafe bytes.withUnsafeBufferPointer { buffer in
-            #if os(Android)
-            // Bionic's header declares C++'s overloads of memchr (this module
-            // uses C++ interop), which Swift can't choose between.
-            let range = unsafe UnsafeBufferPointer(rebasing: buffer[start ..< end])
-            return unsafe range.firstIndex(of: byte).map { start + $0 }
-            #else
-            let base = unsafe buffer.baseAddress!
+        return unsafe bytes.withUnsafeBufferPointer { buffer -> Int? in
+            let base = unsafe UnsafeRawPointer(buffer.baseAddress!)
             guard let found = unsafe memchr(base + start, Int32(byte), end - start) else { return nil }
-            return unsafe found.assumingMemoryBound(to: UInt8.self) - base
-            #endif
+            return unsafe base.distance(to: UnsafeRawPointer(found))
         }
     }
 

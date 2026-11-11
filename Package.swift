@@ -123,12 +123,22 @@ let package = Package(
               ]
             ),
 
+        // leveldb's C API on its own. The leveldb module's other headers are
+        // C++, so importing it would need C++ interop in FirebaseDatabase and
+        // in every app that imports FirebaseDatabase.
+        .target(
+            name: "CLevelDB",
+            dependencies: ["leveldb"],
+            path: "Sources/CLevelDB",
+            exclude: ["LICENSE", "METADATA"]
+        ),
+
         .target(
             name: "FirebaseDatabase",
             dependencies: [
                 "FirebaseCore",
                 "FirebaseShared",
-                "leveldb",
+                "CLevelDB",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Atomics", package: "swift-atomics"),
                 .product(name: "SortedCollections", package: "swift-collections"),
@@ -152,18 +162,7 @@ let package = Package(
             exclude: [
               "third_party/LevelDB/LICENSE",
             ],
-            publicHeadersPath: "Public",
-            cSettings: [
-              .headerSearchPath("../../"),
-            ],
             swiftSettings: [
-                // leveldb is a C++ module, and exposes public headers with C++
-                // The public headers could be changed to only contain C
-                // (I did this previously), but we have another target
-                // (Firestore) that requires the C++ headers.
-                // So the interop mode here is specifically a workaround for
-                // being able to consume leveldb public headers.
-              .interoperabilityMode(.Cxx),
               // `~Escapable` scanners over `Span` (FJSONScanner), as swift-nio does.
               .enableExperimentalFeature("Lifetimes"),
             ],
@@ -316,10 +315,7 @@ let package = Package(
                 .product(name: "NIOWebSocket", package: "swift-nio"),
             ],
             path: "Tests/FirebaseDatabaseTests",
-            resources: [.copy("Resources/syncPointSpec.json")],
-            swiftSettings: [
-                .interoperabilityMode(.Cxx),
-            ]
+            resources: [.copy("Resources/syncPointSpec.json")]
         ),
         .testTarget(
             name: "FirebaseFirestoreTests",

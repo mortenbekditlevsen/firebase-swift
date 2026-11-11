@@ -80,7 +80,5 @@ a device.
 
 ## Notes
 
-- `FirebaseDatabase`'s leveldb dependency has C++ headers, so its importers
-  currently need `.interoperabilityMode(.Cxx)`. The benchmark targets set it.
 - `@_spi(Benchmarking) import FirebaseDatabase` exposes the internal steps the
   micro-benchmarks call (`DatabaseBenchmarking`). It isn't API.
