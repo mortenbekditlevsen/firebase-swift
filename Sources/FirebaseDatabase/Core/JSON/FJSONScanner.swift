@@ -36,6 +36,8 @@ struct FJSONError: Error, CustomStringConvertible {
 /// Reads JSON from UTF-8 bytes, without building Foundation objects: the
 /// values go straight to what they're for (`FNode`s, see `readNode()`).
 ///
+/// Unlike strict JSON, it accepts control characters in strings.
+///
 /// It borrows the bytes, so it can't outlive them; use `withScanner`.
 struct FJSONScanner: ~Escapable {
     let bytes: Span<UInt8>
@@ -183,18 +185,13 @@ struct FJSONScanner: ~Escapable {
     mutating func readString() throws -> String {
         try expect(UInt8(ascii: "\""))
         let start = offset
-        // The fast path: no escapes.
-        while offset < bytes.count {
-            let byte = bytes[offset]
-            if byte == UInt8(ascii: "\"") {
-                defer { offset += 1 }
-                return string(start ..< offset)
-            }
-            if byte == UInt8(ascii: "\\") { break }
-            if byte < 0x20 { throw error(.unexpectedByte(byte)) }
-            offset += 1
+        // The fast path: no escapes. (memchr, as strings can be megabytes.)
+        guard let end = firstIndex(of: UInt8(ascii: "\""), from: start) else { throw error(.unexpectedEnd) }
+        guard let escape = firstIndex(of: UInt8(ascii: "\\"), from: start, to: end) else {
+            offset = end + 1
+            return string(start ..< end)
         }
-        guard offset < bytes.count else { throw error(.unexpectedEnd) }
+        offset = escape
         var utf8: [UInt8] = []
         utf8.reserveCapacity(offset - start + 16)
         for i in start ..< offset {
@@ -208,14 +205,22 @@ struct FJSONScanner: ~Escapable {
                 return String(decoding: utf8, as: UTF8.self)
             case UInt8(ascii: "\\"):
                 try readEscape(into: &utf8)
-            case ..<0x20:
-                offset -= 1
-                throw error(.unexpectedByte(byte))
             default:
                 utf8.append(byte)
             }
         }
         throw error(.unexpectedEnd)
+    }
+
+    /// The index of the first `byte` from `start` (to `end`), if any.
+    private func firstIndex(of byte: UInt8, from start: Int, to end: Int? = nil) -> Int? {
+        let end = end ?? bytes.count
+        guard start < end else { return nil }
+        return unsafe bytes.withUnsafeBufferPointer { buffer in
+            let base = unsafe buffer.baseAddress!
+            guard let found = unsafe memchr(base + start, Int32(byte), end - start) else { return nil }
+            return unsafe found.assumingMemoryBound(to: UInt8.self) - base
+        }
     }
 
     /// The bytes in `range` as a string (invalid UTF-8 is repaired).

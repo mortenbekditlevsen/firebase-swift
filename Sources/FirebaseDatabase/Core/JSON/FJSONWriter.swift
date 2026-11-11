@@ -34,6 +34,11 @@ struct FJSONWriter {
         buffer = ByteBufferAllocator().buffer(capacity: capacity)
     }
 
+    /// Empties the buffer, to write again with its memory.
+    mutating func reset() {
+        buffer.clear()
+    }
+
     /// `value` as JSON bytes.
     static func bytes(_ value: Any) throws -> ByteBuffer {
         var writer = FJSONWriter()
@@ -160,12 +165,17 @@ struct FJSONWriter {
 
     private mutating func write(string: String) {
         buffer.writeInteger(UInt8(ascii: "\""))
-        var string = string
-        string.withUTF8 { utf8 in
-            var start = 0
-            for (index, byte) in utf8.enumerated() where byte < 0x20 || byte == UInt8(ascii: "\"")
-                || byte == UInt8(ascii: "\\") {
-                buffer.writeBytes(UnsafeRawBufferPointer(UnsafeBufferPointer(rebasing: utf8[start ..< index])))
+        // strcspn finds the bytes to escape, at C's speed (strings can be
+        // megabytes); a NUL, which ends the C string, is escaped too.
+        string.withCString { start in
+            let count = string.utf8.count
+            var offset = 0
+            while true {
+                let run = strcspn(start + offset, "\"\\\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\u{7}\u{8}\u{9}\u{A}\u{B}\u{C}\u{D}\u{E}\u{F}\u{10}\u{11}\u{12}\u{13}\u{14}\u{15}\u{16}\u{17}\u{18}\u{19}\u{1A}\u{1B}\u{1C}\u{1D}\u{1E}\u{1F}")
+                buffer.writeBytes(UnsafeRawBufferPointer(start: start + offset, count: run))
+                offset += run
+                guard offset < count else { break }
+                let byte = UInt8(bitPattern: start[offset])
                 switch byte {
                 case UInt8(ascii: "\""): buffer.writeStaticString("\\\"")
                 case UInt8(ascii: "\\"): buffer.writeStaticString("\\\\")
@@ -176,9 +186,8 @@ struct FJSONWriter {
                     let hex = String(byte, radix: 16)
                     buffer.writeString("\\u00" + (hex.count == 1 ? "0" + hex : hex))
                 }
-                start = index + 1
+                offset += 1
             }
-            buffer.writeBytes(UnsafeRawBufferPointer(UnsafeBufferPointer(rebasing: utf8[start...])))
         }
         buffer.writeInteger(UInt8(ascii: "\""))
     }

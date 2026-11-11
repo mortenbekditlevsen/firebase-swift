@@ -48,6 +48,20 @@ fileprivate class WriteBatch {
         }
     }
 
+    // firebase-swift: from bytes, without copying them first.
+    fileprivate func put(_ key: Slice, bytes: UnsafeRawBufferPointer) {
+        key.slice { (keyBytes, keyCount) in
+            leveldb_writebatch_put(pointer, keyBytes.baseAddress, keyCount,
+                                   bytes.baseAddress?.assumingMemoryBound(to: CChar.self), bytes.count)
+        }
+    }
+
+    fileprivate func delete(bytes key: Span<UInt8>) {
+        unsafe key.withUnsafeBytes { key in
+            leveldb_writebatch_delete(pointer, key.baseAddress?.assumingMemoryBound(to: CChar.self), key.count)
+        }
+    }
+
     fileprivate func clear() {
         leveldb_writebatch_clear(pointer)
     }
@@ -148,6 +162,19 @@ final fileprivate class DBIterator {
         return Data(bytes: bytes, count: length)
     }
 
+    /// firebase-swift: the current key and value as LevelDB's own bytes,
+    /// valid only during `body` (they change when the iterator moves). Nil if
+    /// the iterator isn't at a row.
+    func withKeyAndValue<Result>(_ body: (_ key: Span<UInt8>, _ value: Span<UInt8>) -> Result) -> Result? {
+        var keyLength = 0
+        var valueLength = 0
+        guard isValid, let key = leveldb_iter_key(db_pointer, &keyLength) else { return nil }
+        let value = leveldb_iter_value(db_pointer, &valueLength)
+        let keyBytes = unsafe UnsafeRawBufferPointer(start: key, count: keyLength)
+        let valueBytes = unsafe UnsafeRawBufferPointer(start: value, count: value == nil ? 0 : valueLength)
+        return body(unsafe Span(_unsafeBytes: keyBytes), unsafe Span(_unsafeBytes: valueBytes))
+    }
+
     var error: String? {
         var error: UnsafeMutablePointer<Int8>? = nil
         leveldb_iter_get_error(db_pointer, &error)
@@ -198,9 +225,12 @@ extension Data: Slice {
 }
 
 extension String: Slice {
+    // firebase-swift: the UTF-8 bytes in place, not copied to a C string (keys
+    // and values are given with their length, so no terminator is needed).
     fileprivate func slice<ResultType>(_ f: (UnsafeBufferPointer<Int8>, Int) -> ResultType) -> ResultType {
-        return self.utf8CString.withUnsafeBufferPointer { a in
-            f(a, Int(strlen(a.baseAddress!)))
+        var string = self
+        return string.withUTF8 { utf8 in
+            utf8.withMemoryRebound(to: Int8.self) { f($0, $0.count) }
         }
     }
 
@@ -322,6 +352,10 @@ class APLevelDBIterator {
 
 protocol APLevelDBWriteBatch {
     func setData(_ data: Data, forKey key: String)
+    /// firebase-swift: sets `bytes` (copied into the batch).
+    func setBytes(_ bytes: UnsafeRawBufferPointer, forKey key: String)
+    /// firebase-swift: removes the key with these bytes.
+    func removeKey(bytes key: Span<UInt8>)
     func setString(_ str: String, forKey key: String)
     func removeKey(_ key: String)
     func clear()
@@ -340,6 +374,12 @@ class APLevelDBWriteBatchImpl: APLevelDBWriteBatch {
     }
     func setString(_ str: String, forKey key: String) {
         batch.put(key, value: str.data())
+    }
+    func setBytes(_ bytes: UnsafeRawBufferPointer, forKey key: String) {
+        batch.put(key, bytes: bytes)
+    }
+    func removeKey(bytes key: Span<UInt8>) {
+        batch.delete(bytes: key)
     }
     func removeKey(_ key: String) {
         batch.delete(key)
@@ -639,6 +679,25 @@ class APLevelDB {
             block(key, &stop)
 
             guard !stop, iterator.nextRow() else { break }
+        }
+        iterator.logError()
+    }
+
+    /// firebase-swift: calls `body` with each key that starts with `prefix`,
+    /// and its value, in key order, as LevelDB's own bytes (valid only during
+    /// the call: nothing is copied), until it returns false.
+    func forEach(withPrefix prefix: String, _ body: (_ key: Span<UInt8>, _ value: Span<UInt8>) -> Bool) {
+        let iterator = DBIterator(query: SequenceQuery(db: self, startKey: prefix))
+        let prefix = Array(prefix.utf8)
+        while iterator.isValid {
+            let more = iterator.withKeyAndValue { key, value in
+                guard key.count >= prefix.count else { return false }
+                for i in 0 ..< prefix.count where key[i] != prefix[i] {
+                    return false
+                }
+                return body(key, value)
+            }
+            guard more == true, iterator.nextRow() else { break }
         }
         iterator.logError()
     }
