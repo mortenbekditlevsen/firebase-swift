@@ -61,7 +61,7 @@ extension FJSONScanner {
 
     private mutating func readObjectNode(depth: Int) throws -> FNode {
         try beginObject()
-        var children: [(key: KeyIndex, value: FNode)] = []
+        var children: [FChild] = []
         var sorted = true
         var priority: FNode?
         var leaf: LeafValue?
@@ -89,7 +89,7 @@ extension FJSONScanner {
             if sorted, let last = children.last?.key, !(last < key) {
                 sorted = false
             }
-            children.append((key, child))
+            children.append(FChild(key: key, value: child))
         }
         if let leaf {
             return .leaf(leaf, priority: priority)
@@ -98,19 +98,19 @@ extension FJSONScanner {
         if !sorted {
             children = Self.sortedRemovingDuplicates(children)
         }
-        return .children(SortedDictionary(sortedKeysWithValues: children), priority: priority)
+        return .children(FChildren(sortedChildren: children), priority: priority)
     }
 
     /// Children in key order; for a key that's there more than once, the last
     /// value (as JSONSerialization keeps).
-    private static func sortedRemovingDuplicates(_ children: [(key: KeyIndex, value: FNode)])
-        -> [(key: KeyIndex, value: FNode)] {
-        let sorted = children.enumerated().sorted { lhs, rhs in
-            lhs.element.key < rhs.element.key || (lhs.element.key == rhs.element.key && lhs.offset < rhs.offset)
-        }
-        var result: [(key: KeyIndex, value: FNode)] = []
-        result.reserveCapacity(sorted.count)
-        for (_, child) in sorted {
+    private static func sortedRemovingDuplicates(_ children: [FChild]) -> [FChild] {
+        var children = children
+        // Stable, so of equal keys the last stays last.
+        children.sort { $0.key < $1.key }
+        guard zip(children, children.dropFirst()).contains(where: { $0.key == $1.key }) else { return children }
+        var result: [FChild] = []
+        result.reserveCapacity(children.count)
+        for child in children {
             if result.last?.key == child.key {
                 result[result.count - 1] = child
             } else {
@@ -122,18 +122,18 @@ extension FJSONScanner {
 
     private mutating func readArrayNode(depth: Int) throws -> FNode {
         try beginArray()
-        var children: [(key: KeyIndex, value: FNode)] = []
+        var children: [FChild] = []
         var index = 0
         var first = true
         while try nextElement(&first) {
             let child = try readNode(depth: depth + 1)
             if !child.isEmpty {
-                children.append((KeyIndex(key: String(index)), child))
+                children.append(FChild(key: KeyIndex(key: String(index)), value: child))
             }
             index += 1
         }
         guard !children.isEmpty else { return .empty }
-        return .children(SortedDictionary(sortedKeysWithValues: children))
+        return .children(FChildren(sortedChildren: children))
     }
 
     /// `"timestamp"` or `{"increment": delta}`.

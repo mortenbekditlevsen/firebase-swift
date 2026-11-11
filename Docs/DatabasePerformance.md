@@ -1,0 +1,153 @@
+# Realtime Database: performance
+
+How the Swift port of Realtime Database compares with upstream's
+(firebase-ios-sdk 13.1.1), and how it got there. The benchmarks are in
+[Benchmarks/](../Benchmarks/README.md) and the raw results in
+`Benchmarks/results/`.
+
+## How it's measured
+
+The scenarios run against the Database emulator on the same Mac (Apple M5,
+18 cores, macOS 27), over loopback. The port and upstream take turns. The
+emulator does the server's work for both, so its time is in every number.
+Compare the targets with each other, not the absolute times. The numbers are
+medians of 10 runs (5 for the earlier phases). Upstream ran with main-queue
+and with background-queue callbacks; the table shows the faster of the two.
+
+| ID | Scenario |
+|---|---|
+| S1 | Load 10k children (about 2.4 MB) on a new connection |
+| S2 | 10k child-added events (100 merges of 100) |
+| S3 | S1, then decoding into `[String: BenchItem]` |
+| S4a | 2k writes, each awaited |
+| S4b | 5k writes at once |
+| S5 | Read the 10k children from the offline cache, in a new process |
+| S6 | 50 concurrent transactions on one counter |
+
+## Where it ended up
+
+`Benchmarks/results/d00c08c7-p8-final.jsonl`:
+
+| Scenario | Port before | **Port now** | Upstream | Now vs upstream | Peak MB: before → now (upstream) |
+|---|---:|---:|---:|---:|---:|
+| S1 | 596 ms | **49 ms** | 180 ms | 3.7× faster | 367 → **69** (64) |
+| S2 | 9815 ms | **174 ms** | 381 ms | 2.2× faster | 260 → **43** (45) |
+| S3 | 850 ms | **75 ms** | 281 ms | 3.7× faster | 402 → **74** (68) |
+| S3, the decode step alone | ≈ 300 ms | **23 ms** | 100 ms | 4.3× faster | |
+| S4a | 453 ms | **269 ms** | 340 ms | 1.3× faster | 18 → 20 (19) |
+| S4b | 1255 ms | **598 ms** | 7183 ms | 12× faster | 280 → **80** (64) |
+| S5 | 409 ms | **44 ms** | 405 ms | 9.2× faster | 254 → **49** (68) |
+| S6 | 5.7 ms | **2.3 ms** | 4.3 ms | 1.9× faster | 18 → 20 (19) |
+
+"Before" is the baseline (`796e15b0-baseline.jsonl`). On the scenarios
+measured with it, the port also uses less CPU than upstream: S1 38 ms
+against 175, S2 227 against 484, S4a 141 against 245.
+
+Memory is now about level with upstream. S1 and S3 peak at 5 MB more, S4b at
+15 MB more, and S2 and S5 lower.
+
+## What made the difference
+
+Port medians by phase, in ms:
+
+| Phase | S1 | S2 | S3 | S4a | S4b | S5 | S6 | S1 peak MB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Baseline | 596 | 9815 | 850 | 453 | 1255 | 409 | 5.7 | 367 |
+| P0/P1 quick fixes | 366 | 475 | 622 | | | | | 337 |
+| P1 transport | 304 | 468 | 542 | 379 | 1040 | 411 | 2.4 | 341 |
+| P2 connection | 290 | 472 | 542 | 385 | 995 | 408 | 2.3 | 271 |
+| P3 async API | 295 | 472 | 602 | 384 | 738 | 400 | 2.4 | 270 |
+| P4 byte-level JSON | 71 | 176 | 324 | 290 | 654 | 378 | 2.6 | 224 |
+| P5 node Codable | 63 | 203 | 95 | 362 | 774 | 407 | 2.6* | 224 |
+| P6 persistence on Span | 65 | 224 | 100 | 396 | 738 | 72 | 2.6 | 222 |
+| P8 compact children | 47 | 239 | 71 | 463 | 857 | 56 | 3.0 | 66 |
+| P8 final | 49 | 174 | 75 | 269 | 598 | 44 | 2.3 | 69 |
+
+\* From the rerun; the first P5 run measured 15.8 ms on a busy emulator.
+
+S2 and S4a also move with the machine's load. Upstream's own S4a varied
+between 330 and 400 ms over these runs. So read those columns by their
+trend, not by single steps.
+
+By size of effect:
+
+1. **Child updates (P0):**
+   - `FTree.updateChild` didn't write a new child back to its parent, so each
+     merge walked further. Fixing it took S2 from 9.8 s to 0.47 s.
+   - In the same step, log messages became lazy (`@autoclosure`) and child
+     lookups use the B-tree instead of a linear search.
+2. **Bytes straight to nodes, and back (P4):**
+   - A byte-level JSON scanner (`FJSONScanner`, over `Span`) builds nodes
+     directly. Before, messages went bytes → `String` → `Data` →
+     JSONSerialization → Foundation tree → nodes.
+   - Only a message's data part is read as nodes; the envelope around it is
+     small Foundation values.
+   - `FJSONWriter` writes nodes without `val()`.
+   - Keys cache whether they're integers, instead of parsing themselves on
+     every comparison (a 3.5× faster sort).
+   - S1 went from 295 to 71 ms.
+3. **Codable from and to nodes (P5):** `FNodeDecoder` and `FNodeEncoder`
+   work on nodes directly, instead of through `val()` and
+   `FirebaseDataDecoder` (or `FirebaseDataEncoder` and `nodeFrom`). S3's
+   decode went from about 255 to 23 ms.
+4. **The cache on Span (P6):**
+   - LevelDB lends its keys and values in place.
+   - One pass over a path's keys builds the node.
+   - Leaves are written from the node.
+   - S5 went from 407 to 44 ms.
+5. **Compact children (P8):**
+   - A node's children were a `SortedDictionary`. In release builds, its
+     B-tree nodes reserve room for 16 entries, in three allocations. In debug
+     builds they reserve 5, which is why debug measurements didn't show it.
+     10k small objects took 162 MB.
+   - `FChildren` keeps up to 32 children in a sorted array that fits them,
+     as upstream's and Android's array-backed dictionaries do, and larger
+     ones in the B-tree.
+   - With the unused cached-hash field removed from nodes (64 → 48 bytes),
+     the same data takes 10.5 MB. S1's peak went from 222 to 66 MB, and
+     loading got faster too.
+6. **Sending without a task switch (P8):** NIO channels take writes from any
+   thread in order, so the actor writes to the channel directly instead of
+   through an outbox task and NIO's async writer. This was the one scenario
+   upstream still won. S4a went from 400–470 ms to 380–400 ms, on a loaded
+   machine, then to 269 ms in the final run (upstream: 340).
+7. **Smaller things (P8):**
+   - `FIndexedNode` works out its order once instead of on every access.
+   - Children are sorted with a stable sort instead of a sort over
+   `enumerated()`.
+   - Key comparisons read the bytes in place.
+   - Parsing the micro-benchmark's 10k objects went from 49 to 28 ms.
+
+Micro-benchmarks for 10k items, without a network (p50; before → now):
+
+| Step | Before | Now | For reference |
+|---|---:|---:|---|
+| Parse JSON to a node | 251 ms | 28 ms | JSONSerialization alone: 13 ms, making no node |
+| Decode a node to `[String: BenchItem]` | 267 ms | 24 ms | JSONDecoder from the bytes: 28 ms |
+| Encode `[String: BenchItem]` to a node | 259 ms | 59 ms | |
+| Serialize a node to JSON | 188 ms | 18 ms | |
+| Sort 10k keys | 16 ms | 4.5 ms | |
+
+## Lessons
+
+- **S1's apparent P3 regression** came from the benchmark itself. Each
+  client's teardown overlapped the next one's load on the shared actor. The
+  runner now pauses between iterations, unmeasured.
+- **Memory has to be measured in release builds.** swift-collections sizes
+  its B-tree nodes differently in debug builds, which hid the biggest memory
+  cost for six phases.
+- **Unsorted input is the slow path.** Upstream's server sends keys in
+  order, so loads skip the sort. The micro-benchmark's `JSONEncoder` fixture
+  doesn't, so it overstates sorting.
+
+## Open
+
+- **Data hashes aren't cached.** `FNode.dataHash()` recomputes for every
+  listen with cached data and every transaction. Caching it per node would
+  cost a box per node. It's worth it if listens on large cached trees show it.
+- **The encoder still makes as many allocations as the old path.** It's 4×
+  faster, but its containers are reference boxes.
+- **Parsing builds a tree.** It's 2× JSONSerialization alone, which makes
+  none. Most of the rest is copying and releasing keys and nodes.
+- **The device study** (the background probe, P7) and **Linux numbers**
+  aren't in yet.

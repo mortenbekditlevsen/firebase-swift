@@ -149,7 +149,7 @@ public enum FSnapshotUtilities {
              if children.isEmpty {
                  return .empty
              } else {
-                 let dict = SortedDictionary(keysWithValues: children.map { (KeyIndex(key: $0.key), $0.value) })
+                 let dict = FChildren(keysWithValues: children.map { (KeyIndex(key: $0.key), $0.value) })
                  return .children(dict, priority: priority)
              }
          } else if let aval = value as? [Any] {
@@ -169,7 +169,7 @@ public enum FSnapshotUtilities {
              if children.isEmpty {
                  return .empty
              } else {
-                 let dict = SortedDictionary(keysWithValues: children.map { (KeyIndex(key: $0.key), $0.value) })
+                 let dict = FChildren(keysWithValues: children.map { (KeyIndex(key: $0.key), $0.value) })
 
                  return .children(dict, priority: priority)
              }

@@ -14,6 +14,7 @@
 
 import SortedCollections
 import Foundation
+import Synchronization
 
 /**
  * Represents a node together with an index. The index and node are updated in
@@ -41,10 +42,22 @@ public struct FIndexedNode: Sendable {
 
     let node: FNode
     let index: FIndex
+    /// The children in the index's order, if it differs from the keys' order.
+    /// Worked out once (it scans the children, and may sort them).
     var indexed: Wrapper {
         if let initial = initialIndexed {
             return initial
         }
+        guard let cache else { return computeIndexed() }
+        return cache.value.withLock { cached in
+            if let cached { return cached }
+            let indexed = computeIndexed()
+            cached = indexed
+            return indexed
+        }
+    }
+
+    private func computeIndexed() -> Wrapper {
         if index == .key {
             return .fallback
         }
@@ -69,11 +82,20 @@ public struct FIndexedNode: Sendable {
     }
 
     let initialIndexed: Wrapper?
+    /// Nil if `initialIndexed` is known.
+    private let cache: IndexCache?
+
+    /// The lazily worked out `indexed`, shared by copies.
+    private final class IndexCache: Sendable {
+        let value = Mutex<Wrapper?>(nil)
+    }
 
     init(node: FNode, index: FIndex = .priority, indexed: Wrapper? = nil) {
         self.node = node
         self.index = index
-        self.initialIndexed = indexed
+        // With the key index, the order is the keys'.
+        initialIndexed = indexed ?? (index == .key ? .fallback : nil)
+        cache = initialIndexed == nil ? IndexCache() : nil
     }
 
     static func indexedNode(node: FNode) -> FIndexedNode {

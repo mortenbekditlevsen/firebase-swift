@@ -50,6 +50,14 @@ public protocol DatabaseTransportConnection: Sendable {
     func send(_ frame: DatabaseFrame) async throws
 }
 
+/// A connection that can send without waiting: from any thread, in the order
+/// called. The Database then sends from its actor directly, instead of
+/// through a task that awaits `send`. (Failures end the connection, which
+/// ends `inbound`.)
+protocol DatabaseTransportImmediateSending: DatabaseTransportConnection {
+    func sendImmediately(_ frame: DatabaseFrame)
+}
+
 /// Where to connect, and the headers to send with the WebSocket upgrade request.
 public struct DatabaseTransportRequest: Sendable {
     /// A `ws` or `wss` URL.

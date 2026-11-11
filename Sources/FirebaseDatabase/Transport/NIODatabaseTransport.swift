@@ -67,6 +67,7 @@ public struct NIODatabaseTransport: DatabaseTransport {
     public struct Connection: DatabaseTransportConnection {
         let messages: NIOAsyncChannelInboundStream<ByteBuffer>
         let outbound: NIOAsyncChannelOutboundWriter<ByteBuffer>
+        let channel: any Channel
 
         public var inbound: some AsyncSequence<DatabaseFrame, any Error> {
             messages.map { DatabaseFrame($0) }
@@ -75,6 +76,13 @@ public struct NIODatabaseTransport: DatabaseTransport {
         public func send(_ frame: DatabaseFrame) async throws {
             try await outbound.write(frame.byteBuffer)
         }
+    }
+}
+
+extension NIODatabaseTransport.Connection: DatabaseTransportImmediateSending {
+    /// Writes to the channel, which takes writes from any thread in order.
+    func sendImmediately(_ frame: DatabaseFrame) {
+        channel.writeAndFlush(frame.byteBuffer, promise: nil)
     }
 }
 
@@ -160,7 +168,8 @@ func withWebSocket<Result>(
         throw DatabaseTransportError.upgradeRejected
     case .upgraded(let channel):
         return try await channel.executeThenClose { inbound, outbound in
-            try await body(NIODatabaseTransport.Connection(messages: inbound, outbound: outbound))
+            try await body(NIODatabaseTransport.Connection(messages: inbound, outbound: outbound,
+                                                           channel: channel.channel))
         }
     }
 }

@@ -21,7 +21,7 @@ import SortedCollections
 struct FLeafTreeBuilder {
     private struct Level {
         var name: String
-        var children: [(key: KeyIndex, value: FNode)] = []
+        var children: [FChild] = []
         var sorted = true
         var priority: FNode?
         var value: LeafValue?
@@ -38,12 +38,12 @@ struct FLeafTreeBuilder {
                 if let last = children.last?.key {
                     if last == key {
                         // A leaf and children at one path: the later wins.
-                        children[children.count - 1] = (key, node)
+                        children[children.count - 1] = FChild(key: key, value: node)
                         return
                     }
                     if !(last < key) { sorted = false }
                 }
-                children.append((key, node))
+                children.append(FChild(key: key, value: node))
             }
         }
 
@@ -55,7 +55,7 @@ struct FLeafTreeBuilder {
             if !sorted {
                 children.sort { $0.key < $1.key }
             }
-            return .children(SortedDictionary(sortedKeysWithValues: children), priority: priority)
+            return .children(FChildren(sortedChildren: children), priority: priority)
         }
     }
 

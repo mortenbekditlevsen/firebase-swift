@@ -75,21 +75,28 @@ func tryParseStringToInt(_ str: String, integer: inout Int) -> Bool {
 /// comparing UTF-8 bytes: the two orders agree except between U+E000–U+FFFF
 /// and characters beyond U+FFFF, whose surrogates come first in UTF-16.
 func compareUTF16(_ a: String, _ b: String) -> ComparisonResult {
+    // The bytes in place (native strings have them contiguous); copying the
+    // strings for `withUTF8` would cost a retain and release per comparison.
+    if let result = a.utf8.withContiguousStorageIfAvailable({ a in
+        b.utf8.withContiguousStorageIfAvailable { b in compareUTF16(a, b) }
+    }), let result {
+        return result
+    }
     var a = a
     var b = b
-    return a.withUTF8 { a in
-        b.withUTF8 { b in
-            for i in 0 ..< min(a.count, b.count) where a[i] != b[i] {
-                let x = a[i], y = b[i]
-                // Lead bytes EE–EF start U+E000–U+FFFF; F0–F4 start the others.
-                if x >= 0xEE, y >= 0xEE, (x >= 0xF0) != (y >= 0xF0) {
-                    return x >= 0xF0 ? .orderedAscending : .orderedDescending
-                }
-                return x < y ? .orderedAscending : .orderedDescending
-            }
-            return a.count == b.count ? .orderedSame : (a.count < b.count ? .orderedAscending : .orderedDescending)
+    return a.withUTF8 { a in b.withUTF8 { b in compareUTF16(a, b) } }
+}
+
+private func compareUTF16(_ a: UnsafeBufferPointer<UInt8>, _ b: UnsafeBufferPointer<UInt8>) -> ComparisonResult {
+    for i in 0 ..< min(a.count, b.count) where a[i] != b[i] {
+        let x = a[i], y = b[i]
+        // Lead bytes EE–EF start U+E000–U+FFFF; F0–F4 start the others.
+        if x >= 0xEE, y >= 0xEE, (x >= 0xF0) != (y >= 0xF0) {
+            return x >= 0xF0 ? .orderedAscending : .orderedDescending
         }
+        return x < y ? .orderedAscending : .orderedDescending
     }
+    return a.count == b.count ? .orderedSame : (a.count < b.count ? .orderedAscending : .orderedDescending)
 }
 
 func firebaseJobsTroll() {

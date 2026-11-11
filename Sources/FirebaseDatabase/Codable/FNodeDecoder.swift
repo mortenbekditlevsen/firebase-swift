@@ -212,7 +212,7 @@ final class FNodeDecodingContext: @unchecked Sendable {
 
     /// The children by the keys a keyed container sees: the stored keys,
     /// converted by the key strategy.
-    func keyed(_ children: SortedDictionary<KeyIndex, FNode>, at path: FCodingPath) -> [String: KeyIndex]? {
+    func keyed(_ children: FChildren, at path: FCodingPath) -> [String: KeyIndex]? {
         switch keyStrategy {
         case .useDefaultKeys:
             return nil
@@ -344,13 +344,13 @@ private struct FNodeValueDecoder: Decoder, SingleValueDecodingContainer {
 // MARK: - Keyed container
 
 private struct FNodeKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
-    let children: SortedDictionary<KeyIndex, FNode>
+    let children: FChildren
     let context: FNodeDecodingContext
     let path: FCodingPath
     /// The keys by their converted names, if the key strategy converts them.
     let convertedKeys: [String: KeyIndex]?
 
-    init(children: SortedDictionary<KeyIndex, FNode>, context: FNodeDecodingContext, path: FCodingPath) {
+    init(children: FChildren, context: FNodeDecodingContext, path: FCodingPath) {
         self.children = children
         self.context = context
         self.path = path
