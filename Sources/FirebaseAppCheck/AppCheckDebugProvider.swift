@@ -25,10 +25,18 @@ import Foundation
 /// as in a CI environment; otherwise a token is generated, saved and logged on the first launch.
 /// Register it in the Firebase console, or with
 /// `firebase appcheck:debugtokens:create <token> --project <project ID> --app <app ID>`.
+///
+/// Alternatively, provision a debug token with the Firebase CLI
+/// (`firebase appcheck:debugtokens:create --app <app ID>`), which registers it and saves it to
+/// `~/.config/configstore/firebase-appcheck.json`. Apps launched from Xcode in a Simulator
+/// pick up the saved token automatically, so no manual registration is needed.
 public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable {
   private let debugProvider: AppCheckCoreDebugProvider
   let projectID: String?
   let googleAppID: String
+  /// Where `debugProvider` got the debug token it exchanges. The only token `init(app:)` passes
+  /// it is one from the Firebase CLI's config store, so `.provided` means that token is in use.
+  private let debugTokenSource: AppCheckCoreDebugTokenSource
 
   /// The default initializer.
   /// - Parameter app: A `FirebaseApp` instance.
@@ -43,11 +51,16 @@ public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable 
       """)
       return nil
     }
+    // In a Simulator, use the debug token provisioned by the Firebase CLI on the host machine (if
+    // any) instead of generating a new one that would need to be registered manually.
+    let configStoreDebugToken =
+      AppCheckDebugTokenConfigStore.debugToken(forGoogleAppID: app.options.googleAppID)
     let debugProvider = AppCheckCoreDebugProvider(serviceName: app.name,
                                                   resourceName: app.appCheckResourceName,
                                                   baseURL: nil,
                                                   apiKey: apiKey,
-                                                  requestHooks: nil)
+                                                  requestHooks: nil,
+                                                  debugToken: configStoreDebugToken)
     self.init(debugProvider: debugProvider, projectID: app.options.projectID,
               googleAppID: app.options.googleAppID)
   }
@@ -56,7 +69,18 @@ public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable 
     self.debugProvider = debugProvider
     self.projectID = projectID
     self.googleAppID = googleAppID
-    logDebugTokenMessage(code: "I-FAA003001", prefix: "")
+    debugTokenSource = debugProvider.debugTokenSource
+    switch debugTokenSource {
+    case .local:
+      logDebugTokenMessage(code: "I-FAA003001", prefix: "")
+    case .provided:
+      logger.notice("""
+      I-FAA003004: Debug token loaded from ~/\(AppCheckDebugTokenConfigStore.relativePath).
+      """)
+    case .environmentVariable:
+      // AppCheckCore logs that the environment variable is used; the local token is unused.
+      break
+    }
   }
 
   /// Returns the locally generated token.
@@ -66,6 +90,9 @@ public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable 
 
   /// Returns the currently used App Check debug token. The priority:
   ///  - `FIRAAppCheckDebugToken` env variable value
+  ///  - Simulator only: the token for the app's Google App ID in
+  ///    `~/.config/configstore/firebase-appcheck.json` on the host machine, as provisioned by
+  ///    `firebase appcheck:debugtokens:create`
   ///  - previously generated stored local token
   ///  - newly generated random token
   public func currentDebugToken() -> String {
@@ -76,7 +103,7 @@ public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable 
     do {
       return try await debugProvider.publicToken()
     } catch {
-      logDebugTokenExchangeError()
+      logDebugTokenExchangeError(error)
       throw error
     }
   }
@@ -85,13 +112,57 @@ public final class AppCheckDebugProvider: AppCheckProvider, @unchecked Sendable 
     do {
       return try await debugProvider.publicLimitedUseToken()
     } catch {
-      logDebugTokenExchangeError()
+      logDebugTokenExchangeError(error)
       throw error
     }
   }
 
-  private func logDebugTokenExchangeError() {
-    logDebugTokenMessage(code: "I-FAA003003", prefix: "Failed to exchange debug token. ")
+  private func logDebugTokenExchangeError(_ error: any Error) {
+    if debugTokenSource == .local {
+      logDebugTokenMessage(code: "I-FAA003003", prefix: "Failed to exchange debug token. ")
+      return
+    }
+    guard let message = debugTokenExchangeFailureMessage(for: error) else { return }
+    let code = debugTokenSource == .provided ? "I-FAA003005" : "I-FAA003003"
+    logger.warning("\(code): \(message)")
+  }
+
+  /// The message to log when exchanging an environment variable or config store debug token
+  /// fails, or `nil` when there's nothing actionable to report (e.g. the server was
+  /// unreachable). Unlike the local token's registration instructions, these never include the
+  /// token.
+  func debugTokenExchangeFailureMessage(for error: any Error) -> String? {
+    let nsError = error as NSError
+    if nsError.domain == AppCheckCoreErrorDomain,
+       nsError.code == AppCheckCoreErrorCode.serverUnreachable.rawValue {
+      return nil
+    }
+    let projectArgument = projectID.map { $0.isEmpty ? "" : " --project \($0)" } ?? ""
+    // App Check Core errors describe the failure in `NSLocalizedFailureReasonErrorKey`; using it
+    // directly avoids Foundation's generic "The operation couldn’t be completed." prefix.
+    let errorDescription = nsError.localizedFailureReason ?? nsError.localizedDescription
+    switch debugTokenSource {
+    case .provided:
+      // The config store is only read at launch, so a new token requires relaunching the app.
+      return """
+      Failed to exchange the debug token loaded from \
+      ~/\(AppCheckDebugTokenConfigStore.relativePath): \(errorDescription)
+
+      If the token was rejected by the server, run \
+      `firebase appcheck:debugtokens:create --force\(projectArgument) --app \(googleAppID)` to \
+      provision a new token, then relaunch the app.
+      """
+    case .environmentVariable:
+      return """
+      Failed to exchange the debug token from the `AppCheckDebugToken` or \
+      `FIRAAppCheckDebugToken` environment variable: \(errorDescription)
+
+      Make sure the token is registered for app \(googleAppID), for example with \
+      `firebase appcheck:debugtokens:create <token>\(projectArgument) --app \(googleAppID)`.
+      """
+    case .local:
+      return nil
+    }
   }
 
   private func logDebugTokenMessage(code: String, prefix: String) {

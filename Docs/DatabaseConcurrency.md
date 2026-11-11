@@ -98,7 +98,8 @@ each response is for (`PendingResponse`), not in callbacks. When a session
 ends:
 - puts and onDisconnect writes are kept and sent again on the next
   connection;
-- gets fail;
+- gets are sent again too, unless the client stays offline for the gets'
+  connect timeout (3 s), when they fail and fall back to the cache;
 - every completion runs exactly once.
 
 Time comes from an injectable `DatabaseClock`, so the tests run all of this

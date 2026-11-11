@@ -415,10 +415,11 @@ class FRepo: FPersistentConnectionDelegate {
         if let node = serverSyncTree.getServerValue(querySpec) {
             return DataSnapshot(ref: query.ref, indexedNode: FIndexedNode(node: node, index: querySpec.index))
         }
-        // XXX TODO: LOOK AT LATEST MASTER ON THE FB REPO. THIS HAS BEEN CHANGED TO USE SOME TAGGING STUFF
-        persistenceManager?.setQueryActive(querySpec)
+        // Through the sync tree, which keeps the query active if an observer or
+        // keepSynced still needs it.
+        serverSyncTree.setQueryActive(querySpec)
         defer {
-            self.persistenceManager?.setQueryInactive(querySpec)
+            self.serverSyncTree.setQueryInactive(querySpec)
         }
         let result = await connection.getDataAtPath(querySpec.path.description,
                                  withParams: querySpec.params.wireProtocolParams)
@@ -434,10 +435,18 @@ class FRepo: FPersistentConnectionDelegate {
             if let node = self.serverSyncTree.persistenceServerCache(querySpec) {
                 return DataSnapshot(ref: query.ref, indexedNode: node)
             } else {
+                // The server may omit the reason; fall back to the status.
+                let reason = errorReason ?? status
+                let description = if reason == kPersistentConnectionOffline {
+                    // The get timed out waiting for a connection.
+                    "Unable to get latest value for query \(querySpec), client offline with no active listeners and no matching disk cache entries"
+                } else {
+                    // The server rejected the get, e.g. because of security rules.
+                    "Unable to get latest value for query \(querySpec): \(reason)"
+                }
                 let errorDict: [String: Any] = [
-                    // The server may omit the reason; fall back to the status.
-                    NSLocalizedFailureReasonErrorKey: errorReason ?? status,
-                    NSLocalizedDescriptionKey: "Unable to get latest value for query \(querySpec), client offline with no active listeners and no matching disk cache entries"
+                    NSLocalizedFailureReasonErrorKey: reason,
+                    NSLocalizedDescriptionKey: description
                 ]
                 let error = NSError(domain: kFirebaseCoreErrorDomain, code: 1, userInfo: errorDict)
                 throw error
@@ -446,7 +455,7 @@ class FRepo: FPersistentConnectionDelegate {
         } else {
             // status OK
             let node = data ?? .empty
-            let events = self.serverSyncTree.applyServerOverwriteAtPath(querySpec.path, newData: node)
+            let events = self.serverSyncTree.applyGetResultForQuery(querySpec, newData: node)
             self.eventRaiser.raiseEvents(events)
             
             return DataSnapshot(ref: query.ref, indexedNode: FIndexedNode(node: node, index: querySpec.index))

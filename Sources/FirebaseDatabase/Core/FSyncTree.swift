@@ -277,7 +277,7 @@ class FSyncTree: @unchecked Sendable {
         tagToQueryMap[tagId]
     }
 
-    private func tag(for query: FQuerySpec) -> Int? {
+    func tag(for query: FQuerySpec) -> Int? {
         queryToTagMap[query]
     }
 
@@ -302,7 +302,13 @@ class FSyncTree: @unchecked Sendable {
         return applyTaggedQueryOverwriteAtPath(path, newData: serverNode, tagId: tagId)
     }
 
-    func addEventRegistration(_ eventRegistration: FEventRegistration, forQuery query: FQuerySpec) -> [FEvent] {
+    /**
+     * Add an event callback for the specified query
+     * @param skipListenerSetup If true, no listen is started for a new view. Used
+     * when applying a get result, which doesn't need a listen.
+     * @return NSArray of FEvent to raise.
+     */
+    func addEventRegistration(_ eventRegistration: FEventRegistration, forQuery query: FQuerySpec, skipListenerSetup: Bool = false) -> [FEvent] {
         let path = query.path
         var foundAncestorDefaultView = false
 
@@ -336,7 +342,7 @@ class FSyncTree: @unchecked Sendable {
             let writesCache = pendingWriteTree.childWritesForPath(path)
             let serverCache = serverCacheForQuery(query)
             events = syncPoint.addEventRegistration(eventRegistration, forNonExistingViewForQuery: query, writesCache: writesCache, serverCache: serverCache)
-            if !foundAncestorDefaultView {
+            if !foundAncestorDefaultView && !skipListenerSetup {
                 if let view = syncPoint.viewForQuery(query) {
                     events.append(contentsOf: setupListenerOnQuery(query, view: view))
                 }
@@ -390,9 +396,11 @@ class FSyncTree: @unchecked Sendable {
      *
      * @param matcher if .all, all callbacks are removed
      * @param cancelError If provided, appropriate cancel events will be returned
+     * @param skipListenerDedup If true, no listens are started or stopped. Used to
+     * remove a registration added with skipListenerSetup, whose view has no listen.
      * @return NSArray of FEvent to raise.
      */
-    func removeEventRegistration(_ matcher: FEventRegistrationMatcher, forQuery query: FQuerySpec, cancelError: Error?) -> [FEvent] {
+    func removeEventRegistration(_ matcher: FEventRegistrationMatcher, forQuery query: FQuerySpec, cancelError: Error?, skipListenerDedup: Bool = false) -> [FEvent] {
         // Find the syncPoint first. Then deal with whether or not it has matching
         // listeners
         let path = query.path
@@ -424,7 +432,7 @@ class FSyncTree: @unchecked Sendable {
             }
             let covered = syncPointTree.find(onPath: path) { $1.hasCompleteView
             } ?? false
-            if removingDefault && !covered {
+            if !skipListenerDedup && removingDefault && !covered {
                 let subtree = syncPointTree.subtree(atPath: path)
                 // There are potentially child listeners. Determine what if any
                 // listens we need to send before executing the removal
@@ -450,7 +458,7 @@ class FSyncTree: @unchecked Sendable {
             // covered in terms of making sure we're set up on listens lower in the
             // tree. Also, note that if we have a cancelError, it's already been
             // removed at the provider level.
-            if !covered && !removed.isEmpty && cancelError == nil {
+            if !skipListenerDedup && !covered && !removed.isEmpty && cancelError == nil {
                 // If we removed a default, then we weren't listening on any of the
                 // other queries here. Just cancel the one default. Otherwise, we
                 // need to iterate through and cancel each individual query
@@ -485,6 +493,52 @@ class FSyncTree: @unchecked Sendable {
         }
     }
 
+    /** Marks the query as active in persistence. */
+    func setQueryActive(_ query: FQuerySpec) {
+        persistenceManager?.setQueryActive(query)
+    }
+
+    /**
+     * Marks the query as inactive in persistence only if no active observer or
+     * keepSynced view still needs it. For queries that load all data, any complete
+     * view at the path keeps the query active because persistence normalizes all
+     * such queries to the default query at that path.
+     */
+    func setQueryInactive(_ query: FQuerySpec) {
+        let syncPoint = syncPointTree.value(atPath: query.path)
+        let hasActiveView = syncPoint.map {
+            query.loadsAllData ? $0.hasCompleteView : $0.viewExistsForQuery(query)
+        } ?? false
+        if !hasActiveView {
+            persistenceManager?.setQueryInactive(query)
+        }
+    }
+
+    /**
+     * Apply the result of a get request for the specified query.
+     *
+     * The result for a query that doesn't load all data is only part of the data
+     * at the query's path. Applying it as a server overwrite at the path would
+     * replace the data of the other views at and below the path, and of the
+     * persisted server cache. Instead, it's applied to the query's own view, which
+     * is added without a listen for the duration of this call, like the JS SDK
+     * does. See https://github.com/firebase/firebase-ios-sdk/issues/14137.
+     * @return NSArray of FEvent to raise.
+     */
+    func applyGetResultForQuery(_ query: FQuerySpec, newData: FNode) -> [FEvent] {
+        if query.loadsAllData {
+            return applyServerOverwriteAtPath(query.path, newData: newData)
+        }
+        // This registration raises no events, and removing it doesn't remove the
+        // query's other registrations, such as the shared keepSynced one.
+        _ = addEventRegistration(FGetResultEventRegistration(), forQuery: query, skipListenerSetup: true)
+        let tagId = tag(for: query)
+        assert(tagId != nil, "A view for a filtered query has a tag")
+        let events = tagId.map { applyTaggedQueryOverwriteAtPath(query.path, newData: newData, tagId: $0) } ?? []
+        _ = removeEventRegistration(.getResult, forQuery: query, cancelError: nil, skipListenerDedup: true)
+        return events
+    }
+
     func removeAllWrites() -> [FEvent] {
         persistenceManager?.removeAllUserWrites()
         let removedWrites = pendingWriteTree.removeAllWrites()
@@ -509,20 +563,22 @@ class FSyncTree: @unchecked Sendable {
 
     func getServerValue(_ query: FQuerySpec) -> FNode? {
         var serverCacheNode: FNode? = nil
-        var targetSyncPoint: FSyncPoint? = nil
         _ = syncPointTree.forEachOn(path: query.path) { pathToSyncPoint, syncPoint in
             let relativePath = FPath.relativePath(from: pathToSyncPoint, to: query.path)
             serverCacheNode = syncPoint.completeEventCacheAtPath(relativePath)
-            targetSyncPoint = syncPoint
             return serverCacheNode == nil
         }
+        // Get the view from the sync point at the query's own path. A sync point at
+        // an ancestor path can have a view for the same query params, but that
+        // view holds the data at the ancestor path.
         let target: FSyncPoint
-        if let targetSyncPoint = targetSyncPoint {
+        if let targetSyncPoint = syncPointTree.value(atPath: query.path) {
             target = targetSyncPoint
             serverCacheNode = serverCacheNode ?? targetSyncPoint.completeServerCacheAtPath(.empty)
         } else {
+            // Use a temporary sync point, so that an empty one isn't left in the
+            // tree.
             target = FSyncPoint(persistenceManager: persistenceManager)
-            syncPointTree = syncPointTree.setValue(target, atPath: query.path)
         }
 
         let indexed = FIndexedNode(node: serverCacheNode ?? .empty, index: query.index)

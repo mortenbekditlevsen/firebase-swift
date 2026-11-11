@@ -68,6 +68,9 @@ fileprivate class FOutstandingGet {
     let request: [String : Any]
     let onComplete: CheckedContinuation<FOutstandingGetResultData, Never>
     var sent: Bool
+    /// Which connect timeout is current, so that an earlier one doesn't fail
+    /// the get after it was sent and requeued.
+    var timeoutGeneration = 0
 }
 
 enum ConnectionState {
@@ -662,7 +665,7 @@ final class FPersistentConnection {
             }
         }
         pending.removeAll()
-        failSentGets()
+        requeueSentGets()
         unackedListensCount = 0
         if case .killed(let reason) = end {
             FFWarn("I-RDB034005",
@@ -983,12 +986,29 @@ final class FPersistentConnection {
         }
     }
 
-    /// Fails the gets whose responses were lost with the connection, so their
-    /// callers fall back to the cache instead of waiting forever. (Upstream
-    /// leaves them marked as sent, so they are never resent or answered.)
-    private func failSentGets() {
+    /// Marks the gets whose responses were lost with the connection as unsent,
+    /// so that `restoreState` sends them again on reconnect, as upstream does.
+    /// Unlike upstream, each gets a new connect timeout, so that its caller
+    /// falls back to the cache if the client stays offline.
+    private func requeueSentGets() {
         for (index, get) in outstandingGets where get.sent {
-            outstandingGets.removeValue(forKey: index)
+            get.sent = false
+            failGetIfNotSent(index)
+        }
+    }
+
+    /// Fails the get if it hasn't been sent within
+    /// `kPersistentConnectionGetConnectTimeout`.
+    private func failGetIfNotSent(_ index: Int) {
+        guard let get = outstandingGets[index] else { return }
+        get.timeoutGeneration += 1
+        let generation = get.timeoutGeneration
+        Task { @DatabaseActor in
+            try? await self.clock.sleep(.seconds(Double(kPersistentConnectionGetConnectTimeout)))
+            guard let get = self.outstandingGets[index], !get.sent,
+                  get.timeoutGeneration == generation else { return }
+            FFLog("I-RDB034045", "get \(index) timed out waiting for a connection")
+            self.outstandingGets.removeValue(forKey: index)
             get.onComplete.resume(returning: .init(status: kFWPResponseForActionStatusFailed, data: nil,
                                                    errorReason: kPersistentConnectionOffline))
         }
@@ -1013,14 +1033,7 @@ final class FPersistentConnection {
                     FFLog("I-RDB034024", "Sending get: \(index)")
                     sendGet(index)
                 } else {
-                    Task { @DatabaseActor in
-                        try? await self.clock.sleep(.seconds(Double(kPersistentConnectionGetConnectTimeout)))
-                        guard let get = self.outstandingGets[index], !get.sent else { return }
-                        FFLog("I-RDB034045", "get \(index) timed out waiting for a connection")
-                        self.outstandingGets.removeValue(forKey: index)
-                        get.onComplete.resume(returning: .init(status: kFWPResponseForActionStatusFailed, data: nil,
-                                                               errorReason: kPersistentConnectionOffline))
-                    }
+                    failGetIfNotSent(index)
                 }
             }
         } onCancel: {

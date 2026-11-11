@@ -881,4 +881,177 @@ class FSyncPointTests: XCTestCase {
     runTestForName("Deep update raises all events")
   }
 
+  // MARK: - applyGetResultForQuery (upstream 13.2.0, #16722)
+
+  private final class Recorded: @unchecked Sendable {
+    var starts: [String] = []
+    var stops: [String] = []
+  }
+
+  private func listenProvider(recording recorded: Recorded = Recorded()) -> FListenProvider {
+    FListenProvider(
+      startListening: { [unowned self] query, tagId, _, _ in
+        recorded.starts.append(self.queryKey(for: query, tagId: tagId))
+        return []
+      },
+      stopListening: { [unowned self] query, tagId in
+        recorded.stops.append(self.queryKey(for: query, tagId: tagId))
+      }
+    )
+  }
+
+  private func keyQuery(at path: FPath, limitToLast limit: Int) -> FQuerySpec {
+    FQuerySpec(path: path, params: FQueryParams.defaultInstance.orderBy(.key).limitToLast(limit))
+  }
+
+  func testGetResultForFilteredQueryDoesNotChangeFilteredViewAtSameLocation() {
+    let syncTree = FSyncTree(listenProvider: listenProvider())
+    let path = PATH("p")
+    let byKey = FQueryParams.defaultInstance.orderBy(.key)
+    let listenQuery = FQuerySpec(path: path, params: byKey.startAt(NODE("f")))
+    _ = syncTree.addEventRegistration(
+      FTestEventRegistration(spec: ["callbackId": 1], query: listenQuery), forQuery: listenQuery
+    )
+    let listenValue = NODE(["f": 6, "g": 7, "h": 8, "i": 9, "j": 10])
+    _ = syncTree.applyTaggedQueryOverwriteAtPath(path, newData: listenValue,
+                                                 tagId: syncTree.tag(for: listenQuery)!)
+    let getQuery = FQuerySpec(path: path, params: byKey.endAt(NODE("e")).limitToLast(3))
+
+    let events = syncTree.applyGetResultForQuery(getQuery, newData: NODE(["c": 3, "d": 4, "e": 5]))
+
+    XCTAssertEqual(events.count, 0)
+    XCTAssertEqual(syncTree.getServerValue(listenQuery), listenValue)
+  }
+
+  // https://github.com/firebase/firebase-ios-sdk/issues/8286
+  func testGetResultForFilteredQueryDoesNotChangeDefaultViewAtSameLocation() {
+    let syncTree = FSyncTree(listenProvider: listenProvider())
+    let path = PATH("p")
+    let defaultQuery = FQuerySpec.defaultQueryAtPath(path)
+    _ = syncTree.addEventRegistration(
+      FTestEventRegistration(spec: ["callbackId": 1], query: defaultQuery), forQuery: defaultQuery
+    )
+    let value = NODE(["child1": ["name": "child1"], "child2": ["name": "child2"]])
+    _ = syncTree.applyServerOverwriteAtPath(path, newData: value)
+    // Like queryOrderedByChild("name") and queryEqualToValue("child2").
+    let name = NODE("child2")
+    let params = FQueryParams.defaultInstance.orderBy(.path(PATH("name"))).startAt(name).endAt(name)
+    let getQuery = FQuerySpec(path: path, params: params)
+
+    let events = syncTree.applyGetResultForQuery(getQuery,
+                                                 newData: NODE(["child2": ["name": "child2"]]))
+
+    XCTAssertEqual(events.count, 0)
+    XCTAssertEqual(syncTree.getServerValue(defaultQuery), value)
+  }
+
+  func testGetResultForFilteredQueryDoesNotChangeViewBelowLocation() {
+    let syncTree = FSyncTree(listenProvider: listenProvider())
+    let path = PATH("p")
+    let childQuery = FQuerySpec.defaultQueryAtPath(path.child(fromString: "a"))
+    _ = syncTree.addEventRegistration(
+      FTestEventRegistration(spec: ["callbackId": 1], query: childQuery), forQuery: childQuery
+    )
+    _ = syncTree.applyServerOverwriteAtPath(childQuery.path, newData: NODE(1))
+
+    let events = syncTree.applyGetResultForQuery(keyQuery(at: path, limitToLast: 2),
+                                                 newData: NODE(["c": 3, "d": 4]))
+
+    XCTAssertEqual(events.count, 0)
+    XCTAssertEqual(syncTree.getServerValue(childQuery), NODE(1))
+  }
+
+  func testGetResultForFilteredQueryDoesNotOverwritePersistedServerCache() {
+    let storageEngine = FMockStorageEngine()
+    let persistenceManager = FPersistenceManager(storageEngine: storageEngine,
+                                                 cachePolicy: FNoCachePolicy.noCachePolicy)
+    let syncTree = FSyncTree(persistenceManager: persistenceManager,
+                             listenProvider: listenProvider())
+    let path = PATH("p")
+    let value = NODE(["a": 1, "b": 2, "c": 3, "d": 4])
+    _ = syncTree.applyGetResultForQuery(.defaultQueryAtPath(path), newData: value)
+
+    _ = syncTree.applyGetResultForQuery(keyQuery(at: path, limitToLast: 2),
+                                        newData: NODE(["c": 3, "d": 4]))
+
+    XCTAssertEqual(storageEngine.serverCache(atPath: path), value)
+  }
+
+  func testGetResultForFilteredQueryDoesNotListenOrKeepQueryState() {
+    let recorded = Recorded()
+    let syncTree = FSyncTree(listenProvider: listenProvider(recording: recorded))
+    let query = keyQuery(at: PATH("p"), limitToLast: 2)
+
+    let events = syncTree.applyGetResultForQuery(query, newData: NODE(["c": 3, "d": 4]))
+
+    XCTAssertEqual(events.count, 0)
+    XCTAssertEqual(recorded.starts.count, 0)
+    XCTAssertEqual(recorded.stops.count, 0)
+    XCTAssertNil(syncTree.tag(for: query))
+  }
+
+  func testGetResultForKeepSyncedFilteredQueryKeepsItSynced() {
+    let recorded = Recorded()
+    let syncTree = FSyncTree(listenProvider: listenProvider(recording: recorded))
+    let query = keyQuery(at: PATH("p"), limitToLast: 2)
+    syncTree.keepQuery(query, synced: true)
+    XCTAssertEqual(recorded.starts.count, 1)
+    let value = NODE(["c": 3, "d": 4])
+
+    let events = syncTree.applyGetResultForQuery(query, newData: value)
+
+    XCTAssertEqual(events.count, 0)
+    XCTAssertEqual(recorded.stops.count, 0)
+    XCTAssertEqual(syncTree.getServerValue(query), value)
+    // The keepSynced registration is still there, so removing it stops its listen.
+    syncTree.keepQuery(query, synced: false)
+    XCTAssertEqual(recorded.stops, recorded.starts)
+  }
+
+  func testGetResultForFilteredQueryRaisesEventsForListenerOfSameQuery() {
+    let recorded = Recorded()
+    let syncTree = FSyncTree(listenProvider: listenProvider(recording: recorded))
+    let query = keyQuery(at: PATH("p"), limitToLast: 2)
+    let registration = FTestEventRegistration(spec: ["callbackId": 1], query: query)
+    _ = syncTree.addEventRegistration(registration, forQuery: query)
+    let value = NODE(["c": 3, "d": 4])
+
+    let events = syncTree.applyGetResultForQuery(query, newData: value)
+
+    let valueEvent = events.last as? FDataEvent
+    XCTAssertEqual(valueEvent?.eventType, .value)
+    XCTAssertTrue(valueEvent?.eventRegistration as? FTestEventRegistration === registration)
+    XCTAssertEqual(valueEvent?.snapshot.value as? [String: Int], ["c": 3, "d": 4])
+    XCTAssertEqual(recorded.stops.count, 0)
+    XCTAssertNotNil(syncTree.tag(for: query))
+  }
+
+  // MARK: - setQueryInactive (upstream 13.2.0, #17009)
+
+  // Port note: upstream tests this through FRepo's getData with a mock persistence manager
+  // (FRepoGetDataPersistenceTests); here it's the sync tree's part.
+  func testSetQueryInactiveKeepsObservedQueriesActive() {
+    let persistenceManager = FPersistenceManager(storageEngine: FMockStorageEngine(),
+                                                 cachePolicy: FNoCachePolicy.noCachePolicy)
+    let syncTree = FSyncTree(persistenceManager: persistenceManager,
+                             listenProvider: listenProvider())
+    let observed = FQuerySpec.defaultQueryAtPath(PATH("p"))
+    let filtered = keyQuery(at: PATH("p"), limitToLast: 2)
+    let keptSynced = keyQuery(at: PATH("q"), limitToLast: 2)
+    _ = syncTree.addEventRegistration(
+      FTestEventRegistration(spec: ["callbackId": 1], query: observed), forQuery: observed
+    )
+    syncTree.keepQuery(keptSynced, synced: true)
+
+    // As getData does for each of them.
+    for query in [observed, keptSynced, filtered] {
+      syncTree.setQueryActive(query)
+      syncTree.setQueryInactive(query)
+    }
+
+    let tracked = persistenceManager.trackedQueryManager!
+    XCTAssertEqual(tracked.findTrackedQuery(observed)?.isActive, true)
+    XCTAssertEqual(tracked.findTrackedQuery(keptSynced)?.isActive, true)
+    XCTAssertEqual(tracked.findTrackedQuery(filtered)?.isActive, false)
+  }
 }

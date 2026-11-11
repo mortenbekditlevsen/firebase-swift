@@ -66,6 +66,15 @@ final class TestWebSocketServer: Sendable {
         return TestWebSocketServer(channel: channel)
     }
 
+    /// A server that accepts connections and never answers, like one stuck in
+    /// the TLS handshake.
+    static func startSilent() async throws -> TestWebSocketServer {
+        let channel = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .bind(host: "127.0.0.1", port: 0).get()
+        return TestWebSocketServer(channel: channel)
+    }
+
     func close() async throws {
         try await channel.close()
     }

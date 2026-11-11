@@ -49,7 +49,7 @@ public struct NIODatabaseTransport: DatabaseTransport {
     ) async throws -> sending Result {
         let target = try WebSocketTarget(request)
         let sslContext = target.secure ? try self.sslContext.get() : nil
-        let upgrade = try await ClientBootstrap(group: group)
+        let pending = try await ClientBootstrap(group: group)
             .connectTimeout(connectTimeout)
             .connect(host: target.host, port: target.port) { channel in
                 channel.eventLoop.makeCompletedFuture {
@@ -61,7 +61,7 @@ public struct NIODatabaseTransport: DatabaseTransport {
                     return try configureWebSocketClient(channel, head: target.head)
                 }
             }
-        return try await withWebSocket(upgrade, body)
+        return try await withWebSocket(pending, body)
     }
 
     public struct Connection: DatabaseTransportConnection {
@@ -115,6 +115,12 @@ struct WebSocketTarget: Sendable {
     }
 }
 
+/// A connected channel whose WebSocket upgrade is under way.
+struct PendingWebSocket: Sendable {
+    let channel: any Channel
+    let upgrade: EventLoopFuture<WebSocketUpgrade>
+}
+
 /// The result of a WebSocket upgrade.
 enum WebSocketUpgrade: Sendable {
     case upgraded(NIOAsyncChannel<ByteBuffer, ByteBuffer>)
@@ -124,7 +130,7 @@ enum WebSocketUpgrade: Sendable {
 /// Adds the HTTP client, the upgrade to a WebSocket and the WebSocket
 /// handlers to a connected channel (after any TLS handler).
 func configureWebSocketClient(_ channel: any Channel, head: HTTPRequestHead) throws
-    -> EventLoopFuture<WebSocketUpgrade> {
+    -> PendingWebSocket {
     let upgrader = NIOTypedWebSocketClientUpgrader<WebSocketUpgrade>(
         maxFrameSize: maxDatabaseMessageSize,
         upgradePipelineHandler: { channel, _ in
@@ -154,16 +160,26 @@ func configureWebSocketClient(_ channel: any Channel, head: HTTPRequestHead) thr
     // The server's first message can arrive in the same read as its upgrade
     // response; the default drops it.
     pipeline.leftOverBytesStrategy = .forwardBytes
-    return try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(configuration: pipeline)
+    let upgrade = try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(configuration: pipeline)
+    return PendingWebSocket(channel: channel, upgrade: upgrade)
 }
 
 /// Waits for the upgrade, runs `body` with the connection, and closes it.
 func withWebSocket<Result>(
-    _ upgrade: EventLoopFuture<WebSocketUpgrade>,
+    _ pending: PendingWebSocket,
     isolation: isolated (any Actor)? = #isolation,
     _ body: (NIODatabaseTransport.Connection) async throws -> sending Result
 ) async throws -> sending Result {
-    switch try await upgrade.get() {
+    // The upgrade doesn't end on cancellation, and nothing times out the TLS
+    // handshake or the upgrade response, so a stalled server would keep the
+    // client offline until the OS gives up on the socket (upstream #9682).
+    // Closing the channel fails the upgrade.
+    let upgrade = try await withTaskCancellationHandler {
+        try await pending.upgrade.get()
+    } onCancel: {
+        pending.channel.close(promise: nil)
+    }
+    switch upgrade {
     case .notUpgraded:
         throw DatabaseTransportError.upgradeRejected
     case .upgraded(let channel):

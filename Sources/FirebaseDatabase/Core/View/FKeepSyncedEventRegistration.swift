@@ -35,7 +35,7 @@ struct FKeepSyncedEventRegistration: FEventRegistration {
         switch other {
         case .all, .keepSynced:
             return true
-        case .allRegular, .handle:
+        case .allRegular, .handle, .getResult:
             return false
         }
     }

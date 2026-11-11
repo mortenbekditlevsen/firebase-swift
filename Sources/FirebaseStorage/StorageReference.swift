@@ -122,6 +122,8 @@ public struct StorageReference: Sendable {
     ///       or an error on failure.
     /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
     /// upload.
+    /// If the calling task is cancelled, the transfer is cancelled and `StorageError.cancelled`
+    /// is thrown.
     @discardableResult
     public func putData(_ uploadData: Data,
                         metadata: StorageMetadata? = nil) async throws -> StorageMetadata {
@@ -133,7 +135,7 @@ public struct StorageReference: Sendable {
         let task = StorageUploadTask(reference: self,
                                      data: uploadData,
                                      metadata: putMetadata)
-        return try await task.enqueueAsync()
+        return try await cancellingOnTaskCancellation(task) { try await task.enqueueAsync() }
     }
     
     /// Asynchronously uploads a file to the currently specified `StorageReference`.
@@ -157,6 +159,8 @@ public struct StorageReference: Sendable {
     ///       or an error on failure.
     /// - Returns: An instance of `StorageUploadTask`, which can be used to monitor or manage the
     /// upload.
+    /// If the calling task is cancelled, the transfer is cancelled and `StorageError.cancelled`
+    /// is thrown.
     @discardableResult
     public func putFile(from fileURL: URL,
                         metadata: StorageMetadata? = nil) async throws -> StorageMetadata {
@@ -168,7 +172,7 @@ public struct StorageReference: Sendable {
         let task = StorageUploadTask(reference: self,
                                      file: fileURL,
                                      metadata: putMetadata)
-        return try await task.enqueueAsync()
+        return try await cancellingOnTaskCancellation(task) { try await task.enqueueAsync() }
     }
     
     internal func putFileTask(from fileURL: URL,
@@ -199,6 +203,8 @@ public struct StorageReference: Sendable {
     ///   - completion: A completion block that either returns the object data on success,
     ///       or an error on failure.
     /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
+    /// If the calling task is cancelled, the transfer is cancelled and `StorageError.cancelled`
+    /// is thrown.
     @discardableResult
     public func getData(maxSize: Int64) async throws -> Data {
         let task = StorageDownloadTask(reference: self,
@@ -218,7 +224,7 @@ public struct StorageReference: Sendable {
             }
         }
 
-        let data = try await task.start()
+        let data = try await cancellingOnTaskCancellation(task) { try await task.start() }
         let progress = await task.observer.base.progress
         if let error = self.checkSizeOverflow(
             progress: progress,
@@ -258,12 +264,33 @@ public struct StorageReference: Sendable {
     ///       a URL pointing to the file path of the downloaded file on success,
     ///       or an error on failure.
     /// - Returns: A `StorageDownloadTask` that can be used to monitor or manage the download.
+    /// If the calling task is cancelled, the transfer is cancelled and `StorageError.cancelled`
+    /// is thrown.
     @discardableResult
     public func write(toFile fileURL: URL) async throws -> URL {
         let task = StorageDownloadTask(reference: self,
                                        file: fileURL)
-        _ = try await task.start()
+        _ = try await cancellingOnTaskCancellation(task) { try await task.start() }
         return fileURL
+    }
+
+    /// Runs `transfer`, and cancels `task` if the calling task is cancelled, as
+    /// upstream's async APIs do since 13.2.0 (#11786). Then throws
+    /// `StorageError.cancelled`.
+    private func cancellingOnTaskCancellation<T: Sendable>(
+        _ task: some StorageTaskManagement & Sendable,
+        _ transfer: () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await withTaskCancellationHandler(operation: transfer) {
+                task.cancel()
+            }
+        } catch {
+            if Task.isCancelled {
+                throw StorageError.cancelled
+            }
+            throw error
+        }
     }
     
     // MARK: - List Support

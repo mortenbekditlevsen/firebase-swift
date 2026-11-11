@@ -100,7 +100,7 @@ them; `Swift/Tests/API/BasicCompileTests.swift` has them too.
 ## AppCheckCore (`Sources/FirebaseAppCheck/AppCheckCore`)
 
 Vendored from [google/app-check](https://github.com/google/app-check)
-12.0.0 as part of the `FirebaseAppCheck` target (upstream builds it as its
+12.1.0 as part of the `FirebaseAppCheck` target (upstream builds it as its
 own `AppCheckCore` module). `grep -rn "firebase-swift:"
 Sources/FirebaseAppCheck/AppCheckCore` lists the changes:
 

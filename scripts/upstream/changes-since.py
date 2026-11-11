@@ -77,7 +77,8 @@ def changelog_sections(repo, path, since, to):
                     current = (heading, [])
             elif re.fullmatch(r"\d+\.\d+\.\d+", heading):
                 if version_key(heading) > version_key(since) and \
-                        (to == "origin/main" or version_key(heading) <= version_key(to)):
+                        (to == "origin/main" or
+                         version_key(heading) <= version_key(to.removeprefix("CocoaPods-"))):
                     current = (heading, [])
             if current:
                 sections.append(current)
@@ -127,7 +128,8 @@ def write_patch(repo, modules, since, to, path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("module", help="module name, or part of it (e.g. Firestore, Auth)")
-    parser.add_argument("--to", help="target release, or main (default: the latest release)")
+    parser.add_argument("--to", help="target release, a release candidate's CocoaPods-<version> "
+                        "tag, or main (default: the latest release)")
     parser.add_argument("--output", type=Path, help="write the checklist here, not to stdout")
     parser.add_argument("--force", action="store_true",
                         help="overwrite --output even if items in it are ticked off")

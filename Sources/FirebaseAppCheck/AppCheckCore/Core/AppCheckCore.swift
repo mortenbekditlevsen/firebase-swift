@@ -178,6 +178,12 @@ class AppCheckCore: NSObject, AppCheckCoreProtocol {
       throw AppCheckCoreErrorUtil.cachedTokenExpired()
     }
 
+    // A token cannot have been received in the future. If it was, the device clock was
+    // ahead when it was fetched and its stored dates can't be trusted.
+    if token.receivedAtDate.timeIntervalSinceNow > 0 {
+      throw AppCheckCoreErrorUtil.cachedTokenExpired()
+    }
+
     return token
   }
 

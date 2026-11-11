@@ -78,7 +78,7 @@ MODULES = [
     Module("FirebaseAppCheck", "Sources/FirebaseAppCheck", "FirebaseAppCheck/Sources", "strings",
            "13.1.1", "FirebaseAppCheck/CHANGELOG.md", exclude=("AppCheckCore/", "Port/")),
     Module("AppCheckCore", "Sources/FirebaseAppCheck/AppCheckCore", "AppCheckCore/Sources", "lines",
-           "12.0.0", "CHANGELOG.md", source=APP_CHECK),
+           "12.1.0", "CHANGELOG.md", source=APP_CHECK),
 ]
 
 RELEASE_TAG = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")

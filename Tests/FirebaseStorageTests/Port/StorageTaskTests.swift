@@ -16,6 +16,13 @@ import FirebaseCore
 @testable import FirebaseStorage
 import Foundation
 import Testing
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#elseif canImport(Android)
+  import Android
+#endif
 
 private func rootReference() -> StorageReference {
   var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
@@ -114,5 +121,79 @@ struct StorageTaskTests {
     let firstService = await StorageFetcherService.shared.service(first)
     #expect(await StorageFetcherService.shared.service(first) === firstService)
     #expect(await StorageFetcherService.shared.service(second) !== firstService)
+  }
+
+  // Upstream 13.2.0 (#11786): the async APIs cancel the transfer when the calling task is
+  // cancelled, and throw `StorageError.cancelled`.
+  @Test(arguments: ["putData", "putFile", "getData", "write"])
+  func cancellingTheCallingTaskCancelsTheTransfer(_ api: String) async throws {
+    let server = try SilentServer()
+    defer { server.stop() }
+    var options = FirebaseOptions(googleAppID: "1:123:ios:123ab", gcmSenderID: "123")
+    options.projectID = "project"
+    options.storageBucket = "bucket"
+    let storage = Storage.storage(app: FirebaseApp(options: options, name: "storage-\(UUID().uuidString)"))
+    storage.useEmulator(withHost: "127.0.0.1", port: server.port)
+    let ref = storage.reference().child("object")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try Data("data".utf8).write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+
+    let transfer = Task {
+      switch api {
+      case "putData": _ = try await ref.putData(Data("data".utf8))
+      case "putFile": _ = try await ref.putFile(from: file)
+      case "getData": _ = try await ref.getData(maxSize: 1024)
+      default: _ = try await ref.write(toFile: file.appendingPathExtension("download"))
+      }
+    }
+    try await Task.sleep(for: .milliseconds(200))
+    let start = ContinuousClock.now
+    transfer.cancel()
+    let result = await transfer.result
+    #expect(ContinuousClock.now - start < .seconds(5))
+    #expect(throws: StorageError.self) { try result.get() }
+    if case .failure(let error) = result, let error = error as? StorageError {
+      guard case .cancelled = error else {
+        Issue.record("Expected StorageError.cancelled, got \(error)")
+        return
+      }
+    }
+  }
+}
+
+/// Accepts connections and never answers them: a listening socket whose
+/// backlog the kernel fills, as for a server that hangs.
+private final class SilentServer: Sendable {
+  private let descriptor: Int32
+  let port: Int
+
+  init() throws {
+    #if canImport(Glibc)
+      let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+    #else
+      let fd = socket(AF_INET, SOCK_STREAM, 0)
+    #endif
+    guard fd >= 0 else { throw POSIXError(.EIO) }
+    var address = sockaddr_in()
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    address.sin_port = 0
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let bound = withUnsafeMutablePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        bind(fd, $0, length) == 0 && listen(fd, 16) == 0 && getsockname(fd, $0, &length) == 0
+      }
+    }
+    guard bound else {
+      close(fd)
+      throw POSIXError(.EADDRNOTAVAIL)
+    }
+    descriptor = fd
+    port = Int(UInt16(bigEndian: address.sin_port))
+  }
+
+  func stop() {
+    close(descriptor)
   }
 }

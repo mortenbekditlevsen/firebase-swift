@@ -71,7 +71,7 @@ public struct NIOTSDatabaseTransport: DatabaseTransport {
             bootstrap = bootstrap.tlsOptions(tlsOptions())
         }
         let reconnectsOnBetterPath = reconnectsOnBetterPath
-        let upgrade = try await bootstrap.connect(host: target.host, port: target.port) { channel in
+        let pending = try await bootstrap.connect(host: target.host, port: target.port) { channel in
             channel.eventLoop.makeCompletedFuture {
                 try channel.pipeline.syncOperations.addHandler(
                     NetworkEventHandler(reconnectsOnBetterPath: reconnectsOnBetterPath)
@@ -79,7 +79,7 @@ public struct NIOTSDatabaseTransport: DatabaseTransport {
                 return try configureWebSocketClient(channel, head: target.head)
             }
         }
-        return try await withWebSocket(upgrade, body)
+        return try await withWebSocket(pending, body)
     }
 }
 

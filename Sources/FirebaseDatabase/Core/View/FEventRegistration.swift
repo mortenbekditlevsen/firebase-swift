@@ -18,7 +18,9 @@ enum FEventRegistrationMatcher: Equatable {
     case handle(DatabaseHandle)
     case all
     case keepSynced
-    case allRegular // All except 'keepSynced'
+    /// The registration that applies a `getData` result (FGetResultEventRegistration).
+    case getResult
+    case allRegular // All except 'keepSynced' and 'getResult'
 }
 
 protocol FEventRegistration: Any {
