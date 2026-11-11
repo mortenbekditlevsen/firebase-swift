@@ -160,6 +160,16 @@ private final class Link {
     var lastActivity: Duration
     var assembler = FrameAssembler()
     var end: SessionEnd?
+    /// Sends without the outbox, if the connection can.
+    var sendImmediately: (@Sendable (DatabaseFrame) -> Void)?
+
+    func send(_ frame: DatabaseFrame) {
+        if let sendImmediately {
+            sendImmediately(frame)
+        } else {
+            outbox.yield(frame)
+        }
+    }
 
     init(outbox: AsyncStream<DatabaseFrame>.Continuation, probes: AsyncStream<Int>.Continuation, now: Duration) {
         self.outbox = outbox
@@ -557,6 +567,10 @@ final class FPersistentConnection {
     private func connect(_ transport: some DatabaseTransport, request: DatabaseTransportRequest, link: Link,
                          outbox: AsyncStream<DatabaseFrame>, probes: AsyncStream<Int>) async throws {
         try await transport.withConnection(to: request, isolation: #isolation) { connection in
+            // Nothing is sent before the handshake, so the outbox is empty.
+            if let immediate = connection as? any DatabaseTransportImmediateSending {
+                link.sendImmediately = { immediate.sendImmediately($0) }
+            }
             try await withThrowingDiscardingTaskGroup { group in
                 group.addTask {
                     for await frame in outbox {
@@ -599,7 +613,7 @@ final class FPersistentConnection {
             FFLog("I-RDB083004", "nop")
             // Note: the backend is expecting a string "0" here, not any special
             // ping/pong from build in websocket APIs.
-            link.outbox.yield(DatabaseFrame("0"))
+            link.send(DatabaseFrame("0"))
             link.lastActivity = clock.now()
         }
     }
@@ -1108,7 +1122,7 @@ better performance
             return nil
         }
         for frame in FrameAssembler.frames(for: bytes) {
-            link.outbox.yield(frame)
+            link.send(frame)
         }
         link.lastActivity = clock.now()
         if let response {

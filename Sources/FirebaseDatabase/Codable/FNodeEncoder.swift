@@ -183,14 +183,14 @@ final class FNodeEncodingContext: @unchecked Sendable {
         case .pending(let slot):
             return try node(slot.value ?? .null, depth: depth, path: path)
         case .array(let array):
-            var children: [(key: KeyIndex, value: FNode)] = []
+            var children: [FChild] = []
             for (index, element) in array.elements.enumerated() {
                 let child = try node(element, depth: depth + 1, path: path.appending(FCodingKey(index: index)))
                 if !child.isEmpty {
-                    children.append((KeyIndex(key: String(index)), child))
+                    children.append(FChild(key: KeyIndex(key: String(index)), value: child))
                 }
             }
-            return children.isEmpty ? .empty : .children(SortedDictionary(sortedKeysWithValues: children))
+            return children.isEmpty ? .empty : .children(FChildren(sortedChildren: children))
         case .object(let object):
             return try node(object, depth: depth, path: path)
         }
@@ -219,7 +219,7 @@ final class FNodeEncodingContext: @unchecked Sendable {
             }
             return .leaf(leaf, priority: priority)
         }
-        var children: [(key: KeyIndex, value: FNode)] = []
+        var children: [FChild] = []
         children.reserveCapacity(object.children.count)
         for (key, value) in object.children where key != kPayloadPriority {
             let childPath = path.appending(FCodingKey(key))
@@ -229,12 +229,12 @@ final class FNodeEncodingContext: @unchecked Sendable {
             }
             let child = try node(value, depth: depth + 1, path: childPath)
             if !child.isEmpty {
-                children.append((KeyIndex(key: key), child))
+                children.append(FChild(key: KeyIndex(key: key), value: child))
             }
         }
         guard !children.isEmpty else { return .empty }
         children.sort { $0.key < $1.key }
-        return .children(SortedDictionary(sortedKeysWithValues: children), priority: priority)
+        return .children(FChildren(sortedChildren: children), priority: priority)
     }
 
     private func serverValueOp(_ value: FEncodedValue, at path: FCodingPath) throws -> ServerValueOp {

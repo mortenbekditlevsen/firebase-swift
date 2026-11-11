@@ -261,7 +261,11 @@ connection does, and cancellation must close the connection.
 - **Async only.** Methods that take a completion handler upstream are
   `async` here (for Realtime Database, see [its section](#realtime-database)). There's no Combine support and no Objective-C API.
 - **Concurrency.** The public types are `Sendable`; see
-  [Docs/Concurrency.md](Docs/Concurrency.md).
+  [Docs/Concurrency.md](Docs/Concurrency.md) (Auth) and
+  [Docs/DatabaseConcurrency.md](Docs/DatabaseConcurrency.md) (Realtime Database).
+- **Performance.** Realtime Database loads, decodes and reads its cache several
+  times faster than upstream, with about the same memory; see
+  [Docs/DatabasePerformance.md](Docs/DatabasePerformance.md).
 - **Value types.** Some upstream classes are value types here, among them
   `FirebaseOptions`, Database's `MutableData` and Firestore's `GeoPoint`. A
   copy, such as `FirebaseApp.options`, can't change the original.

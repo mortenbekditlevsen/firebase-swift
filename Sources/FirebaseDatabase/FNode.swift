@@ -164,7 +164,7 @@ struct FNode: Equatable, Hashable, Sendable {
     static func leaf(_ value: LeafValue, priority: FNode? = nil) -> FNode {
         FNode(type: .leaf(value), priorityNode: priority.map(NodeBox.init(node:)))
     }
-    static func children(_ children: SortedDictionary<KeyIndex, FNode>, priority: FNode? = nil) -> FNode {
+    static func children(_ children: FChildren, priority: FNode? = nil) -> FNode {
         FNode(type: .children(children), priorityNode: priority.map(NodeBox.init(node:)))
     }
     static let max: FNode = FNode(type: .empty, isMax: true, priorityNode: nil)
@@ -172,10 +172,9 @@ struct FNode: Equatable, Hashable, Sendable {
     enum NodeType: Equatable, Hashable, Sendable {
         case leaf(LeafValue)
         case empty
-        case children(SortedDictionary<KeyIndex, FNode>)
+        case children(FChildren)
     }
     var type: NodeType
-    var lazyHash: String?
     var isMax: Bool = false
     private var priorityNode: NodeBox?
 
@@ -273,7 +272,7 @@ struct FNode: Equatable, Hashable, Sendable {
             return children[children.index(before: index)].key.key
         }
     }
-    private func updateImmediateChild(_ childKey: String, withNewChild newChildNode: FNode, children: SortedDictionary<KeyIndex, FNode>) -> FNode {
+    private func updateImmediateChild(_ childKey: String, withNewChild newChildNode: FNode, children: FChildren) -> FNode {
         var newChildren = children
         if newChildNode.isEmpty {
             _ = newChildren.removeValue(forKey: KeyIndex(key: childKey))
@@ -362,7 +361,7 @@ struct FNode: Equatable, Hashable, Sendable {
 
     // XXX TODO: Ought to be an opaque collection in the future
     // Alternatively, children should just return an iterator...
-    var children: SortedDictionary<KeyIndex, FNode> {
+    var children: FChildren {
         switch type {
         case .leaf, .empty:
             return [:]
@@ -432,9 +431,6 @@ struct FNode: Equatable, Hashable, Sendable {
     }
 
     /*mutating*/ func dataHash() -> String {
-        if let lazyHash {
-            return lazyHash
-        }
         let calculatedHash: String
         switch type {
         case .leaf:
@@ -489,8 +485,6 @@ struct FNode: Equatable, Hashable, Sendable {
             calculatedHash = toHash.isEmpty ? "" : FStringUtilities.base64EncodedSha1(toHash)
 
         }
-        // XXX TODO: Box the cached hash somehow?
-//        lazyHash = calculatedHash
         return calculatedHash;
     }
 
