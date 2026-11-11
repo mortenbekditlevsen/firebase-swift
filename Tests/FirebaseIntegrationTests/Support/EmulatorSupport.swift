@@ -128,6 +128,15 @@ struct EmulatorApp {
       app: app, url: "https://\(Emulators.projectID)-default-rtdb.firebaseio.com"
     )
     database.useEmulator(withHost: address.host, port: address.port)
+    // DATABASE_TRANSPORT picks another transport than the default.
+    switch ProcessInfo.processInfo.environment["DATABASE_TRANSPORT"] {
+    #if canImport(Darwin)
+    case "urlSession": database.transport = URLSessionDatabaseTransport()
+    case "networkFramework": database.transport = NIOTSDatabaseTransport()
+    #endif
+    case "nio": database.transport = NIODatabaseTransport()
+    default: break
+    }
     return database
   }
 

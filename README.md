@@ -231,9 +231,19 @@ There are no callbacks or observer handles:
 ### Connections
 
 Realtime Database talks to its server over a WebSocket, opened by a
-`DatabaseTransport`. The default is `NIODatabaseTransport` (SwiftNIO with
-swift-nio-ssl), or `URLSessionDatabaseTransport` on watchOS. Set another one
-before using the database:
+`DatabaseTransport`. There are three:
+
+- `NIODatabaseTransport`: SwiftNIO on POSIX sockets, with swift-nio-ssl. The
+  default, except on watchOS.
+- `NIOTSDatabaseTransport` (Apple platforms): SwiftNIO on Network.framework,
+  with the system's TLS. When the system finds a better network path (Wi-Fi
+  after cellular), it reconnects on it.
+- `URLSessionDatabaseTransport` (Apple platforms): the default on watchOS.
+
+Whichever it is, the client reconnects with a backoff when a connection
+fails, at once when the network changes or the app returns to the
+foreground, and checks a connection that may have died meanwhile. Set
+another transport before using the database:
 
 ```swift
 let database = Database.database()

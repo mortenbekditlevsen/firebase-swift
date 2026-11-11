@@ -1,5 +1,5 @@
 {
-  "originHash" : "612d0d94c992b96887bdb72893ed760dc8d8ffaae17c4ad701d15d9a664b9426",
+  "originHash" : "6c43a197c9a1c9fb202cfaf8d5a1ba6df63a738d7695d3ff7dd16876ec0bc3d3",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
@@ -107,6 +107,15 @@
       "state" : {
         "revision" : "3f337058ccd7243c4cac7911477d8ad4c598d4da",
         "version" : "2.37.0"
+      }
+    },
+    {
+      "identity" : "swift-nio-transport-services",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-nio-transport-services.git",
+      "state" : {
+        "revision" : "67787bb645a5e67d2edcdfbe48a216cc549222d5",
+        "version" : "1.28.0"
       }
     },
     {

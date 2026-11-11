@@ -12,6 +12,7 @@ they can't be linked into one binary. There are three packages instead:
 | `Scenarios` | The scenarios, fixtures (seeded, so every run sees the same bytes), REST seeding of the emulator, the JSON-lines result format and `bench-compare`. No Firebase dependency. |
 | `Port` | `bench-port`: the scenarios against this repository's Database. `DatabaseMicro`: micro-benchmarks of the value paths, without a network ([benchmark](https://github.com/ordo-one/benchmark)). |
 | `Upstream` | `bench-upstream`: the scenarios against upstream's Database (macOS). |
+| `BackgroundProbe.swiftpm` | An iOS app for a device: how each transport copes with backgrounding and network changes ([README](BackgroundProbe.swiftpm/README.md)). |
 
 ## Running
 
@@ -26,6 +27,14 @@ Benchmarks/run.sh --iterations 10 --scenarios "S1 S3" --targets port
 prints a Markdown table of medians. Results go to
 `Benchmarks/results/<revision>-<date>.jsonl`. Combine files with
 `Benchmarks/Scenarios/.build/release/bench-compare results/a.jsonl results/b.jsonl`.
+
+The port uses its default transport. To measure another one, set
+`BENCHMARK_DATABASE_TRANSPORT` to `nio`, `networkFramework` or `urlSession`
+(the results show it as the port's variant):
+
+```sh
+BENCHMARK_DATABASE_TRANSPORT=networkFramework Benchmarks/run.sh --targets port
+```
 
 Upstream runs twice: with its default main-queue callbacks and with a
 background `callbackQueue`. The port calls back on its Database actor.
@@ -59,6 +68,15 @@ hang shows up as an error instead of stalling the run.
 Each record has wall-clock time, process CPU time, peak resident memory and
 scenario-specific numbers. The emulator does the server's work for both
 targets, so absolute times include it; compare targets, not absolute numbers.
+
+## Choosing the transport
+
+On a Mac's loopback all three transports load and stream about equally
+fast (`results/f25d2487-p7-transports.jsonl`): Network.framework and
+URLSession use more CPU per message (S4a: about 280–310 ms against NIO's
+190). Loopback says nothing about backgrounding or network changes, which
+is what decides the default on iOS; the background probe measures those on
+a device.
 
 ## Notes
 
