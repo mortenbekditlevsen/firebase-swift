@@ -130,7 +130,11 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
             }
         }
         self.uploadFetcher = uploadFetcher
-        
+        // `cancel()` may have come before the fetcher existed.
+        if observer.isFinished {
+            uploadFetcher.stopFetching()
+        }
+
         // Process fetches
         self.state = .running
         do {

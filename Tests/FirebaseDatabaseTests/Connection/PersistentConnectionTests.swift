@@ -114,11 +114,33 @@ struct PersistentConnectionTests {
         shutDown()
     }
 
-    @Test func aSentGetFailsWhenTheConnectionDrops() async throws {
+    // Upstream 13.2.0 (#16719).
+    @Test func aSentGetIsResentAfterADrop() async throws {
+        let first = try await connect()
+        async let result = connection.getDataAtPath("/a", withParams: [:])
+        _ = try await first.nextRequest("g")
+        first.fail()
+        try await eventually("backoff") { clock.pendingSleeps.contains { $0 > .zero && $0 <= .seconds(1) } }
+        clock.advance(by: .seconds(1))
+        let second = try await server.connection(2)
+        second.hello()
+        let get = try await second.nextRequest("g")
+        #expect(get.body["p"] as? String == "/a")
+        second.respond(to: get.number, data: 42)
+        let response = await result
+        #expect(response.status == "ok")
+        #expect(response.data == FSnapshotUtilities.nodeFrom(42))
+        shutDown()
+    }
+
+    @Test func aSentGetFailsIfTheClientStaysOffline() async throws {
         let wire = try await connect()
         async let result = connection.getDataAtPath("/a", withParams: [:])
         _ = try await wire.nextRequest("g")
         wire.fail()
+        // Past the backoff and the get's connect timeout, without a handshake.
+        try await eventually("get timer") { clock.pendingSleeps.contains(.seconds(3)) }
+        clock.advance(by: .seconds(3))
         #expect(await result.status == "failed")
         shutDown()
     }

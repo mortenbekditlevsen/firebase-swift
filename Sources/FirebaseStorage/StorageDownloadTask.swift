@@ -190,6 +190,10 @@ public final class StorageDownloadTask: StorageTaskManagement, Sendable {
         }
       }
       self.fetcher = fetcher
+      // `cancel()` may have come before the fetcher existed.
+      if observer.isFinished {
+          fetcher.stopFetching()
+      }
         observer.setState(.running)
       do {
           let data = try await fetcher.beginFetch()

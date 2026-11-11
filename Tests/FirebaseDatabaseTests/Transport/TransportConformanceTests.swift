@@ -194,4 +194,21 @@ struct TransportConformanceTests {
         #expect(ContinuousClock.now - start < .seconds(2))
         try await server.close()
     }
+
+    // Upstream 13.2.0 (#16725) stops waiting for a connection attempt that timed out: it could
+    // hang in the TLS handshake for hours (#9682). The session's handshake timeout cancels the
+    // transport, so cancelling must end an attempt that the server never answers.
+    @Test(arguments: Kind.allCases)
+    func cancellationEndsAStalledUpgrade(_ kind: Kind) async throws {
+        let server = try await TestWebSocketServer.startSilent()
+        let task = Task {
+            try await connect(kind, to: server.url("/echo")) { _ in }
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        let start = ContinuousClock.now
+        task.cancel()
+        _ = await task.result
+        #expect(ContinuousClock.now - start < .seconds(2))
+        try await server.close()
+    }
 }

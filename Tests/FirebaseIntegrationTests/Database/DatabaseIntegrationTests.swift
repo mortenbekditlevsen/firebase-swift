@@ -186,6 +186,102 @@ struct DatabaseIntegrationTests {
     #expect((try await values.next()?.value as? NSNumber)?.intValue == 2)
   }
 
+  // Upstream 13.2.0 (#16721): testGetForChildOfObservedNodeReturnsChildValue.
+  @Test func getDataOfAChildOfAnObservedLocationReturnsTheChild() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValueAndWait(["a": ["name": "Test"], "b": ["name": "Test2"]])
+    var values = ref.values().makeAsyncIterator()
+    _ = try await values.next()
+
+    let child = try await ref.child("a").getData()
+    #expect(child.value as? [String: String] == ["name": "Test"])
+  }
+
+  // Upstream 13.2.0 (#16721): testGetForChildOfKeptSyncedNodeReturnsChildValue.
+  @Test func getDataOfAChildOfAKeptSyncedLocationReturnsTheChild() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValueAndWait(["a": ["name": "Test"], "b": ["name": "Test2"]])
+    ref.keepSynced(true)
+    // Waits for the synced data. The listen ends, so only keepSynced keeps it.
+    _ = try await ref.firstValue()
+
+    let child = try await ref.child("a").getData()
+    #expect(child.value as? [String: String] == ["name": "Test"])
+    ref.keepSynced(false)
+  }
+
+  // The tests below are upstream 13.2.0's (#16722) testGetForFilteredQueryDoesNotChange…
+  // Port note: upstream records every event and compares the list after the get. Here a write
+  // after the get must be the listener's next event; one the get caused would come first.
+
+  @Test func aFilteredGetLeavesAFilteredListenerAtTheSameLocationAlone() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    let letters = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+    try await ref.setValueAndWait(Dictionary(uniqueKeysWithValues: letters.enumerated().map { ($1, $0 + 1) }))
+
+    // The children from "f" on, like the newest messages of a chat.
+    var values = ref.queryOrderedByKey().queryStartingAtValue("f").values().makeAsyncIterator()
+    #expect(try await values.next()?.childrenCount == 5)
+
+    // The three before "f", like a page of older messages.
+    let page = try await ref.queryOrderedByKey().queryEndingBeforeValue("f").queryLimitedToLast(3).getData()
+    #expect(page.value as? [String: Int] == ["c": 3, "d": 4, "e": 5])
+
+    ref.child("k").setValue(11)
+    #expect(try await values.next()?.childrenCount == 6)
+  }
+
+  // https://github.com/firebase/firebase-ios-sdk/issues/8286
+  @Test func aFilteredGetLeavesADefaultListenerAtTheSameLocationAlone() async throws {
+    // Without persistence (the default), so that the listener doesn't start with cached data.
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValueAndWait(["child1": ["name": "child1"], "child2": ["name": "child2"]])
+
+    // The get starts before the listener has data, so it isn't answered from it.
+    // Making the iterator registers the listener.
+    let values = ref.values().makeAsyncIterator()
+    let first = Task { [values] in
+      var values = values
+      return try await values.next()
+    }
+    let child = try await ref.queryOrderedByKey().queryEqualToValue("child2").getData()
+    #expect(child.value as? [String: [String: String]] == ["child2": ["name": "child2"]])
+    #expect(try await first.value?.childrenCount == 2)
+  }
+
+  @Test func aFilteredGetLeavesAListenerBelowItsLocationAlone() async throws {
+    let ref = try scratchRef(EmulatorApp().database())
+    try await ref.setValueAndWait(["a": 1, "b": 2, "c": 3, "d": 4])
+    var values = ref.child("a").values().makeAsyncIterator()
+    #expect(try await values.next()?.value as? Int == 1)
+
+    // The result doesn't include the observed child.
+    let last = try await ref.queryOrderedByKey().queryLimitedToLast(2).getData()
+    #expect(last.value as? [String: Int] == ["c": 3, "d": 4])
+
+    ref.child("a").setValue(100)
+    #expect(try await values.next()?.value as? Int == 100)
+  }
+
+  @Test func aFilteredGetDoesntOverwriteThePersistenceCache() async throws {
+    let writer = try scratchRef(EmulatorApp().database())
+    let database = try EmulatorApp().database()
+    database.isPersistenceEnabled = true
+    let reader = database.reference().child(writer.parent!.key!).child(writer.key!)
+    let value = ["a": 1, "b": 2, "c": 3, "d": 4]
+    try await writer.setValueAndWait(value)
+
+    // Caches the whole value of the location.
+    #expect(try await reader.getData().value as? [String: Int] == value)
+    let last = try await reader.queryOrderedByKey().queryLimitedToLast(2).getData()
+    #expect(last.value as? [String: Int] == ["c": 3, "d": 4])
+
+    database.goOffline()
+    defer { database.goOnline() }
+    // While offline, the value comes from the persistence cache.
+    #expect(try await reader.firstValue().value as? [String: Int] == value)
+  }
+
   @Test func childObserversSeeAddsChangesAndRemovals() async throws {
     let ref = try scratchRef(EmulatorApp().database())
     var events = ref.childEvents([.added, .changed, .removed]).makeAsyncIterator()

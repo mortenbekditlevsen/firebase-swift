@@ -136,6 +136,11 @@ class AppCheckCoreBackoffWrapper: NSObject, AppCheckCoreBackoffWrapperProtocol {
   private func hasTimeIntervalPassedSinceLastFailure(_ timeInterval: TimeInterval) -> Bool {
     guard let failureDate = lastFailure?.finishDate else { return true }
     let timeSinceFailure = dateProvider().timeIntervalSince(failureDate)
+    // A negative interval means the device clock moved backward since the failure was recorded,
+    // so `failureDate` can no longer bound the backoff window reliably.
+    if timeSinceFailure < 0 {
+      return true
+    }
     return timeSinceFailure >= timeInterval
   }
 

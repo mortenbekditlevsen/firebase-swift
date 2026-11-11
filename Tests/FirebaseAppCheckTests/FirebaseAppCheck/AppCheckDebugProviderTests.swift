@@ -154,6 +154,92 @@ final class AppCheckDebugProviderTests: XCTestCase {
       XCTAssertEqual(error as NSError, expectedError)
     }
   }
+
+  // MARK: - Exchange failure messages (upstream 13.2.0, #17017)
+
+  private func provider(source: AppCheckCoreDebugTokenSource,
+                        projectID: String?) -> AppCheckDebugProvider {
+    let debugProvider = AppCheckCoreDebugProvider(
+      apiService: apiService,
+      serviceName: kAppName,
+      resourceName: resourceName,
+      environment: source == .environmentVariable ? ["AppCheckDebugToken": kDebugToken] : [:],
+      debugToken: source == .provided ? kDebugToken : nil
+    )
+    XCTAssertEqual(debugProvider.debugTokenSource, source)
+    return AppCheckDebugProvider(debugProvider: debugProvider, projectID: projectID,
+                                 googleAppID: kAppID)
+  }
+
+  func testConfigStoreExchangeFailureMessageSuggestsForceCreateAndRelaunch() throws {
+    let error = NSError(domain: "testDomain", code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Permission denied"])
+
+    let message = try XCTUnwrap(provider(source: .provided, projectID: kProjectID)
+      .debugTokenExchangeFailureMessage(for: error))
+
+    XCTAssertTrue(message.contains("~/.config/configstore/firebase-appcheck.json"), message)
+    XCTAssertTrue(message.contains("Permission denied"), message)
+    XCTAssertTrue(message.contains(
+      "`firebase appcheck:debugtokens:create --force --project \(kProjectID) --app \(kAppID)`"
+    ), message)
+    XCTAssertTrue(message.contains("relaunch the app"), message)
+  }
+
+  func testConfigStoreExchangeFailureMessageOmitsMissingProjectID() throws {
+    let error = NSError(domain: "testDomain", code: -1)
+
+    let message = try XCTUnwrap(provider(source: .provided, projectID: nil)
+      .debugTokenExchangeFailureMessage(for: error))
+
+    XCTAssertFalse(message.contains("--project"), message)
+    XCTAssertTrue(message.contains("`firebase appcheck:debugtokens:create --force --app \(kAppID)`"),
+                  message)
+  }
+
+  func testConfigStoreExchangeFailureMessagePrefersFailureReason() throws {
+    let error = NSError(domain: "testDomain", code: -1,
+                        userInfo: [NSLocalizedFailureReasonErrorKey: "The server responded with an error"])
+
+    let message = try XCTUnwrap(provider(source: .provided, projectID: kProjectID)
+      .debugTokenExchangeFailureMessage(for: error))
+
+    XCTAssertTrue(message.contains(": The server responded with an error"), message)
+    XCTAssertFalse(message.contains("couldn’t be completed"), message)
+  }
+
+  func testEnvironmentVariableExchangeFailureMessageNamesVariablesWithoutForce() throws {
+    let error = NSError(domain: "testDomain", code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Permission denied"])
+
+    let message = try XCTUnwrap(provider(source: .environmentVariable, projectID: kProjectID)
+      .debugTokenExchangeFailureMessage(for: error))
+
+    XCTAssertTrue(message.contains("`AppCheckDebugToken`"), message)
+    XCTAssertTrue(message.contains("`FIRAAppCheckDebugToken`"), message)
+    XCTAssertTrue(message.contains("Permission denied"), message)
+    XCTAssertTrue(message.contains(
+      "`firebase appcheck:debugtokens:create <token> --project \(kProjectID) --app \(kAppID)`"
+    ), message)
+    // Provisioning a new config store token wouldn't help while the environment variable wins.
+    XCTAssertFalse(message.contains("--force"), message)
+    XCTAssertFalse(message.contains("firebase-appcheck.json"), message)
+  }
+
+  func testExchangeFailureMessageIsNilWhenServerUnreachable() {
+    let error = NSError(domain: AppCheckCoreErrorDomain,
+                        code: AppCheckCoreErrorCode.serverUnreachable.rawValue)
+
+    XCTAssertNil(provider(source: .provided, projectID: kProjectID)
+      .debugTokenExchangeFailureMessage(for: error))
+    XCTAssertNil(provider(source: .environmentVariable, projectID: kProjectID)
+      .debugTokenExchangeFailureMessage(for: error))
+  }
+
+  func testProvidedDebugTokenIsUsed() {
+    XCTAssertEqual(provider(source: .provided, projectID: kProjectID).currentDebugToken(),
+                   kDebugToken)
+  }
 }
 
 final class AppCheckDebugProviderFactoryTests: XCTestCase {

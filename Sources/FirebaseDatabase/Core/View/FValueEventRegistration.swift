@@ -62,7 +62,7 @@ final class FValueEventRegistration: FEventRegistration, Sendable {
             return true
         case .handle(let otherHandle):
             return otherHandle == handle
-        case .keepSynced:
+        case .keepSynced, .getResult:
             return false
         }
     }
