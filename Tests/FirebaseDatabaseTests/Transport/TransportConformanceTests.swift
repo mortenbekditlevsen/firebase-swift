@@ -24,6 +24,7 @@ struct TransportConformanceTests {
         case nio
         #if canImport(Darwin)
             case urlSession
+            case networkFramework
         #endif
 
         var testDescription: String { rawValue }
@@ -33,6 +34,7 @@ struct TransportConformanceTests {
             case .nio: NIODatabaseTransport()
             #if canImport(Darwin)
                 case .urlSession: URLSessionDatabaseTransport()
+                case .networkFramework: NIOTSDatabaseTransport()
             #endif
             }
         }

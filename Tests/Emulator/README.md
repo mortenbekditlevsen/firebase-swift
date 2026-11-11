@@ -25,6 +25,10 @@ firebase emulators:exec --project demo-firebase-swift --only auth,database,fires
   "swift test --skip-build --filter IntegrationTests"
 ```
 
+The Database tests use the default transport; set `DATABASE_TRANSPORT` to
+`nio`, `networkFramework` or `urlSession` (the last two on Apple platforms) to
+run them on another one.
+
 Firestore pipelines need the Firestore emulator's Enterprise edition, which
 `firebase.enterprise.json` in this folder starts (on the same port, so not at
 the same time as the others). Upstream's pipeline tests run against it with:

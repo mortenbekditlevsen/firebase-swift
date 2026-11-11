@@ -42,87 +42,26 @@ public struct NIODatabaseTransport: DatabaseTransport {
         self.connectTimeout = connectTimeout
     }
 
-    private enum Upgrade: Sendable {
-        case upgraded(NIOAsyncChannel<ByteBuffer, ByteBuffer>)
-        case notUpgraded
-    }
-
     public func withConnection<Result>(
         to request: DatabaseTransportRequest,
         isolation: isolated (any Actor)? = #isolation,
         _ body: (Connection) async throws -> sending Result
     ) async throws -> sending Result {
-        let url = request.url
-        guard let host = url.host, let scheme = url.scheme?.lowercased(), ["ws", "wss"].contains(scheme) else {
-            throw DatabaseTransportError.invalidURL(url)
-        }
-        let secure = scheme == "wss"
-        let port = url.port ?? (secure ? 443 : 80)
-        let sslContext = secure ? try self.sslContext.get() : nil
-
-        var headers = HTTPHeaders()
-        headers.add(name: "Host", value: url.port.map { "\(host):\($0)" } ?? host)
-        for (name, value) in request.headers {
-            headers.add(name: name, value: value)
-        }
-        var uri = url.path.isEmpty ? "/" : url.path
-        if let query = url.query {
-            uri += "?\(query)"
-        }
-        let head = HTTPRequestHead(version: .http1_1, method: .GET, uri: uri, headers: headers)
-
-        let upgrade: EventLoopFuture<Upgrade> = try await ClientBootstrap(group: group)
+        let target = try WebSocketTarget(request)
+        let sslContext = target.secure ? try self.sslContext.get() : nil
+        let upgrade = try await ClientBootstrap(group: group)
             .connectTimeout(connectTimeout)
-            .connect(host: host, port: port) { channel in
+            .connect(host: target.host, port: target.port) { channel in
                 channel.eventLoop.makeCompletedFuture {
                     if let sslContext {
                         try channel.pipeline.syncOperations.addHandler(
-                            NIOSSLClientHandler(context: sslContext, serverHostname: host)
+                            NIOSSLClientHandler(context: sslContext, serverHostname: target.host)
                         )
                     }
-                    let upgrader = NIOTypedWebSocketClientUpgrader<Upgrade>(
-                        maxFrameSize: maxDatabaseMessageSize,
-                        upgradePipelineHandler: { channel, _ in
-                            channel.eventLoop.makeCompletedFuture {
-                                // Fragmented messages arrive whole.
-                                try channel.pipeline.syncOperations.addHandler(
-                                    NIOWebSocketFrameAggregator(
-                                        minNonFinalFragmentSize: 0,
-                                        maxAccumulatedFrameCount: .max,
-                                        maxAccumulatedFrameSize: maxDatabaseMessageSize
-                                    )
-                                )
-                                try channel.pipeline.syncOperations.addHandler(WebSocketMessageHandler())
-                                return .upgraded(try NIOAsyncChannel(wrappingChannelSynchronously: channel))
-                            }
-                        }
-                    )
-                    let configuration = NIOTypedHTTPClientUpgradeConfiguration<Upgrade>(
-                        upgradeRequestHead: head,
-                        upgraders: [upgrader],
-                        notUpgradingCompletionHandler: { channel in
-                            channel.close(promise: nil)
-                            return channel.eventLoop.makeSucceededFuture(.notUpgraded)
-                        }
-                    )
-                    var pipeline = NIOUpgradableHTTPClientPipelineConfiguration(upgradeConfiguration: configuration)
-                    // The server's first message can arrive in the same read as
-                    // its upgrade response; the default drops it.
-                    pipeline.leftOverBytesStrategy = .forwardBytes
-                    return try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(
-                        configuration: pipeline
-                    )
+                    return try configureWebSocketClient(channel, head: target.head)
                 }
             }
-
-        switch try await upgrade.get() {
-        case .notUpgraded:
-            throw DatabaseTransportError.upgradeRejected
-        case .upgraded(let channel):
-            return try await channel.executeThenClose { inbound, outbound in
-                try await body(Connection(messages: inbound, outbound: outbound))
-            }
-        }
+        return try await withWebSocket(upgrade, body)
     }
 
     public struct Connection: DatabaseTransportConnection {
@@ -135,6 +74,93 @@ public struct NIODatabaseTransport: DatabaseTransport {
 
         public func send(_ frame: DatabaseFrame) async throws {
             try await outbound.write(frame.byteBuffer)
+        }
+    }
+}
+
+/// Where a WebSocket request goes, and its upgrade request.
+struct WebSocketTarget: Sendable {
+    let host: String
+    let port: Int
+    let secure: Bool
+    let head: HTTPRequestHead
+
+    init(_ request: DatabaseTransportRequest) throws {
+        let url = request.url
+        guard let host = url.host, let scheme = url.scheme?.lowercased(), ["ws", "wss"].contains(scheme) else {
+            throw DatabaseTransportError.invalidURL(url)
+        }
+        self.host = host
+        secure = scheme == "wss"
+        port = url.port ?? (secure ? 443 : 80)
+
+        var headers = HTTPHeaders()
+        headers.add(name: "Host", value: url.port.map { "\(host):\($0)" } ?? host)
+        for (name, value) in request.headers {
+            headers.add(name: name, value: value)
+        }
+        var uri = url.path.isEmpty ? "/" : url.path
+        if let query = url.query {
+            uri += "?\(query)"
+        }
+        head = HTTPRequestHead(version: .http1_1, method: .GET, uri: uri, headers: headers)
+    }
+}
+
+/// The result of a WebSocket upgrade.
+enum WebSocketUpgrade: Sendable {
+    case upgraded(NIOAsyncChannel<ByteBuffer, ByteBuffer>)
+    case notUpgraded
+}
+
+/// Adds the HTTP client, the upgrade to a WebSocket and the WebSocket
+/// handlers to a connected channel (after any TLS handler).
+func configureWebSocketClient(_ channel: any Channel, head: HTTPRequestHead) throws
+    -> EventLoopFuture<WebSocketUpgrade> {
+    let upgrader = NIOTypedWebSocketClientUpgrader<WebSocketUpgrade>(
+        maxFrameSize: maxDatabaseMessageSize,
+        upgradePipelineHandler: { channel, _ in
+            channel.eventLoop.makeCompletedFuture {
+                // Fragmented messages arrive whole.
+                try channel.pipeline.syncOperations.addHandler(
+                    NIOWebSocketFrameAggregator(
+                        minNonFinalFragmentSize: 0,
+                        maxAccumulatedFrameCount: .max,
+                        maxAccumulatedFrameSize: maxDatabaseMessageSize
+                    )
+                )
+                try channel.pipeline.syncOperations.addHandler(WebSocketMessageHandler())
+                return .upgraded(try NIOAsyncChannel(wrappingChannelSynchronously: channel))
+            }
+        }
+    )
+    let configuration = NIOTypedHTTPClientUpgradeConfiguration<WebSocketUpgrade>(
+        upgradeRequestHead: head,
+        upgraders: [upgrader],
+        notUpgradingCompletionHandler: { channel in
+            channel.close(promise: nil)
+            return channel.eventLoop.makeSucceededFuture(.notUpgraded)
+        }
+    )
+    var pipeline = NIOUpgradableHTTPClientPipelineConfiguration(upgradeConfiguration: configuration)
+    // The server's first message can arrive in the same read as its upgrade
+    // response; the default drops it.
+    pipeline.leftOverBytesStrategy = .forwardBytes
+    return try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(configuration: pipeline)
+}
+
+/// Waits for the upgrade, runs `body` with the connection, and closes it.
+func withWebSocket<Result>(
+    _ upgrade: EventLoopFuture<WebSocketUpgrade>,
+    isolation: isolated (any Actor)? = #isolation,
+    _ body: (NIODatabaseTransport.Connection) async throws -> sending Result
+) async throws -> sending Result {
+    switch try await upgrade.get() {
+    case .notUpgraded:
+        throw DatabaseTransportError.upgradeRejected
+    case .upgraded(let channel):
+        return try await channel.executeThenClose { inbound, outbound in
+            try await body(NIODatabaseTransport.Connection(messages: inbound, outbound: outbound))
         }
     }
 }
@@ -178,6 +204,17 @@ private final class WebSocketMessageHandler: ChannelDuplexHandler {
         default:
             context.close(promise: nil)
         }
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
+        // After the close handshake, the connection ended as it should, even
+        // if the socket then reports the peer's reset (as Network.framework
+        // does).
+        guard !sentClose else {
+            context.close(promise: nil)
+            return
+        }
+        context.fireErrorCaught(error)
     }
 
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {

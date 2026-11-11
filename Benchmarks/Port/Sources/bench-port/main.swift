@@ -21,7 +21,9 @@ import Foundation
 
 struct PortDriver: BenchmarkDriver {
   let target = "port"
-  let variant = "default"
+  /// The transport: BENCHMARK_DATABASE_TRANSPORT (nio, networkFramework or
+  /// urlSession), or the default.
+  let variant = ProcessInfo.processInfo.environment["BENCHMARK_DATABASE_TRANSPORT"] ?? "default"
 
   func makeClient(name: String, persistence: Bool,
                   emulator: EmulatorDatabase) async throws -> any BenchmarkClient {
@@ -34,6 +36,12 @@ struct PortDriver: BenchmarkDriver {
     let database = Database.database(app: app, url: EmulatorDatabase.databaseURL)
     database.isPersistenceEnabled = persistence
     database.useEmulator(withHost: emulator.host, port: emulator.port)
+    switch variant {
+    case "nio": database.transport = NIODatabaseTransport()
+    case "networkFramework": database.transport = NIOTSDatabaseTransport()
+    case "urlSession": database.transport = URLSessionDatabaseTransport()
+    default: break
+    }
     return PortClient(app: app, database: database)
   }
 }
