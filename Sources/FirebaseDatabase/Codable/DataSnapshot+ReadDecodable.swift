@@ -32,6 +32,7 @@ public extension DataSnapshot {
   func data<T: Decodable>(as type: T.Type,
                           decoder: Database.Decoder =
                             Database.Decoder()) throws -> sending T {
-    try decoder.decode(T.self, from: value ?? NSNull())
+    // From the node, as the decoder would decode `value`.
+    try FNodeDecoder(decoder).decode(T.self, from: node.node)
   }
 }

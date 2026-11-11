@@ -18,30 +18,29 @@
 import FirebaseShared
 
 public extension DatabaseReference {
-  /// Encodes an instance of `Encodable` and overwrites the encoded data
-  /// to the path referred by this `DatabaseReference`. If no value exists,
-  /// it is created. If a value already exists, it is overwritten.
+  /// Encodes `value` and writes it here, as `setValue(_:)` does (queued,
+  /// without waiting for the server).
   ///
-  /// See `Database.Encoder` for more details about the encoding process.
+  /// See `Database.Encoder` for the encoding; the value is encoded straight
+  /// to the database's data.
   ///
-  /// - Parameters:
-  ///   - value: An instance of `Encodable` to be encoded to a document.
-  ///   - encoder: An encoder instance to use to run the encoding.
-  ///   - completion: A block to execute once the value has been successfully
-  ///                 written to the server. This block will not be called while
-  ///                 the client is offline, though local changes will be visible
-  ///                 immediately.
+  /// - Throws: `EncodingError` if the value doesn't encode, or encodes to
+  ///   data the database can't store (such as keys with `.#$[]/`, or NaN).
   func setValue<T: Encodable>(from value: T,
                               encoder: Database.Encoder = Database.Encoder()) throws {
-      /// XXX Cast to sendable..
-    let encoded = try encoder.encode(value) as? NSObject
-      setValue(encoded)
+    let node = try encodedNode(value, encoder: encoder)
+    repo.enqueue { [path] repo in repo.set(path, withNode: node) }
   }
-    
-    func setValueAndWait<T: Encodable>(from value: T,
-                                       encoder: Database.Encoder = Database.Encoder()) async throws {
-        let encoded = try encoder.encode(value)
-        try await setValueAndWait(encoded)
-    }
 
+  /// `setValue(from:encoder:)`, returning once the server has acknowledged
+  /// the write.
+  func setValueAndWait<T: Encodable>(from value: T,
+                                     encoder: Database.Encoder = Database.Encoder()) async throws {
+    try await write(encodedNode(value, encoder: encoder))
+  }
+
+  private func encodedNode<T: Encodable>(_ value: T, encoder: Database.Encoder) throws -> FNode {
+    FValidation.validateFrom("setValue:", writablePath: path)
+    return try FNodeEncoder(encoder).encode(value)
+  }
 }

@@ -47,10 +47,27 @@ public enum DatabaseBenchmarking {
     node.node.val()
   }
 
-  /// `DataSnapshot.data(as:)`: the Foundation tree, decoded.
+  /// `DataSnapshot.data(as:)`: the node, decoded (FNodeDecoder).
   public static func decode<T: Decodable>(_ type: T.Type, from node: Node,
                                           decoder: Database.Decoder = .init()) throws -> T {
+    try FNodeDecoder(decoder).decode(type, from: node.node)
+  }
+
+  /// `DataSnapshot.data(as:)` before P5: the Foundation tree, decoded.
+  public static func decodeFoundationValue<T: Decodable>(_ type: T.Type, from node: Node,
+                                                         decoder: Database.Decoder = .init()) throws -> T {
     try decoder.decode(type, from: node.node.val())
+  }
+
+  /// `setValue(from:)`: a value, encoded to a node (FNodeEncoder).
+  public static func encode<T: Encodable>(_ value: T, encoder: Database.Encoder = .init()) throws -> Node {
+    Node(node: try FNodeEncoder(encoder).encode(value))
+  }
+
+  /// `setValue(from:)` before P5: FirebaseDataEncoder, then `nodeFrom`.
+  public static func encodeFoundationValue<T: Encodable>(_ value: T,
+                                                         encoder: Database.Encoder = .init()) throws -> Node {
+    Node(node: FSnapshotUtilities.nodeFrom(try encoder.encode(value)))
   }
 
   /// The outbound path for a write: a node to JSON bytes.

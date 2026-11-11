@@ -173,6 +173,37 @@ let (committed, snapshot) = try await ref.child("likes").runTransaction { data i
 }
 ```
 
+### Codable
+
+The `as:` forms decode the data as a `Decodable` type, and `setValue(from:)`
+encodes an `Encodable` one, with `Database.Decoder` and `Database.Encoder`
+and their strategies. They work on the database's own data, without making
+the Foundation values `snapshot.value` has, and the sequences decode neither
+on the database's actor nor on yours:
+
+```swift
+struct Message: Codable, Sendable {
+  var text: String
+  var sender: String
+}
+
+let messages = ref.child("messages")
+for try await event in messages.queryLimitedToLast(50).childEvents(as: Message.self, [.added]) {
+  print(event.key, event.value.text)
+}
+try messages.childByAutoId().setValue(from: Message(text: "Hi", sender: "me"))
+
+let likes = try await ref.child("likes").runTransaction(as: Int.self) { likes in
+  likes = (likes ?? 0) + 1
+}
+```
+
+A sequence throws if the data doesn't decode; a typed transaction is aborted,
+and rethrows, if its closure throws. Data the database can't store, such as
+keys with `.#$[]/` or NaN, makes `setValue(from:)` throw (upstream stops the
+program). Unlike upstream, data whose keys are small integers ("0", "1", …)
+decodes as a dictionary or struct too, not only as an array.
+
 ### Migrating from the upstream API
 
 There are no callbacks or observer handles:
@@ -189,6 +220,8 @@ There are no callbacks or observer handles:
 | `onDisconnectSetValue(_:)`, `onDisconnectUpdateChildValues(_:)`, `onDisconnectRemoveValue()`, `cancelDisconnectOperations()` | `onDisconnect.setValue(_:)`, `.updateChildValues(_:)`, `.removeValue()`, `.cancel()`, each also as `…AndWait` |
 | `runTransactionBlock(_:)`, `runTransactionBlock(_:andCompletionBlock:withLocalEvents:)` | `try await runTransaction(applyLocally:_:)` → `(committed, snapshot)` |
 | `setValue(from:)` async | `setValueAndWait(from:)` |
+| `observe(.value)` + `snapshot.data(as:)` | `values(as:)`, `childEvents(as:)` |
+| `runTransactionBlock` on a Codable value | `runTransaction(as:)` with `inout T?` |
 
 > **Watch out:** `try await ref.setValue(x)` still compiles, as a call to the
 > plain form, with only "no async operations occur within 'await'" and "no

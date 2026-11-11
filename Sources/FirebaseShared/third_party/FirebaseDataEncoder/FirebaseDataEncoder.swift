@@ -187,7 +187,8 @@ public class FirebaseDataEncoder: @unchecked Sendable {
     /// If the result of the conversion is a duplicate key, then only one value will be present in the result.
     case custom((_ codingPath: [CodingKey]) -> CodingKey)
 
-    fileprivate static func _convertToSnakeCase(_ stringKey: String) -> String {
+    // firebase-swift: package, for FirebaseDatabase's FNodeEncoder.
+    package static func _convertToSnakeCase(_ stringKey: String) -> String {
       guard !stringKey.isEmpty else { return stringKey }
 
       var words : [Range<String.Index>] = []
@@ -1181,7 +1182,8 @@ public class FirebaseDataDecoder: @unchecked Sendable {
     /// If the result of the conversion is a duplicate key, then only one value will be present in the container for the type to decode from.
     case custom((_ codingPath: [CodingKey]) -> CodingKey)
 
-    fileprivate static func _convertFromSnakeCase(_ stringKey: String) -> String {
+    // firebase-swift: package, for FirebaseDatabase's FNodeDecoder.
+    package static func _convertFromSnakeCase(_ stringKey: String) -> String {
       guard !stringKey.isEmpty else { return stringKey }
 
       // Find the first non-underscore character
