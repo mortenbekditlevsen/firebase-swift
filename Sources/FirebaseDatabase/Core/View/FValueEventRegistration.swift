@@ -40,19 +40,12 @@ final class FValueEventRegistration: FEventRegistration, Sendable {
     func fireEvent(_ event: FEvent,) {
         if let cancelEvent = event as? FCancelEvent {
             FFLog("I-RDB065001", "Raising cancel value event on \(event.path?.description ?? "nil")")
-            // XXX TODO: Just call?
-            let error = cancelEvent.error
-            Task { @DatabaseActor in
-                self.cancelCallback?(error)
-            }
+            // Synchronously, so events reach a sequence in order.
+            self.cancelCallback?(cancelEvent.error)
         } else if let callback = self.callback {
             guard let dataEvent = event as? FDataEvent else { return }
             FFLog("I-RDB065002", "Raising value event on \(dataEvent.snapshot.key ?? "-")")
-            // XXX TODO: Just call?
-            let snapshot = dataEvent.snapshot
-            Task { @DatabaseActor in
-                callback(snapshot)
-            }
+            callback(dataEvent.snapshot)
         }
     }
 

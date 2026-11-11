@@ -28,22 +28,11 @@ extension DatabaseQuery {
         return try snapshot.data(as: T.self, decoder: decoder)
     }
 
-    public func observeSingle<T: Decodable>(as type: T.Type,
-                           decoder: Database.Decoder =
-                           Database.Decoder()) async throws -> sending T {
-        try await withCheckedThrowingContinuation { continuation in
-            self.observeSingleEventOfType(.value, withBlock: { snapshot in
-                do {
-                    let data = try snapshot.data(as: T.self, decoder: decoder)
-                    continuation.resume(returning: data)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }, withCancelBlock: { error in
-                // E.g. permission denied; without this the caller waited forever.
-                continuation.resume(throwing: error)
-            })
-        }
+    /// `firstValue()`, decoded as `T`.
+    public func firstValue<T: Decodable>(as type: T.Type,
+                                         decoder: Database.Decoder =
+                                         Database.Decoder()) async throws -> sending T {
+        try await firstValue().data(as: T.self, decoder: decoder)
     }
 
 }

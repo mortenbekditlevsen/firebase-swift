@@ -146,6 +146,9 @@ public struct BenchmarkRunner {
         let wall = ContinuousClock.now - start
         let cpu = ProcessMetrics.cpuTime() - cpuBefore
         await reader.close()
+        // Let the client's teardown (freeing its data) finish, so it doesn't
+        // overlap the next iteration's load.
+        try await Task.sleep(for: .milliseconds(200))
         guard iteration >= options.warmup else { continue }
         guard extra["children"] == Double(items.count) else {
           throw BenchmarkError("expected \(items.count) children, got \(extra["children"] ?? 0)")

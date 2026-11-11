@@ -45,20 +45,12 @@ final class FChildEventRegistration: FEventRegistration, @unchecked Sendable {
         if let cancelEvent = event as? FCancelEvent {
             FFLog("I-RDB061001", "Raising cancel value event on \(event.path?.description ?? "nil")")
             assert(cancelCallback != nil, "Raising a cancel event on a listener with no cancel callback")
-            // XXX TODO: Just call?
-            let error = cancelEvent.error
-            Task { @DatabaseActor in
-                self.cancelCallback?(error)
-            }
+            // Synchronously, so events reach a sequence in order.
+            self.cancelCallback?(cancelEvent.error)
         } else if let dataEvent = event as? FDataEvent {
             FFLog("I-RDB061002", "Raising event callback (\(dataEvent.eventType)) on \(dataEvent.path?.description ?? "nil")")
             if let callback: (DataSnapshot, String?) -> Void = callbacks[dataEvent.eventType] {
-                // XXX TODO: Just call?
-                let snapshot = dataEvent.snapshot
-                let prevName = dataEvent.prevName
-                Task { @DatabaseActor in
-                    callback(snapshot, prevName)
-                }
+                callback(dataEvent.snapshot, dataEvent.prevName)
             }
         }
     }

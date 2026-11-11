@@ -50,7 +50,7 @@ struct DatabaseIntegrationTests {
   @Test func writesAndReadsAValue() async throws {
     let ref = try scratchRef(EmulatorApp().database())
 
-    try await ref.setValue(["name": "Ada", "born": 1815, "tags": ["math", "poetry"]])
+    try await ref.setValueAndWait(["name": "Ada", "born": 1815, "tags": ["math", "poetry"]])
     let snapshot = try await ref.getData()
 
     #expect(snapshot.exists())
@@ -66,7 +66,7 @@ struct DatabaseIntegrationTests {
   /// `true`/`false` are Booleans.
   @Test func numbersAndBooleansKeepTheirTypes() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(["yes": true, "no": false, "one": 1, "zero": 0])
+    try await ref.setValueAndWait(["yes": true, "no": false, "one": 1, "zero": 0])
 
     // A second app, so the values come from the server rather than the local cache.
     let fromServer = try await EmulatorApp().database().reference().child(ref.parent!.key!)
@@ -89,8 +89,8 @@ struct DatabaseIntegrationTests {
   @Test func largeIntegersKeepTheirPrecision() async throws {
     let big: Int64 = 1_542_405_709_418_655_810
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(["big": big, "counter": big])
-    try await ref.child("counter").setValue(ServerValue.increment(1))
+    try await ref.setValueAndWait(["big": big, "counter": big])
+    try await ref.child("counter").setValueAndWait(ServerValue.increment(1))
 
     let fromServer = try await EmulatorApp().database().reference().child(ref.parent!.key!)
       .child(ref.key!).getData()
@@ -102,18 +102,18 @@ struct DatabaseIntegrationTests {
   @Test func updatesMergeAndRemovalsDelete() async throws {
     let ref = try scratchRef(EmulatorApp().database())
 
-    try await ref.setValue(["name": "Ada", "born": 1815])
-    try await ref.updateChildValues(["born": 1816, "died": 1852])
+    try await ref.setValueAndWait(["name": "Ada", "born": 1815])
+    try await ref.updateChildValuesAndWait(["born": 1816, "died": 1852])
     var snapshot = try await ref.getData()
     #expect(snapshot.childSnapshot(forPath: "name").value as? String == "Ada")
     #expect((snapshot.childSnapshot(forPath: "born").value as? NSNumber)?.intValue == 1816)
     #expect((snapshot.childSnapshot(forPath: "died").value as? NSNumber)?.intValue == 1852)
 
-    try await ref.child("died").removeValue()
+    try await ref.child("died").removeValueAndWait()
     snapshot = try await ref.getData()
     #expect(!snapshot.hasChild("died"))
 
-    try await ref.removeValue()
+    try await ref.removeValueAndWait()
     snapshot = try await ref.getData()
     #expect(!snapshot.exists())
   }
@@ -121,7 +121,7 @@ struct DatabaseIntegrationTests {
   @Test func queriesOrderAndLimit() async throws {
     let ref = try scratchRef(EmulatorApp().database())
     for (name, score) in [("a", 30), ("b", 10), ("c", 20), ("d", 40)] {
-      try await ref.child(name).setValue(["score": score])
+      try await ref.child(name).setValueAndWait(["score": score])
     }
 
     let lowest = try await ref.queryOrderedByChild("score").queryLimitedToFirst(2).getData()
@@ -141,7 +141,7 @@ struct DatabaseIntegrationTests {
     var keys: [String] = []
     for i in 0 ..< 3 {
       let child = ref.childByAutoId()
-      try await child.setValue(i)
+      try await child.setValueAndWait(i)
       keys.append(try #require(child.key))
     }
 
@@ -154,7 +154,7 @@ struct DatabaseIntegrationTests {
     let ref = try scratchRef(EmulatorApp().database())
     let before = Date().timeIntervalSince1970 * 1000
 
-    try await ref.setValue(["at": ServerValue.timestamp])
+    try await ref.setValueAndWait(["at": ServerValue.timestamp])
     let at = try #require(try await ref.child("at").getData().value as? NSNumber).doubleValue
 
     // The emulator and the test share a clock, give or take a minute.
@@ -163,58 +163,41 @@ struct DatabaseIntegrationTests {
 
   @Test func serverIncrementsAccumulate() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(1)
-    try await ref.setValue(ServerValue.increment(2))
-    try await ref.setValue(ServerValue.increment(3))
+    try await ref.setValueAndWait(1)
+    try await ref.setValueAndWait(ServerValue.increment(2))
+    try await ref.setValueAndWait(ServerValue.increment(3))
 
     #expect((try await ref.getData().value as? NSNumber)?.intValue == 6)
   }
 
   @Test func valueObserversSeeChanges() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    let seen = Locked<[Int?]>([])
-    let handle = ref.observeEventType(.value) { snapshot in
-      seen.withLock { $0.append((snapshot.value as? NSNumber)?.intValue) }
-    }
-    defer { ref.removeObserverWithHandle(handle) }
-
-    try? await eventually { seen.withLock { $0 } == [nil] }
-    try await ref.setValue(1)
-    try await ref.setValue(2)
-    try? await eventually { seen.withLock { $0 } == [nil, 1, 2] }
-    let values = seen.withLock { $0 }
-    #expect(values == [nil, 1, 2])
+    var values = ref.values().makeAsyncIterator()
+    #expect(try await values.next()?.exists() == false)
+    try await ref.setValueAndWait(1)
+    #expect((try await values.next()?.value as? NSNumber)?.intValue == 1)
+    ref.setValue(2)
+    #expect((try await values.next()?.value as? NSNumber)?.intValue == 2)
   }
 
   @Test func childObserversSeeAddsChangesAndRemovals() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    let events = Locked<[String]>([])
-    let handles = [
-      ref.observeEventType(.childAdded) { snapshot in
-        events.withLock { $0.append("added \(snapshot.key ?? "?")") }
-      },
-      ref.observeEventType(.childChanged) { snapshot in
-        events.withLock { $0.append("changed \(snapshot.key ?? "?")") }
-      },
-      ref.observeEventType(.childRemoved) { snapshot in
-        events.withLock { $0.append("removed \(snapshot.key ?? "?")") }
-      },
-    ]
-    defer { handles.forEach(ref.removeObserverWithHandle) }
-
-    try await ref.child("x").setValue(1)
-    try await ref.child("x").setValue(2)
-    try await ref.child("x").removeValue()
-    try? await eventually {
-      events.withLock { $0 } == ["added x", "changed x", "removed x"]
+    var events = ref.childEvents([.added, .changed, .removed]).makeAsyncIterator()
+    // In order, though none waits for the server.
+    ref.child("x").setValue(1)
+    ref.child("x").setValue(2)
+    ref.child("x").removeValue()
+    var received: [String] = []
+    for _ in 0 ..< 3 {
+      let event = try #require(try await events.next())
+      received.append("\(event.kind) \(event.snapshot.key ?? "?")")
     }
-    let received = events.withLock { $0 }
     #expect(received == ["added x", "changed x", "removed x"])
   }
 
   @Test func concurrentTransactionsDontLoseUpdates() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(0)
+    try await ref.setValueAndWait(0)
     // Several apps, each with its own connection and local cache, so the
     // server rejects stale attempts and the blocks rerun.
     let refs = try (0 ..< 3).map { _ in
@@ -226,7 +209,7 @@ struct DatabaseIntegrationTests {
         group.addTask {
           for _ in 0 ..< 5 {
             let (committed, _) = try await Self.retryingEmulatorBatchFailures {
-              try await counter.runTransactionBlock { currentData in
+              try await counter.runTransaction { currentData in
                 currentData.value = ((currentData.value as? NSNumber)?.intValue ?? 0) + 1
                 return .success(withValue: currentData)
               }
@@ -244,9 +227,9 @@ struct DatabaseIntegrationTests {
 
   @Test func abortedTransactionsLeaveTheDataAlone() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue("original")
+    try await ref.setValueAndWait("original")
 
-    let (committed, _) = try await ref.runTransactionBlock { currentData in
+    let (committed, _) = try await ref.runTransaction { currentData in
       currentData.value = "discarded"
       return .abort()
     }
@@ -259,9 +242,9 @@ struct DatabaseIntegrationTests {
 
   @Test func transactionsCanEditChildren() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(["likes": 1, "title": "Post"])
+    try await ref.setValueAndWait(["likes": 1, "title": "Post"])
 
-    let (committed, snapshot) = try await ref.runTransactionBlock { currentData in
+    let (committed, snapshot) = try await ref.runTransaction { currentData in
       let likes = (currentData.childData(byAppendingPath: "likes").value as? NSNumber)?.intValue ?? 0
       currentData[childPath: "likes"].value = likes + 1
       currentData[childPath: "likedBy/ada"].value = true
@@ -281,10 +264,10 @@ struct DatabaseIntegrationTests {
   /// data matches its own, and children with priorities are hashed differently.
   @Test func transactionsWorkOnDataWithPriorities() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.child("a").setValue(1, andPriority: 2)
-    try await ref.child("b").setValue(2, andPriority: 1)
+    try await ref.child("a").setValueAndWait(1, andPriority: 2)
+    try await ref.child("b").setValueAndWait(2, andPriority: 1)
 
-    let (committed, _) = try await ref.runTransactionBlock { currentData in
+    let (committed, _) = try await ref.runTransaction { currentData in
       currentData[childPath: "c"].value = 3
       return .success(withValue: currentData)
     }
@@ -300,7 +283,7 @@ struct DatabaseIntegrationTests {
   /// (empty stats) that the server must answer, or it reconnects.
   @Test func theServerAnswersConnectionChecks() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(1)
+    try await ref.setValueAndWait(1)
     let connection = await ref.repo.connection
     await connection.networkMayHaveChanged()
     #expect(await connection.isCheckingConnection)
@@ -309,20 +292,15 @@ struct DatabaseIntegrationTests {
 
   @Test func onDisconnectWritesApplyWhenTheClientDisconnects() async throws {
     let ref = try scratchRef(EmulatorApp().database())
-    try await ref.setValue(["online": true, "session": "abc", "kept": "yes"])
+    try await ref.setValueAndWait(["online": true, "session": "abc", "kept": "yes"])
 
-    ref.child("online").onDisconnectSetValue(false)
-    ref.child("session").onDisconnectRemoveValue()
-    ref.child("status").onDisconnectUpdateChildValues(["state": "offline"])
-    ref.child("kept").onDisconnectSetValue("overwritten")
-    ref.child("kept").cancelDisconnectOperations()
-    // The public calls don't report back, so wait for the server to queue one
-    // more operation; the earlier ones are sent before it on the same connection.
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      ref.child("barrier").onDisconnectSetValue(1) { error, _ in
-        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-      }
-    }
+    ref.child("online").onDisconnect.setValue(false)
+    ref.child("session").onDisconnect.removeValue()
+    ref.child("status").onDisconnect.updateChildValues(["state": "offline"])
+    ref.child("kept").onDisconnect.setValue("overwritten")
+    ref.child("kept").onDisconnect.cancel()
+    // The earlier ones are sent before this one, on the same connection.
+    try await ref.child("barrier").onDisconnect.setValueAndWait(1)
 
     ref.database.goOffline()
 
@@ -341,7 +319,7 @@ struct DatabaseIntegrationTests {
   @Test func unauthenticatedWritesToProtectedPathsFail() async throws {
     let database = try EmulatorApp().database()
     await #expect(throws: (any Error).self) {
-      try await database.reference().child("users/nobody").setValue(1)
+      try await database.reference().child("users/nobody").setValueAndWait(1)
     }
   }
 
@@ -353,7 +331,7 @@ struct DatabaseIntegrationTests {
     let mine = database.reference().child("users").child(uid)
     try await eventually {
       do {
-        try await mine.setValue(["text": "hello"])
+        try await mine.setValueAndWait(["text": "hello"])
         return true
       } catch {
         return false
@@ -362,7 +340,7 @@ struct DatabaseIntegrationTests {
     #expect(try await mine.child("text").getData().value as? String == "hello")
 
     await #expect(throws: (any Error).self) {
-      try await database.reference().child("users/someone-else").setValue(1)
+      try await database.reference().child("users/someone-else").setValueAndWait(1)
     }
   }
 
@@ -373,7 +351,7 @@ struct DatabaseIntegrationTests {
     let mine = database.reference().child("users").child(uid)
     try await eventually {
       do {
-        try await mine.setValue(1)
+        try await mine.setValueAndWait(1)
         return true
       } catch {
         return false
@@ -385,7 +363,7 @@ struct DatabaseIntegrationTests {
     // The connection unauthenticates asynchronously; then writes are rejected.
     try await eventually {
       do {
-        try await mine.setValue(2)
+        try await mine.setValueAndWait(2)
         return false
       } catch {
         return true

@@ -20,7 +20,7 @@ import Synchronization
  * events. These handles are returned by observeEventType: and can later be
  * passed to removeObserverWithHandle: to stop receiving updates.
  */
-public typealias DatabaseHandle = Int
+typealias DatabaseHandle = Int
 
 /**
  * A FIRDatabaseQuery instance represents a query over the data at a particular
@@ -34,158 +34,10 @@ public typealias DatabaseHandle = Int
 // So we only need to ensure that the DatabaseReference is also Sendable
 public class DatabaseQuery: @unchecked Sendable {
 
-    // MARK: - Attach observers to read data
-
-    /**
-     * observeEventType:withBlock: is used to listen for data changes at a
-     * particular location. This is the primary way to read data from the Firebase
-     * Database. Your block will be triggered for the initial data and again
-     * whenever the data changes.
-     *
-     * Use removeObserverWithHandle: to stop receiving updates.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called with initial data and updates.
-     * It is passed the data as a FIRDataSnapshot.
-     * @return A handle used to unregister this block later using
-     * removeObserverWithHandle:
-     */
-    public func observeEventType(_ eventType: DataEventType,
-                                       withBlock block: @escaping @Sendable (DataSnapshot) -> Void) -> DatabaseHandle {
-        FValidation.validateFrom("observeEventType:withBlock:", knownEventType: eventType)
-        return observeEventType(eventType, withBlock: block, withCancelBlock: nil)
-    }
-    /**
-     * observeEventType:andPreviousSiblingKeyWithBlock: is used to listen for data
-     * changes at a particular location. This is the primary way to read data from
-     * the Firebase Database. Your block will be triggered for the initial data and
-     * again whenever the data changes. In addition, for FIRDataEventTypeChildAdded,
-     * FIRDataEventTypeChildMoved, and FIRDataEventTypeChildChanged events, your
-     * block will be passed the key of the previous node by priority order.
-     *
-     * Use removeObserverWithHandle: to stop receiving updates.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called with initial data and updates.
-     * It is passed the data as a FIRDataSnapshot and the previous child's key.
-     * @return A handle used to unregister this block later using
-     * removeObserverWithHandle:
-     */
-    public func observeEventType(_ eventType: DataEventType,
-                                       andPreviousSiblingKeyWithBlock block: @escaping @Sendable(_ snapshot: DataSnapshot, _ prevKey: String?) -> Void) -> DatabaseHandle {
-        FValidation.validateFrom("observeEventType:andPreviousSiblingKeyWithBlock:", knownEventType: eventType)
-        return observeEventType(eventType, andPreviousSiblingKeyWithBlock: block, withCancelBlock: nil)
-    }
-
-    /**
-     * observeEventType:withBlock: is used to listen for data changes at a
-     * particular location. This is the primary way to read data from the Firebase
-     * Database. Your block will be triggered for the initial data and again
-     * whenever the data changes.
-     *
-     * The cancelBlock will be called if you will no longer receive new events due
-     * to no longer having permission.
-     *
-     * Use removeObserverWithHandle: to stop receiving updates.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called with initial data and updates.
-     * It is passed the data as a FIRDataSnapshot.
-     * @param cancelBlock The block that should be called if this client no longer
-     * has permission to receive these events
-     * @return A handle used to unregister this block later using
-     * removeObserverWithHandle:
-     */
-    public func observeEventType(_ eventType: DataEventType,
-                                       withBlock block: @escaping @Sendable (_ snapshot: DataSnapshot) -> Void,
-                                       withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) -> DatabaseHandle {
-        FValidation.validateFrom("observeEventType:withBlock:withCancelBlock:",
-                                      knownEventType: eventType)
-        if eventType == .value {
-            // Handle FIRDataEventTypeValue specially because they shouldn't have
-            // prevName callbacks
-            let handle = FUtilities.LUIDGenerator()
-            observeValueEventWithHandle(handle, withBlock: block, cancelCallback: cancelBlock)
-            return handle
-        } else {
-            // Wrap up the userCallback so we can treat everything as a callback
-            // that has a prevName
-            return observeEventType(
-                eventType,
-                andPreviousSiblingKeyWithBlock: { snapshot, _ in
-                    block(snapshot)
-                },
-                withCancelBlock: cancelBlock)
-        }
-    }
-
-    /**
-     * observeEventType:andPreviousSiblingKeyWithBlock: is used to listen for data
-     * changes at a particular location. This is the primary way to read data from
-     * the Firebase Database. Your block will be triggered for the initial data and
-     * again whenever the data changes. In addition, for FIRDataEventTypeChildAdded,
-     * FIRDataEventTypeChildMoved, and FIRDataEventTypeChildChanged events, your
-     * block will be passed the key of the previous node by priority order.
-     *
-     * The cancelBlock will be called if you will no longer receive new events due
-     * to no longer having permission.
-     *
-     * Use removeObserverWithHandle: to stop receiving updates.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called with initial data and updates.
-     * It is passed the data as a FIRDataSnapshot and the previous child's key.
-     * @param cancelBlock The block that should be called if this client no longer
-     * has permission to receive these events
-     * @return A handle used to unregister this block later using
-     * removeObserverWithHandle:
-     */
-    public func observeEventType(_ eventType: DataEventType,
-                                       andPreviousSiblingKeyWithBlock block: @escaping @Sendable (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void, withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) -> DatabaseHandle {
-        FValidation.validateFrom("observeEventType:andPreviousSiblingKeyWithBlock:withCancelBlock:", knownEventType: eventType)
-        if eventType == .value {
-            // TODO: This gets hit by observeSingleEventOfType.  Need to fix.
-            /*
-            @throw [[NSException alloc] initWithName:@"InvalidEventTypeForObserver"
-                                              reason:@"(observeEventType:andPreviousSiblingKeyWithBlock:withCancelBlock:)
-            Cannot use
-            observeEventType:andPreviousSiblingKeyWithBlock:withCancelBlock: with
-            FIRDataEventTypeValue. Use observeEventType:withBlock:withCancelBlock:
-            instead." userInfo:nil];
-            */
-        }
-        let handle = FUtilities.LUIDGenerator()
-        observeChildEventWithHandle(handle, withCallbacks: [eventType: block], cancelCallback: cancelBlock)
-        return handle
-    }
-
-    // If we want to distinguish between value event listeners and child event
-    // listeners, like in the Java client, we can consider exporting this. If we do,
-    // add argument validation. Otherwise, arguments are validated in the
-    // public-facing portions of the API. Also, move the FIRDatabaseHandle logic.
-    private func observeValueEventWithHandle(_ handle: DatabaseHandle, withBlock block: @escaping @Sendable (DataSnapshot) -> Void, cancelCallback: (@Sendable (Error) -> Void)?) {
-        // Note that we don't need to copy the callbacks here, FEventRegistration
-        // callback properties set to copy
-        let registration = FValueEventRegistration(repo: repo, handle: handle, callback: block, cancelCallback: cancelCallback)
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.addEventRegistration(registration, forQuery: self.querySpec)
-        }
-    }
-
-    // Note: as with the above method, we may wish to expose this at some point.
-    private func observeChildEventWithHandle(_ handle: DatabaseHandle, withCallbacks callbacks: [DataEventType : @Sendable (DataSnapshot, String?) -> Void], cancelCallback: (@Sendable (Error) -> Void)?) {
-        // Note that we don't need to copy the callbacks here, FEventRegistration
-        // callback properties set to copy
-        let registration = FChildEventRegistration(repo: repo,
-                                                   handle: handle,
-                                                   callbacks: callbacks,
-                                                   cancelCallback: cancelCallback)
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.addEventRegistration(registration, forQuery: self.querySpec)
-        }
-    }
+    // MARK: - Reading data
+    //
+    // Observing is `values()`, `childEvents(_:)` and `firstValue()` (see
+    // DatabaseEvents.swift).
 
     /**
      * getDataWithCompletionBlock: is used to get the most up-to-date value for
@@ -197,151 +49,9 @@ public class DatabaseQuery: @unchecked Sendable {
      */
     public func getData() async throws -> DataSnapshot {
         let repo = self.repo
+        // After the operations made before it, e.g. writes.
+        await repo.run { _ in }
         return try await repo.getData(self)
-    }
-
-    /**
-     * This is equivalent to observeEventType:withBlock:, except the block is
-     * immediately canceled after the initial data is returned.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called.  It is passed the data as a
-     * FIRDataSnapshot.
-     */
-    public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               withBlock block: @escaping @Sendable (_ snapshot: DataSnapshot) -> Void) {
-        observeSingleEventOfType(eventType,
-                                 withBlock:block,
-                                 withCancelBlock:nil)
-
-    }
-
-    /**
-     * This is equivalent to observeEventType:withBlock:, except the block is
-     * immediately canceled after the initial data is returned. In addition, for
-     * FIRDataEventTypeChildAdded, FIRDataEventTypeChildMoved, and
-     * FIRDataEventTypeChildChanged events, your block will be passed the key of the
-     * previous node by priority order.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called.  It is passed the data as a
-     * FIRDataSnapshot and the previous child's key.
-     */
-    public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               andPreviousSiblingKeyWithBlock block: @escaping @Sendable (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void) {
-        observeSingleEventOfType(eventType,
-                                 andPreviousSiblingKeyWithBlock: block,
-                                 withCancelBlock: nil)
-    }
-
-    /**
-     * This is equivalent to observeEventType:withBlock:, except the block is
-     * immediately canceled after the initial data is returned.
-     *
-     * The cancelBlock will be called if you do not have permission to read data at
-     * this location.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called.  It is passed the data as a
-     * FIRDataSnapshot.
-     * @param cancelBlock The block that will be called if you don't have permission
-     * to access this data
-     */
-    public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               withBlock block: @escaping @Sendable (_ snapshot: DataSnapshot) -> Void,
-                                               withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) {
-        // XXX: user reported memory leak in method
-
-        // "When you copy a block, any references to other blocks from within that
-        // block are copied if necessary—an entire tree may be copied (from the
-        // top). If you have block variables and you reference a block from within
-        // the block, that block will be copied."
-        // http://developer.apple.com/library/ios/#documentation/cocoa/Conceptual/Blocks/Articles/bxVariables.html#//apple_ref/doc/uid/TP40007502-CH6-SW1
-        // So... we don't need to do this since inside the on: we copy this block
-        // off the stack to the heap.
-        // __block fbt_void_datasnapshot userCallback = [callback copy];
-
-        observeSingleEventOfType(eventType, andPreviousSiblingKeyWithBlock: { snapshot, _ in
-            block(snapshot)
-        }, withCancelBlock: cancelBlock)
-    }
-
-    /**
-     * This is equivalent to observeEventType:withBlock:, except the block is
-     * immediately canceled after the initial data is returned. In addition, for
-     * FIRDataEventTypeChildAdded, FIRDataEventTypeChildMoved, and
-     * FIRDataEventTypeChildChanged events, your block will be passed the key of the
-     * previous node by priority order.
-     *
-     * The cancelBlock will be called if you do not have permission to read data at
-     * this location.
-     *
-     * @param eventType The type of event to listen for.
-     * @param block The block that should be called.  It is passed the data as a
-     * FIRDataSnapshot and the previous child's key.
-     * @param cancelBlock The block that will be called if you don't have permission
-     * to access this data
-     */
-    public func observeSingleEventOfType(_ eventType: DataEventType,
-                                               andPreviousSiblingKeyWithBlock block: @escaping @Sendable (_ snapshot: DataSnapshot, _ prevKey: String?) -> Void,
-                                               withCancelBlock cancelBlock: (@Sendable (Error) -> Void)?) {
-        // XXX: user reported memory leak in method
-
-        // "When you copy a block, any references to other blocks from within that
-        // block are copied if necessary—an entire tree may be copied (from the
-        // top). If you have block variables and you reference a block from within
-        // the block, that block will be copied."
-        // http://developer.apple.com/library/ios/#documentation/cocoa/Conceptual/Blocks/Articles/bxVariables.html#//apple_ref/doc/uid/TP40007502-CH6-SW1
-        // So... we don't need to do this since inside the on: we copy this block
-        // off the stack to the heap.
-        // __block fbt_void_datasnapshot userCallback = [callback copy];
-
-        let handle: Mutex<DatabaseHandle> = .init(0)
-        let firstCall: Mutex<Bool> = .init(true)
-        let wrappedCallback: @Sendable (DataSnapshot, String?) -> Void = { snapshot, prevName in
-            // Checked and cleared in one step, so only one event gets through.
-            guard firstCall.withLock({ first in
-                defer { first = false }
-                return first
-            }) else { return }
-            self.removeObserverWithHandle(handle.withLock { $0 })
-            block(snapshot, prevName)
-        }
-        let _handle = observeEventType(eventType,
-                                  andPreviousSiblingKeyWithBlock: wrappedCallback,
-                                  withCancelBlock: { error in
-            self.removeObserverWithHandle(handle.withLock { $0 })
-            cancelBlock?(error)
-        })
-        handle.withLock { $0 = _handle }
-    }
-
-    // MARK: - Detaching observers
-
-    /**
-     * Detach a block previously attached with observeEventType:withBlock:.
-     *
-     * @param handle The handle returned by the call to observeEventType:withBlock:
-     * which we are trying to remove.
-     */
-    public func removeObserverWithHandle(_ handle: DatabaseHandle) {
-        removeObserverWithMatcher(.handle(handle))
-    }
-
-    private func removeObserverWithMatcher(_ matcher: FEventRegistrationMatcher) {
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.removeEventRegistration(matcher, forQuery: self.querySpec)
-        }
-    }
-
-    /**
-     * Detach all blocks previously attached to this Firebase Database location with
-     * observeEventType:withBlock:
-     */
-    public func removeAllObservers() {
-        // Remove all except 'keep synced'
-        removeObserverWithMatcher(.allRegular)
     }
 
     /**
@@ -357,9 +67,8 @@ public class DatabaseQuery: @unchecked Sendable {
         if path.getFront() == kDotInfoPrefix {
             fatalError("Can't keep query on .info tree synced (this already is the case).")
         }
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.keepQuery(self.querySpec, synced: keepSynced)
+        repo.enqueue { [querySpec] repo in
+            repo.keepQuery(querySpec, synced: keepSynced)
         }
     }
 

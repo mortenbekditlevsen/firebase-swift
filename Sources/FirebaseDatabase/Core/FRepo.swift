@@ -67,7 +67,11 @@ class FRepo: FPersistentConnectionDelegate {
     internal var dataUpdateCount: Int = 0
     internal var rangeMergeUpdateCount: Int = 0
 
-    //private let dispatchQueue: DispatchQueue = DatabaseQuery.sharedQueue
+    /// The repo's operations, run one at a time in the order they're made,
+    /// as upstream's serial queue runs them. (Separate tasks for each wouldn't
+    /// keep the order: two writes could reach the server swapped.)
+    nonisolated
+    private let operations: AsyncStream<@DatabaseActor @Sendable (FRepo) -> Void>.Continuation
 
     nonisolated
     init(repoInfo info: FRepoInfo, config: DatabaseConfig, database: Database) {
@@ -87,10 +91,41 @@ class FRepo: FPersistentConnectionDelegate {
         // A list of data pieces and paths to be set when this client disconnects
         self.onDisconnect = FSparseSnapshotTree()
         self.infoData = FSnapshotHolder()
-        
-        // was: dispatchQueue.async
+
+        let (operations, continuation) = AsyncStream<@DatabaseActor @Sendable (FRepo) -> Void>.makeStream()
+        self.operations = continuation
+        continuation.yield { $0.deferredInit() }
         Task { @DatabaseActor in
-            self.deferredInit()
+            for await operation in operations {
+                operation(self)
+            }
+        }
+    }
+
+    /// Runs `operation` after the operations enqueued before it.
+    nonisolated
+    func enqueue(_ operation: @escaping @DatabaseActor @Sendable (FRepo) -> Void) {
+        operations.yield(operation)
+    }
+
+    /// Runs `operation` in order (see `enqueue`) and returns its result.
+    nonisolated
+    func run<T: Sendable>(_ operation: @escaping @DatabaseActor @Sendable (FRepo) -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            enqueue { continuation.resume(returning: operation($0)) }
+        }
+    }
+
+    /// Starts `operation` in order (see `enqueue`), and waits for it to call
+    /// its completion.
+    nonisolated
+    func run<T: Sendable>(
+        _ operation: @escaping @DatabaseActor @Sendable (FRepo, @escaping @Sendable (Result<T, any Error>) -> Void) -> Void
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            enqueue { repo in
+                operation(repo) { continuation.resume(with: $0) }
+            }
         }
     }
 
@@ -166,17 +201,17 @@ class FRepo: FPersistentConnectionDelegate {
         })
         self.serverSyncTree = FSyncTree(persistenceManager: self.persistenceManager, listenProvider: serverListenProvider)
 
-        // XXX TODO
-        Task { @DatabaseActor in
-            await restoreWrites()
-        }
+        restoreWrites()
         
         updateInfo(kDotInfoConnected, withValue: false)
 
         setupNotifications()
     }
 
-    private func restoreWrites() async {
+    /// Sends the writes persisted before the app quit, in order, before any
+    /// new ones. (They were sent one at a time, each after the previous one's
+    /// acknowledgement, so new writes could overtake them.)
+    private func restoreWrites() {
         let writes = self.persistenceManager?.userWrites ?? []
         let serverValues = FServerValues.generateServerValues(self.serverClock)
         var lastWriteId = Int.min
@@ -190,11 +225,11 @@ class FRepo: FPersistentConnectionDelegate {
             switch write.record {
             case .overwrite(let overwrite):
                 FFLog("I-RDB038001", "Restoring overwrite with id \(writeId)")
-                let (status, errorReason) = await connection.putData(overwrite.val(forExport: true),
-                                                                     forPath: write.path.description,
-                                                                     withHash: nil)
-                self.warnIfWriteFailedAtPath(write.path, status: status, message: "Persisted write")
-                self.ackWrite(writeId, rerunTransactionsAtPath: write.path, status: status)
+                connection.putData(overwrite.val(forExport: true), forPath: write.path.description,
+                                   withHash: nil) { [self] status, _ in
+                    warnIfWriteFailedAtPath(write.path, status: status, message: "Persisted write")
+                    ackWrite(writeId, rerunTransactionsAtPath: write.path, status: status)
+                }
 
                 let resolved = FServerValues.resolveDeferredValueSnapshot(overwrite, withSyncTree: serverSyncTree, atPath: write.path, serverValues: serverValues)
                 _ = serverSyncTree.applyUserOverwriteAtPath(write.path,
@@ -204,8 +239,12 @@ class FRepo: FPersistentConnectionDelegate {
 
             case .merge(let merge):
                 FFLog("I-RDB038002", "Restoring merge with id \(writeId)")
-                let (status, errorReason) = await self.connection.mergeData(merge,
-                                                                            forPath: write.path.description)
+                // Acknowledged like overwrites, as upstream does (the port
+                // didn't, so a restored merge stayed pending).
+                connection.mergeData(merge.valForExport(true), forPath: write.path.description) { [self] status, _ in
+                    warnIfWriteFailedAtPath(write.path, status: status, message: "Persisted merge")
+                    ackWrite(writeId, rerunTransactionsAtPath: write.path, status: status)
+                }
                 let resolved = FServerValues.resolveDeferredValueCompoundWrite(merge,
                                                                                withSyncTree: serverSyncTree,
                                                                                atPath: write.path,
@@ -232,6 +271,7 @@ class FRepo: FPersistentConnectionDelegate {
     // referenced (i.e. pendingPutsDB).
     func dispose() {
         connection.shutdown()
+        operations.finish()
 
         // We need to nil out any references to LevelDB, to make sure the
         // LevelDB exclusive locks are released.
@@ -246,7 +286,9 @@ class FRepo: FPersistentConnectionDelegate {
     nonisolated
     var serverTime: TimeInterval { serverClock.currentTime }
 
-    func set(_ path: FPath, withNode node: FNode) async throws -> DatabaseReference {
+    /// Applies the write locally and queues it for the server; `onComplete`
+    /// follows the server's acknowledgement.
+    func set(_ path: FPath, withNode node: FNode, onComplete: ((Error?) -> Void)? = nil) {
         let value = node.val(forExport: true)
         FFLog("I-RDB038003", "Setting: \(path) with \(value) pri: \(node.getPriority().val())")
 
@@ -261,22 +303,19 @@ class FRepo: FPersistentConnectionDelegate {
         persistenceManager?.saveUserOverwrite(node, atPath: path, writeId: writeId)
         let events = serverSyncTree.applyUserOverwriteAtPath(path, newData: newNode, writeId: writeId, isVisible: true)
         eventRaiser.raiseEvents(events)
-        let (status, errorReason) = await connection.putData(value, forPath: path.description, withHash: nil)
-        self.warnIfWriteFailedAtPath(path, status: status, message: "setValue: or removeValue:")
-        self.ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
-        defer {
-            let affectedPath = abortTransactionsAtPath(path, error: kFTransactionSet)
-            rerunTransactionsForPath(affectedPath)
+        connection.putData(value, forPath: path.description, withHash: nil) { [self] status, errorReason in
+            warnIfWriteFailedAtPath(path, status: status, message: "setValue: or removeValue:")
+            ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
+            onComplete?(writeError(status: status, reason: errorReason))
         }
-        let statusOk = status == kFWPResponseForActionStatusOk
-        if !statusOk {
-            // XXX TODO - examine how this can be nil
-            throw FUtilities.error(for: status, reason: errorReason)!
-        }
-        return DatabaseReference(repo: self, path: path)
+        // At once, as upstream does: transactions here are now based on stale data.
+        let affectedPath = abortTransactionsAtPath(path, error: kFTransactionSet)
+        rerunTransactionsForPath(affectedPath)
     }
 
-    func update(_ path: FPath, withNodes nodes: FCompoundWrite) async throws -> DatabaseReference {
+    /// Applies the merge locally and queues it for the server; `onComplete`
+    /// follows the server's acknowledgement.
+    func update(_ path: FPath, withNodes nodes: FCompoundWrite, onComplete: ((Error?) -> Void)? = nil) {
         let values = nodes.valForExport(true)
         FFLog("I-RDB038004", "Updating: \(path) with \(values)")
         let serverValues = FServerValues.generateServerValues(serverClock)
@@ -284,30 +323,30 @@ class FRepo: FPersistentConnectionDelegate {
                                                                        withSyncTree: serverSyncTree,
                                                                        atPath: path,
                                                                        serverValues: serverValues)
-        if !resolved.isEmpty {
-            let writeId = nextWriteId()
-            persistenceManager?.saveUserMerge(nodes, atPath: path, writeId: writeId)
-            let events = serverSyncTree.applyUserMergeAtPath(path, changedChildren: resolved, writeId: writeId)
-            eventRaiser.raiseEvents(events)
-            let (status, errorReason) = await connection.mergeData(values, forPath: path.description)
-            self.warnIfWriteFailedAtPath(path, status: status, message: "updateChildValues:")
-            self.ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
-            
-            nodes.enumerateWrites { childPath, node, stop in
-                let pathFromRoot = path.child(childPath)
-                FFLog("I-RDB038005", "Cancelling transactions at path: \(pathFromRoot)")
-                let affectedPath = self.abortTransactionsAtPath(pathFromRoot, error: kFTransactionSet)
-                self.rerunTransactionsForPath(affectedPath)
-            }
-            let statusOk = status == kFWPResponseForActionStatusOk
-            if !statusOk {
-                throw FUtilities.error(for: status, reason: errorReason)!
-            }
-            return DatabaseReference(repo: self, path: path)
-        } else {
+        guard !resolved.isEmpty else {
             FFLog("I-RDB038006", "update called with empty data. Doing nothing")
-            return DatabaseReference(repo: self, path: path)
+            onComplete?(nil)
+            return
         }
+        let writeId = nextWriteId()
+        persistenceManager?.saveUserMerge(nodes, atPath: path, writeId: writeId)
+        let events = serverSyncTree.applyUserMergeAtPath(path, changedChildren: resolved, writeId: writeId)
+        eventRaiser.raiseEvents(events)
+        connection.mergeData(values, forPath: path.description) { [self] status, errorReason in
+            warnIfWriteFailedAtPath(path, status: status, message: "updateChildValues:")
+            ackWrite(writeId, rerunTransactionsAtPath: path, status: status)
+            onComplete?(writeError(status: status, reason: errorReason))
+        }
+        nodes.enumerateWrites { childPath, node, stop in
+            let pathFromRoot = path.child(childPath)
+            FFLog("I-RDB038005", "Cancelling transactions at path: \(pathFromRoot)")
+            let affectedPath = self.abortTransactionsAtPath(pathFromRoot, error: kFTransactionSet)
+            self.rerunTransactionsForPath(affectedPath)
+        }
+    }
+
+    private func writeError(status: String, reason: String?) -> Error? {
+        status == kFWPResponseForActionStatusOk ? nil : FUtilities.error(for: status, reason: reason)
     }
 
     internal func onDisconnectCancel(_ path: FPath, withCallback callback: (@Sendable (Error?, DatabaseReference) -> Void)?) {
@@ -697,7 +736,10 @@ offline for more details.
         let handle = FUtilities.LUIDGenerator()
         let registration = FValueEventRegistration(repo: self, handle: handle, callback: nil, cancelCallback: nil)
         watchRef.repo.addEventRegistration(registration, forQuery: watchRef.querySpec)
-        let unwatcher: () -> Void = { watchRef.removeObserverWithHandle(handle) }
+        // Queued, as upstream's removeObserverWithHandle: is.
+        let unwatcher: () -> Void = { [self] in
+            enqueue { $0.removeEventRegistration(.handle(handle), forQuery: watchRef.querySpec) }
+        }
         // Save all the data that represents this transaction
 
         // Run transaction initially

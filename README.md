@@ -134,7 +134,68 @@ AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory(), keychain: My
 Upstream also sets a default factory when the module loads; here App Check
 is off until you call `setAppCheckProviderFactory`.
 
-## Database connections
+## Realtime Database
+
+Reading is iterating: `values()` gives the data now and after each change,
+`childEvents()` the changes to the children, and `firstValue()` the current
+data (from the cache if there is some). Listening starts when the iteration
+does and stops when it ends, so a task's lifetime is the listener's:
+
+```swift
+let ref = Database.database().reference().child("rooms/lobby")
+
+for try await snapshot in ref.child("topic").values() {
+  print(snapshot.value as? String ?? "")
+}
+
+for try await event in ref.child("messages").queryLimitedToLast(50).childEvents([.added, .removed]) {
+  print(event.kind, event.snapshot.key ?? "")
+}
+```
+
+A sequence throws if the client loses permission to read. For a UI that only
+needs the latest data, `values(bufferingPolicy: .bufferingNewest(1))` skips the
+ones it doesn't get to.
+
+Each write has two forms. The plain one applies the write locally (its events
+are raised at once) and queues it for the server; the `…AndWait` form also
+returns once the server acknowledged it, and throws if it was rejected, so it
+waits while offline. Either way, calls take effect in the order they're made.
+
+```swift
+ref.child("topic").setValue("Swift")                    // fire and forget
+try await ref.child("topic").setValueAndWait("Swift")   // until the server has it
+ref.child("presence/me").onDisconnect.setValue(false)
+
+let (committed, snapshot) = try await ref.child("likes").runTransaction { data in
+  data.value = ((data.value as? Int) ?? 0) + 1
+  return .success(withValue: data)
+}
+```
+
+### Migrating from the upstream API
+
+There are no callbacks or observer handles:
+
+| Upstream | Here |
+|---|---|
+| `observe(.value) { … }`, `removeObserver(withHandle:)` | `for try await snapshot in ref.values() { … }`; end the loop or cancel its task |
+| `observe(.childAdded/.childChanged/.childRemoved/.childMoved)` | `childEvents(_:)` with `ChildEvent { kind, snapshot, previousSiblingKey }` |
+| `withCancel:` | the sequence throws |
+| `observeSingleEvent(of: .value)` | `firstValue()` (`getData()` asks the server first) |
+| `removeAllObservers()` | end the iterations |
+| `setValue(_:)`, `updateChildValues(_:)`, `removeValue()`, `setPriority(_:)` | unchanged: queued, without waiting |
+| `try await setValue(_:)` and the other completion-block forms | `try await setValueAndWait(_:)`, `updateChildValuesAndWait(_:)`, `removeValueAndWait()`, `setPriorityAndWait(_:)` |
+| `onDisconnectSetValue(_:)`, `onDisconnectUpdateChildValues(_:)`, `onDisconnectRemoveValue()`, `cancelDisconnectOperations()` | `onDisconnect.setValue(_:)`, `.updateChildValues(_:)`, `.removeValue()`, `.cancel()`, each also as `…AndWait` |
+| `runTransactionBlock(_:)`, `runTransactionBlock(_:andCompletionBlock:withLocalEvents:)` | `try await runTransaction(applyLocally:_:)` → `(committed, snapshot)` |
+| `setValue(from:)` async | `setValueAndWait(from:)` |
+
+> **Watch out:** `try await ref.setValue(x)` still compiles, as a call to the
+> plain form, with only "no async operations occur within 'await'" and "no
+> calls to throwing functions occur within 'try'" warnings. It no longer
+> waits for the server or throws. Use `setValueAndWait(x)`.
+
+### Connections
 
 Realtime Database talks to its server over a WebSocket, opened by a
 `DatabaseTransport`. The default is `NIODatabaseTransport` (SwiftNIO with
@@ -155,7 +216,7 @@ connection does, and cancellation must close the connection.
 ## Differences from the upstream SDK
 
 - **Async only.** Methods that take a completion handler upstream are
-  `async` here. There's no Combine support and no Objective-C API.
+  `async` here (for Realtime Database, see [its section](#realtime-database)). There's no Combine support and no Objective-C API.
 - **Concurrency.** The public types are `Sendable`; see
   [Docs/Concurrency.md](Docs/Concurrency.md).
 - **Value types.** Some upstream classes are value types here, among them

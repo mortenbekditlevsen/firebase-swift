@@ -101,7 +101,7 @@ struct AuthCreatedLaterIntegrationTests {
 
     // Each path is writable only by that user.
     try await firestore.document("users/\(uid)/items/doc").setData(["n": 1])
-    _ = try await database.reference().child("users/\(uid)/n").setValue(1)
+    try await database.reference().child("users/\(uid)/n").setValueAndWait(1)
     _ = try await storage.reference().child("users/\(uid)/file.txt").putData(Data("x".utf8))
     #expect(try await function.call(EmptyRequest()).uid == uid)
     try relaunch.auth.signOut()
@@ -114,7 +114,7 @@ struct AuthCreatedLaterIntegrationTests {
     let uid = try await fixture.startAuth().signInAnonymously().user.uid
 
     try await firestore.document("users/\(uid)/items/doc").setData(["n": 1])
-    _ = try await database.reference().child("users/\(uid)/n").setValue(1)
+    try await database.reference().child("users/\(uid)/n").setValueAndWait(1)
     try fixture.auth.signOut()
   }
 }

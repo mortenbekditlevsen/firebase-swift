@@ -77,777 +77,130 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
     }
 
     // MARK: - Writing data
-
-    /** Write data to this Firebase Database location.
-
-    This will overwrite any data at this location and all child locations.
-
-    Data types that can be set are:
-
-    - NSString -- @"Hello World"
-    - NSNumber (also includes boolean) -- @YES, @43, @4.333
-    - NSDictionary -- @{@"key": @"value", @"nested": @{@"another": @"value"} }
-    - NSArray
-
-    The effect of the write will be visible immediately and the corresponding
-    events will be triggered. Synchronization of the data to the Firebase Database
-    servers will also be started.
-
-    Passing null for the new value is equivalent to calling remove:;
-    all data at this location or any child location will be deleted.
-
-    Note that setValue: will remove any priority stored at this location, so if
-    priority is meant to be preserved, you should use setValue:andPriority: instead.
-
-    @param value The value to be written.
-     */
-    // XXX TODO: Model allowed types better!
-    public func setValue(_ value: Sendable?) {
-        // XXX TODO. Best way to wrap this?
-        Task {
-            _ = try await setValueInternal(value, andPriority: nil, from: "setValue:")
-        }
-    }
+    //
+    // Each write has two forms. The plain one applies the write locally, so
+    // its events are raised at once, and queues it for the server. The
+    // `…AndWait` one does the same, then returns when the server has
+    // acknowledged it, and throws if the server rejected it. It waits while
+    // offline. Writes reach the server in the order they're made, whichever
+    // form they use.
 
     /**
-     * The same as setValue: with a block that gets triggered after the write
-     * operation has been committed to the Firebase Database servers.
+     * Writes data to this location, overwriting any data at this location and
+     * all child locations.
      *
-     * @param value The value to be written.
-     * @param block The block to be called after the write has been committed to the
-     * Firebase Database servers.
+     * Data types that can be set are strings, numbers, booleans, dictionaries
+     * and arrays of these, and `nil`, which removes the data. The write is
+     * visible at once, and its events raised; it's synchronized with the
+     * server in the background.
+     *
+     * Note that setValue removes any priority stored at this location, so if
+     * priority is meant to be preserved, use `setValue(_:andPriority:)`.
      */
-    public func setValue(_ value: Any?) async throws -> DatabaseReference {
-        try await setValueInternal(value, andPriority: nil, from: "setValue:withCompletionBlock:")
+    public func setValue(_ value: Any?) {
+        let node = validatedNode(value, priority: nil, from: "setValue:")
+        repo.enqueue { [path] repo in repo.set(path, withNode: node) }
     }
 
-    /**
-     * The same as setValue: with an additional priority to be attached to the data
-     * being written. Priorities are used to order items.
-     *
-     * @param value The value to be written.
-     * @param priority The priority to be attached to that data.
-     */
-    public func setValue(_ value: Sendable?, andPriority priority: Sendable?) {
-        // XXX TODO. Best way to wrap this?
-        Task {
-            _ = try await setValueInternal(value, andPriority: priority, from: "setValue:andPriority:")
-        }
+    /// `setValue(_:)`, returning once the server has acknowledged the write.
+    public func setValueAndWait(_ value: Any?) async throws {
+        try await write(validatedNode(value, priority: nil, from: "setValue:withCompletionBlock:"))
     }
 
-    /**
-     * The same as setValue:andPriority: with a block that gets triggered after the
-     * write operation has been committed to the Firebase Database servers.
-     *
-     * @param value The value to be written.
-     * @param priority The priority to be attached to that data.
-     * @param block The block to be called after the write has been committed to the
-     * Firebase Database servers.
-     */
-    public func setValue(_ value: Any?, andPriority priority: Any?) async throws -> DatabaseReference {
-        try await setValueInternal(
-            value,
-            andPriority: priority,
-            from: "setValue:andPriority:withCompletionBlock"
-        )
+    /// Writes data and a priority to this location; see `setValue(_:)`.
+    public func setValue(_ value: Any?, andPriority priority: Any?) {
+        let node = validatedNode(value, priority: priority, from: "setValue:andPriority:")
+        repo.enqueue { [path] repo in repo.set(path, withNode: node) }
     }
 
-    private func setValueInternal(_ value: Any?, andPriority priority: Any?, from fn: String) async throws -> DatabaseReference {
-        FValidation.validateFrom(fn, writablePath: self.path)
-        let newNode = FSnapshotUtilities.nodeFrom(value, priority: priority, withValidationFrom: fn)
-        return try await self.repo.set(self.path, withNode: newNode)
+    /// `setValue(_:andPriority:)`, returning once the server has acknowledged
+    /// the write.
+    public func setValueAndWait(_ value: Any?, andPriority priority: Any?) async throws {
+        try await write(validatedNode(value, priority: priority, from: "setValue:andPriority:withCompletionBlock"))
     }
 
-    /**
-     * Remove the data at this Firebase Database location. Any data at child
-     * locations will also be deleted.
-     *
-     * The effect of the delete will be visible immediately and the corresponding
-     * events will be triggered. Synchronization of the delete to the Firebase
-     * Database servers will also be started.
-     *
-     * remove: is equivalent to calling setValue:nil
-     */
+    /// Removes the data at this location, as `setValue(nil)` does.
     public func removeValue() {
-        Task {
-            _ = try await setValueInternal(nil, andPriority: nil, from: "removeValue:")
-        }
+        setValue(nil)
+    }
+
+    /// `removeValue()`, returning once the server has acknowledged the write.
+    public func removeValueAndWait() async throws {
+        try await write(validatedNode(nil, priority: nil, from: "removeValue:withCompletionBlock:"))
     }
 
     /**
-     * The same as remove: with a block that gets triggered after the remove
-     * operation has been committed to the Firebase Database servers.
-     *
-     * @param block The block to be called after the remove has been committed to
-     * the Firebase Database servers.
-     */
-    public func removeValue() async throws -> DatabaseReference {
-        try await setValueInternal(nil, andPriority: nil, from: "removeValue:withCompletionBlock:")
-    }
-
-    /**
-     * Sets a priority for the data at this Firebase Database location.
+     * Sets a priority for the data at this location; see `setValue(_:)`.
      * Priorities can be used to provide a custom ordering for the children at a
-     * location (if no priorities are specified, the children are ordered by key).
-     *
-     * You cannot set a priority on an empty location. For this reason
-     * setValue:andPriority: should be used when setting initial data with a
-     * specific priority and setPriority: should be used when updating the priority
-     * of existing data.
-     *
-     * Children are sorted based on this priority using the following rules:
-     *
-     * Children with no priority come first.
-     * Children with a number as their priority come next. They are sorted
-     * numerically by priority (small to large). Children with a string as their
-     * priority come last. They are sorted lexicographically by priority. Whenever
-     * two children have the same priority (including no priority), they are sorted
-     * by key. Numeric keys come first (sorted numerically), followed by the
-     * remaining keys (sorted lexicographically).
-     *
-     * Note that priorities are parsed and ordered as IEEE 754 double-precision
-     * floating-point numbers. Keys are always stored as strings and are treated as
-     * numbers only when they can be parsed as a 32-bit integer
-     *
-     * @param priority The priority to set at the specified location.
+     * location (if no priorities are specified, the children are ordered by
+     * key).
      */
-    public func setPriority(_ priority: Sendable?) {
-        // XXX TODO. Best way to wrap this?
-        Task {
-            _ = try await setPriorityInternal(priority, from: "setPriority:")
+    public func setPriority(_ priority: Any?) {
+        FValidation.validateFrom("setPriority:", writablePath: path)
+        let node = FSnapshotUtilities.nodeFrom(priority)
+        repo.enqueue { [path] repo in repo.set(path.child(fromString: ".priority"), withNode: node) }
+    }
+
+    /// `setPriority(_:)`, returning once the server has acknowledged the write.
+    public func setPriorityAndWait(_ priority: Any?) async throws {
+        FValidation.validateFrom("setPriority:withCompletionBlock:", writablePath: path)
+        try await write(FSnapshotUtilities.nodeFrom(priority), at: path.child(fromString: ".priority"))
+    }
+
+    /**
+     * Updates the children at this location with the values in `values`
+     * (keys can be paths), leaving other children as they are; see
+     * `setValue(_:)`.
+     */
+    public func updateChildValues(_ values: [String: Any]) {
+        let merge = validatedMerge(values, from: "updateChildValues:")
+        repo.enqueue { [path] repo in repo.update(path, withNodes: merge) }
+    }
+
+    /// `updateChildValues(_:)`, returning once the server has acknowledged the
+    /// write.
+    public func updateChildValuesAndWait(_ values: [String: Any]) async throws {
+        let merge = validatedMerge(values, from: "updateChildValues:withCompletionBlock:")
+        let _: Void = try await repo.run { [path] repo, completion in
+            repo.update(path, withNodes: merge) { completion($0.map(Result.failure) ?? .success(())) }
         }
     }
 
-    /**
-     * The same as setPriority: with a block that is called once the priority has
-     * been committed to the Firebase Database servers.
-     *
-     * @param priority The priority to set at the specified location.
-     * @param block The block that is triggered after the priority has been written
-     * on the servers.
-     */
-    public func setPriority(_ priority: Sendable?) async throws -> DatabaseReference {
-        try await setPriorityInternal(priority, from: "setPriority:withCompletionBlock:")
+    private func validatedNode(_ value: Any?, priority: Any?, from fn: String) -> FNode {
+        FValidation.validateFrom(fn, writablePath: path)
+        return FSnapshotUtilities.nodeFrom(value, priority: priority, withValidationFrom: fn)
     }
 
-    private func setPriorityInternal(_ priority: Sendable?, from fn: String) async throws -> DatabaseReference {
-        FValidation.validateFrom(fn, writablePath: self.path)
-        return try await self.repo.set(self.path.child(fromString: ".priority"), withNode: FSnapshotUtilities.nodeFrom(priority))
+    private func validatedMerge(_ values: [String: Any], from fn: String) -> FCompoundWrite {
+        FValidation.validateFrom(fn, writablePath: path)
+        return FSnapshotUtilities.compoundWriteFromDictionary(values, withValidationFrom: fn)
     }
 
-    /**
-     * Updates the values at the specified paths in the dictionary without
-     * overwriting other keys at this location.
-     *
-     * @param values A dictionary of the keys to change and their new values
-     */
-    public func updateChildValues(_ values: [String: Sendable]) {
-        // XXX TODO: Best way to handle this?
-        Task {
-            _ = try await updateChildValuesInternal(values, from: "updateChildValues:")
+    private func write(_ node: FNode, at path: FPath? = nil) async throws {
+        let path = path ?? self.path
+        let _: Void = try await repo.run { repo, completion in
+            repo.set(path, withNode: node) { completion($0.map(Result.failure) ?? .success(())) }
         }
     }
-
-    /**
-     * The same as update: with a block that is called once the update has been
-     * committed to the Firebase Database servers
-     *
-     * @param values A dictionary of the keys to change and their new values
-     * @param block The block that is triggered after the update has been written on
-     * the Firebase Database servers
-     */
-    public func updateChildValues(_ values: [String: Any]) async throws -> DatabaseReference {
-        try await updateChildValuesInternal(values, from: "updateChildValues:withCompletionBlock:")
-    }
-
-    private func updateChildValuesInternal(_ values: [String: Any], from fn: String) async throws -> DatabaseReference {
-        FValidation.validateFrom(fn, writablePath: self.path)
-        let merge = FSnapshotUtilities.compoundWriteFromDictionary(values, withValidationFrom: fn)
-        return try await self.repo.update(self.path, withNodes: merge)
-    }
-
-    // MARK: - Attaching observers to read data
-
-//    /**
-//     * observeEventType:withBlock: is used to listen for data changes at a
-//     * particular location. This is the primary way to read data from the Firebase
-//     * Database. Your block will be triggered for the initial data and again
-//     * whenever the data changes.
-//     *
-//     * Use removeObserverWithHandle: to stop receiving updates.
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called with initial data and updates.
-//     * It is passed the data as a FIRDataSnapshot.
-//     * @return A handle used to unregister this block later using
-//     * removeObserverWithHandle:
-//     */
-//    public override func observeEventType(_ eventType: DataEventType, withBlock block: (DataSnapshot) -> Void) -> DatabaseHandle {
-//
-//    }
-//
-//    /**
-//     * observeEventType:andPreviousSiblingKeyWithBlock: is used to listen for data
-//     * changes at a particular location. This is the primary way to read data from
-//     * the Firebase Database. Your block will be triggered for the initial data and
-//     * again whenever the data changes. In addition, for FIRDataEventTypeChildAdded,
-//     * FIRDataEventTypeChildMoved, and FIRDataEventTypeChildChanged events, your
-//     * block will be passed the key of the previous node by priority order.
-//     *
-//     * Use removeObserverWithHandle: to stop receiving updates.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called with initial data and updates.
-//     * It is passed the data as a FIRDataSnapshot and the previous child's key.
-//     * @return A handle used to unregister this block later using
-//     * removeObserverWithHandle:
-//     */
-//    public override func observeEventType(_ eventType: DataEventType, andPreviousSiblingKeyWithBlock block: (DataSnapshot, String?) -> Void) -> DatabaseHandle {
-//
-//    }
-//
-//    /**
-//     * observeEventType:withBlock: is used to listen for data changes at a
-//     * particular location. This is the primary way to read data from the Firebase
-//     * Database. Your block will be triggered for the initial data and again
-//     * whenever the data changes.
-//     *
-//     * The cancelBlock will be called if you will no longer receive new events due
-//     * to no longer having permission.
-//     *
-//     * Use removeObserverWithHandle: to stop receiving updates.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called with initial data and updates.
-//     * It is passed the data as a FIRDataSnapshot.
-//     * @param cancelBlock The block that should be called if this client no longer
-//     * has permission to receive these events
-//     * @return A handle used to unregister this block later using
-//     * removeObserverWithHandle:
-//     */
-//    public override func observeEventType(_ eventType: DataEventType, withBlock block: (DataSnapshot, String?) -> Void, withCancelBlock cancelBlock: ((Error) -> Void)?) -> DatabaseHandle {
-//
-//    }
-//
-//    /**
-//     * observeEventType:andPreviousSiblingKeyWithBlock: is used to listen for data
-//     * changes at a particular location. This is the primary way to read data from
-//     * the Firebase Database. Your block will be triggered for the initial data and
-//     * again whenever the data changes. In addition, for FIRDataEventTypeChildAdded,
-//     * FIRDataEventTypeChildMoved, and FIRDataEventTypeChildChanged events, your
-//     * block will be passed the key of the previous node by priority order.
-//     *
-//     * The cancelBlock will be called if you will no longer receive new events due
-//     * to no longer having permission.
-//     *
-//     * Use removeObserverWithHandle: to stop receiving updates.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called with initial data and updates.
-//     * It is passed the data as a FIRDataSnapshot and the previous child's key.
-//     * @param cancelBlock The block that should be called if this client no longer
-//     * has permission to receive these events
-//     * @return A handle used to unregister this block later using
-//     * removeObserverWithHandle:
-//     */
-//
-//    public override func observeEventType(_ eventType: DataEventType, andPreviousSiblingKeyWithBlock block: (DataSnapshot, String?) -> Void, withCancelBlock cancelBlock: ((Error) -> Void)?) -> DatabaseHandle {
-//
-//    }
-//
-//    /**
-//     * This is equivalent to observeEventType:withBlock:, except the block is
-//     * immediately canceled after the initial data is returned.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called.  It is passed the data as a
-//     * FIRDataSnapshot.
-//     */
-//    public override func observeSingleEventOfType(_ eventType: DataEventType, withBlock block: (DataSnapshot) -> Void) {
-//
-//    }
-//
-//    /**
-//     * This is equivalent to observeEventType:withBlock:, except the block is
-//     * immediately canceled after the initial data is returned. In addition, for
-//     * FIRDataEventTypeChildAdded, FIRDataEventTypeChildMoved, and
-//     * FIRDataEventTypeChildChanged events, your block will be passed the key of the
-//     * previous node by priority order.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called.  It is passed the data as a
-//     * FIRDataSnapshot and the previous child's key.
-//     */
-//    public override func observeSingleEventOfType(_ eventType: DataEventType, andPreviousSiblingKeyWithBlock block: (DataSnapshot, String?) -> Void) {
-//
-//    }
-//
-//    /**
-//     * This is equivalent to observeEventType:withBlock:, except the block is
-//     * immediately canceled after the initial data is returned.
-//     *
-//     * The cancelBlock will be called if you do not have permission to read data at
-//     * this location.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called.  It is passed the data as a
-//     * FIRDataSnapshot.
-//     * @param cancelBlock The block that will be called if you don't have permission
-//     * to access this data
-//     */
-//    public override func observeSingleEventOfType(_ eventType: DataEventType, withBlock block: (DataSnapshot) -> Void, withCancelBlock cancelBlock: ((Error) -> Void)?) {
-//
-//    }
-//
-//    /**
-//     * This is equivalent to observeEventType:withBlock:, except the block is
-//     * immediately canceled after the initial data is returned. In addition, for
-//     * FIRDataEventTypeChildAdded, FIRDataEventTypeChildMoved, and
-//     * FIRDataEventTypeChildChanged events, your block will be passed the key of the
-//     * previous node by priority order.
-//     *
-//     * The cancelBlock will be called if you do not have permission to read data at
-//     * this location.
-//     *
-//     * @param eventType The type of event to listen for.
-//     * @param block The block that should be called.  It is passed the data as a
-//     * FIRDataSnapshot and the previous child's key.
-//     * @param cancelBlock The block that will be called if you don't have permission
-//     * to access this data
-//     */
-//    public override func observeSingleEventOfType(_ eventType: DataEventType, andPreviousSiblingKeyWithBlock block: (DataSnapshot, String?) -> Void, withCancelBlock cancelBlock: ((Error) -> Void)?) {
-//
-//    }
-//
-//    /**
-//     * getDataWithCompletionBlock: is used to get the most up-to-date value for
-//     * this query. This method updates the cache and raises events if successful. If
-//     * not connected, falls back to a locally-cached value.
-//     *
-//     * @param block The block that should be called with the most up-to-date value
-//     * of this query, or an error if no such value could be retrieved.
-//     */
-//    public override func getData(completion block: (Error?, DataSnapshot?) -> Void) {
-//
-//    }
-
-    // MARK: - Detaching observers
-
-    /*
-
-
-     /**
-      * Detach a block previously attached with observeEventType:withBlock:.
-      *
-      * @param handle The handle returned by the call to observeEventType:withBlock:
-      * which we are trying to remove.
-      */
-     - (void)removeObserverWithHandle:(FIRDatabaseHandle)handle;
-
-     /**
-      * By calling `keepSynced:YES` on a location, the data for that location will
-      * automatically be downloaded and kept in sync, even when no listeners are
-      * attached for that location. Additionally, while a location is kept synced, it
-      * will not be evicted from the persistent disk cache.
-      *
-      * @param keepSynced Pass YES to keep this location synchronized, pass NO to
-      * stop synchronization.
-      */
-     - (void)keepSynced:(BOOL)keepSynced;
-
-     /**
-      * Removes all observers at the current reference, but does not remove any
-      * observers at child references. removeAllObservers must be called again for
-      * each child reference where a listener was established to remove the
-      * observers.
-      */
-     - (void)removeAllObservers;
-
-     #pragma mark - Querying and limiting
-
-     /**
-      * queryLimitedToFirst: is used to generate a reference to a limited view of the
-      * data at this location. The FIRDatabaseQuery instance returned by
-      * queryLimitedToFirst: will respond to at most the first limit child nodes.
-      *
-      * @param limit The upper bound, inclusive, for the number of child nodes to
-      * receive events for
-      * @return A FIRDatabaseQuery instance, limited to at most limit child nodes.
-      */
-     - (FIRDatabaseQuery *)queryLimitedToFirst:(NSUInteger)limit;
-
-     /**
-      * queryLimitedToLast: is used to generate a reference to a limited view of the
-      * data at this location. The FIRDatabaseQuery instance returned by
-      * queryLimitedToLast: will respond to at most the last limit child nodes.
-      *
-      * @param limit The upper bound, inclusive, for the number of child nodes to
-      * receive events for
-      * @return A FIRDatabaseQuery instance, limited to at most limit child nodes.
-      */
-     - (FIRDatabaseQuery *)queryLimitedToLast:(NSUInteger)limit;
-
-     /**
-      * queryOrderBy: is used to generate a reference to a view of the data that's
-      * been sorted by the values of a particular child key. This method is intended
-      * to be used in combination with queryStartingAtValue:, queryEndingAtValue:, or
-      * queryEqualToValue:.
-      *
-      * @param key The child key to use in ordering data visible to the returned
-      * FIRDatabaseQuery
-      * @return A FIRDatabaseQuery instance, ordered by the values of the specified
-      * child key.
-      */
-     - (FIRDatabaseQuery *)queryOrderedByChild:(NSString *)key;
-
-     /**
-      * queryOrderedByKey: is used to generate a reference to a view of the data
-      * that's been sorted by child key. This method is intended to be used in
-      * combination with queryStartingAtValue:, queryEndingAtValue:, or
-      * queryEqualToValue:.
-      *
-      * @return A FIRDatabaseQuery instance, ordered by child keys.
-      */
-     - (FIRDatabaseQuery *)queryOrderedByKey;
-
-     /**
-      * queryOrderedByPriority: is used to generate a reference to a view of the data
-      * that's been sorted by child priority. This method is intended to be used in
-      * combination with queryStartingAtValue:, queryEndingAtValue:, or
-      * queryEqualToValue:.
-      *
-      * @return A FIRDatabaseQuery instance, ordered by child priorities.
-      */
-     - (FIRDatabaseQuery *)queryOrderedByPriority;
-
-     /**
-      * queryStartingAtValue: is used to generate a reference to a limited view of
-      * the data at this location. The FIRDatabaseQuery instance returned by
-      * queryStartingAtValue: will respond to events at nodes with a value greater
-      * than or equal to startValue.
-      *
-      * @param startValue The lower bound, inclusive, for the value of data visible
-      * to the returned FIRDatabaseQuery
-      * @return A FIRDatabaseQuery instance, limited to data with value greater than
-      * or equal to startValue
-      */
-     - (FIRDatabaseQuery *)queryStartingAtValue:(nullable id)startValue;
-
-     /**
-      * queryStartingAtValue:childKey: is used to generate a reference to a limited
-      * view of the data at this location. The FIRDatabaseQuery instance returned by
-      * queryStartingAtValue:childKey will respond to events at nodes with a value
-      * greater than startValue, or equal to startValue and with a key greater than
-      * or equal to childKey.
-      *
-      * @param startValue The lower bound, inclusive, for the value of data visible
-      * to the returned FIRDatabaseQuery
-      * @param childKey The lower bound, inclusive, for the key of nodes with value
-      * equal to startValue
-      * @return A FIRDatabaseQuery instance, limited to data with value greater than
-      * or equal to startValue
-      */
-     - (FIRDatabaseQuery *)queryStartingAtValue:(nullable id)startValue
-                                       childKey:(nullable NSString *)childKey;
-
-     /**
-      * queryStartingAfterValue: is used to generate a reference to a limited view of
-      * the data at this location. The FIRDatabaseQuery instance returned by
-      * queryStartingAfterValue: will respond to events at nodes with a value greater
-      * than startAfterValue.
-      *
-      * @param startAfterValue The lower bound, exclusive, for the value of data
-      * visible to the returned FIRDatabaseQuery
-      * @return A FIRDatabaseQuery instance, limited to data with value greater than
-      * startAfterValue
-      */
-     - (FIRDatabaseQuery *)queryStartingAfterValue:(nullable id)startAfterValue;
-
-     /**
-      * queryStartingAfterValue:childKey: is used to generate a reference to a
-      * limited view of the data at this location. The FIRDatabaseQuery instance
-      * returned by queryStartingAfterValue:childKey will respond to events at nodes
-      * with a value greater than startAfterValue, or equal to startAfterValue and
-      * with a key greater than childKey. This is most useful when implementing
-      * pagination in a case where multiple nodes can match the startAfterValue.
-      *
-      * @param startAfterValue The lower bound, inclusive, for the value of data
-      * visible to the returned FIRDatabaseQuery
-      * @param childKey The lower bound, exclusive, for the key of nodes with value
-      * equal to startAfterValue
-      * @return A FIRDatabaseQuery instance, limited to data with value greater than
-      * or equal to startAfterValue, or equal to startAfterValue and with a key
-      * greater than childKey.
-      */
-     - (FIRDatabaseQuery *)queryStartingAfterValue:(nullable id)startAfterValue
-                                          childKey:(nullable NSString *)childKey;
-
-     /**
-      * queryEndingAtValue: is used to generate a reference to a limited view of the
-      * data at this location. The FIRDatabaseQuery instance returned by
-      * queryEndingAtValue: will respond to events at nodes with a value less than or
-      * equal to endValue.
-      *
-      * @param endValue The upper bound, inclusive, for the value of data visible to
-      * the returned FIRDatabaseQuery
-      * @return A FIRDatabaseQuery instance, limited to data with value less than or
-      * equal to endValue
-      */
-     - (FIRDatabaseQuery *)queryEndingAtValue:(nullable id)endValue;
-
-     /**
-      * queryEndingAtValue:childKey: is used to generate a reference to a limited
-      * view of the data at this location. The FIRDatabaseQuery instance returned by
-      * queryEndingAtValue:childKey will respond to events at nodes with a value less
-      * than endValue, or equal to endValue and with a key less than or equal to
-      * childKey.
-      *
-      * @param endValue The upper bound, inclusive, for the value of data visible to
-      * the returned FIRDatabaseQuery
-      * @param childKey The upper bound, inclusive, for the key of nodes with value
-      * equal to endValue
-      * @return A FIRDatabaseQuery instance, limited to data with value less than or
-      * equal to endValue
-      */
-     - (FIRDatabaseQuery *)queryEndingAtValue:(nullable id)endValue
-                                     childKey:(nullable NSString *)childKey;
-
-     /**
-      * queryEqualToValue: is used to generate a reference to a limited view of the
-      * data at this location. The FIRDatabaseQuery instance returned by
-      * queryEqualToValue: will respond to events at nodes with a value equal to the
-      * supplied argument.
-      *
-      * @param value The value that the data returned by this FIRDatabaseQuery will
-      * have
-      * @return A FIRDatabaseQuery instance, limited to data with the supplied value.
-      */
-     - (FIRDatabaseQuery *)queryEqualToValue:(nullable id)value;
-
-     /**
-      * queryEqualToValue:childKey: is used to generate a reference to a limited view
-      * of the data at this location. The FIRDatabaseQuery instance returned by
-      * queryEqualToValue:childKey will respond to events at nodes with a value equal
-      * to the supplied argument with a key equal to childKey. There will be at most
-      * one node that matches because child keys are unique.
-      *
-      * @param value The value that the data returned by this FIRDatabaseQuery will
-      * have
-      * @param childKey The key of nodes with the right value
-      * @return A FIRDatabaseQuery instance, limited to data with the supplied value
-      * and the key.
-      */
-     - (FIRDatabaseQuery *)queryEqualToValue:(nullable id)value
-                                    childKey:(nullable NSString *)childKey;
-*/
 
     // MARK: - Managing presence
-    /**
-     * Ensure the data at this location is set to the specified value when
-     * the client is disconnected (due to closing the browser, navigating
-     * to a new page, or network issues).
-     *
-     * onDisconnectSetValue: is especially useful for implementing "presence"
-     * systems, where a value should be changed or cleared when a user disconnects
-     * so that he appears "offline" to other users.
-     *
-     * @param value The value to be set after the connection is lost.
-     */
-    public func onDisconnectSetValue(_ value: Any?) {
-        onDisconnectSetValueInternal(value, andPriority: nil, withCompletionBlock: nil, from: "onDisconnectSetValue:")
-    }
 
     /**
-     * Ensure the data at this location is set to the specified value when
-     * the client is disconnected (due to closing the browser, navigating
-     * to a new page, or network issues).
-     *
-     * The completion block will be triggered when the operation has been
-     * successfully queued up on the Firebase Database servers
-     *
-     * @param value The value to be set after the connection is lost.
-     * @param block Block to be triggered when the operation has been queued up on
-     * the Firebase Database servers
+     * The writes the server makes at this location when this client
+     * disconnects, e.g. to show whether a user is online. They're kept if the
+     * client disconnects with no chance to notify the server, such as when it
+     * loses its network connection.
      */
-    func onDisconnectSetValue(_ value: Any?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
-        onDisconnectSetValueInternal(value, andPriority: nil, withCompletionBlock: block, from: "onDisconnectSetValue:withCompletionBlock:")
-    }
-
-    /**
-     * Ensure the data at this location is set to the specified value and priority
-     * when the client is disconnected (due to closing the browser, navigating to a
-     * new page, or network issues).
-     *
-     * @param value The value to be set after the connection is lost.
-     * @param priority The priority to be set after the connection is lost.
-     */
-    public func onDisconnectSetValue(_ value: Any?, andPriority priority: Any?) {
-        onDisconnectSetValueInternal(value, andPriority: priority, withCompletionBlock: nil, from: "onDisconnectSetValue:andPriority:")
-    }
-
-    /**
-     * Ensure the data at this location is set to the specified value and priority
-     * when the client is disconnected (due to closing the browser, navigating to a
-     * new page, or network issues).
-     *
-     * The completion block will be triggered when the operation has been
-     * successfully queued up on the Firebase Database servers
-     *
-     * @param value The value to be set after the connection is lost.
-     * @param priority The priority to be set after the connection is lost.
-     * @param block Block to be triggered when the operation has been queued up on
-     * the Firebase Database servers
-     */
-    func onDisconnectSetValue(_ value: Any?, andPriority priority: Any?, withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
-        onDisconnectSetValueInternal(value, andPriority: priority, withCompletionBlock: block, from: "onDisconnectSetValue:andPriority:withCompletionBlock:")
-    }
-
-    private func onDisconnectSetValueInternal(_ value: Any?, andPriority priority: Any?, withCompletionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?, from fn: String) {
-        FValidation.validateFrom(fn, writablePath: path)
-        let newNodeUnresolved = FSnapshotUtilities.nodeFrom(value, priority: priority, withValidationFrom: fn)
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.onDisconnectSet(self.path, withNode: newNodeUnresolved, withCallback: block)
-        }
-    }
-
-    /**
-     * Ensure the data at this location is removed when
-     * the client is disconnected (due to closing the app, navigating
-     * to a new page, or network issues).
-     *
-     * onDisconnectRemoveValue is especially useful for implementing "presence"
-     * systems.
-     */
-    public func onDisconnectRemoveValue() {
-        onDisconnectSetValueInternal(nil, andPriority: nil, withCompletionBlock: nil, from: "onDisconnectRemoveValue")
-    }
-
-    /**
-     * Ensure the data at this location is removed when
-     * the client is disconnected (due to closing the app, navigating
-     * to a new page, or network issues).
-     *
-     * onDisconnectRemoveValueWithCompletionBlock: is especially useful for
-     * implementing "presence" systems.
-     *
-     * @param block Block to be triggered when the operation has been queued up on
-     * the Firebase Database servers
-     */
-    func onDisconnectRemoveValue(completionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
-        onDisconnectSetValueInternal(nil, andPriority: nil, withCompletionBlock: block, from: "onDisconnectRemoveValueWithCompletionBlock:")
-    }
-
-    /**
-     * Ensure the data has the specified child values updated when
-     * the client is disconnected (due to closing the browser, navigating
-     * to a new page, or network issues).
-     *
-     *
-     * @param values A dictionary of child node keys and the values to set them to
-     * after the connection is lost.
-     */
-    public func onDisconnectUpdateChildValues(_ values: [String: Any]) {
-        onDisconnectUpdateChildValuesInternal(values, withCompletionBlock: nil, from: "onDisconnectUpdateChildValues:")
-    }
-
-    /**
-     * Ensure the data has the specified child values updated when
-     * the client is disconnected (due to closing the browser, navigating
-     * to a new page, or network issues).
-     *
-     *
-     * @param values A dictionary of child node keys and the values to set them to
-     * after the connection is lost.
-     * @param block A block that will be called once the operation has been queued
-     * up on the Firebase Database servers
-     */
-    func onDisconnectUpdateChildValues(_ values: [String: Any], withCompletionBlock block: @escaping @Sendable (Error?, DatabaseReference) -> Void) {
-        onDisconnectUpdateChildValuesInternal(values, withCompletionBlock: block, from: "onDisconnectUpdateChildValues:withCompletionBlock:")
-    }
-
-    private func onDisconnectUpdateChildValuesInternal(_ values: [String: Any], withCompletionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?, from fn: String) {
-        FValidation.validateFrom(fn, writablePath: path)
-        let merge = FSnapshotUtilities.compoundWriteFromDictionary(values, withValidationFrom: fn)
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.onDisconnectUpdate(self.path, withNodes: merge, withCallback: block)
-        }
-    }
-
-    /**
-     * Cancel any operations that are set to run on disconnect. If you previously
-     * called onDisconnectSetValue:, onDisconnectRemoveValue:, or
-     * onDisconnectUpdateChildValues:, and no longer want the values updated when
-     * the connection is lost, call cancelDisconnectOperations:
-     */
-    public func cancelDisconnectOperations() {
-        cancelDisconnectOperations(completionBlock: nil)
-    }
-
-    /**
-     * Cancel any operations that are set to run on disconnect. If you previously
-     * called onDisconnectSetValue:, onDisconnectRemoveValue:, or
-     * onDisconnectUpdateChildValues:, and no longer want the values updated when
-     * the connection is lost, call cancelDisconnectOperations:
-     *
-     * @param block A block that will be triggered once the Firebase Database
-     * servers have acknowledged the cancel request.
-     */
-    func cancelDisconnectOperations(completionBlock block: (@Sendable (Error?, DatabaseReference) -> Void)?) {
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.onDisconnectCancel(self.path, withCallback: block)
-        }
-    }
+    public var onDisconnect: OnDisconnect { OnDisconnect(ref: self) }
 
     // MARK: - Manual Connection Management
-    /**
-     * Manually disconnect the Firebase Database client from the server and disable
-     * automatic reconnection.
-     *
-     * The Firebase Database client automatically maintains a persistent connection
-     * to the Firebase Database server, which will remain active indefinitely and
-     * reconnect when disconnected. However, the goOffline( ) and goOnline( )
-     * methods may be used to manually control the client connection in cases where
-     * a persistent connection is undesirable.
-     *
-     * While offline, the Firebase Database client will no longer receive data
-     * updates from the server. However, all database operations performed locally
-     * will continue to immediately fire events, allowing your application to
-     * continue behaving normally. Additionally, each operation performed locally
-     * will automatically be queued and retried upon reconnection to the Firebase
-     * Database server.
-     *
-     * To reconnect to the Firebase Database server and begin receiving remote
-     * events, see goOnline( ). Once the connection is reestablished, the Firebase
-     * Database client will transmit the appropriate data and fire the appropriate
-     * events so that your client "catches up" automatically.
-     *
-     * Note: Invoking this method will impact all Firebase Database connections.
-     */
+
+    /// Disconnects every database from its server until `goOnline()`.
     public class func goOffline() {
         FRepoManager.interruptAll()
     }
 
-    /**
-     * Manually reestablish a connection to the Firebase Database server and enable
-     * automatic reconnection.
-     *
-     * The Firebase Database client automatically maintains a persistent connection
-     * to the Firebase Database server, which will remain active indefinitely and
-     * reconnect when disconnected. However, the goOffline( ) and goOnline( )
-     * methods may be used to manually control the client connection in cases where
-     * a persistent connection is undesirable.
-     *
-     * This method should be used after invoking goOffline( ) to disable the active
-     * connection. Once reconnected, the Firebase Database client will automatically
-     * transmit the proper data and fire the appropriate events so that your client
-     * "catches up" automatically.
-     *
-     * To disconnect from the Firebase Database server, see goOffline( ).
-     *
-     * Note: Invoking this method will impact all Firebase Database connections.
-     */
+    /// Reconnects every database after `goOffline()`.
     public class func goOnline() {
         FRepoManager.resumeAll()
     }
@@ -855,128 +208,39 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
     // MARK: - Transactions
 
     /**
-     * Performs an optimistic-concurrency transactional update to the data at this
-     * location. Your block will be called with a FIRMutableData instance that
-     * contains the current data at this location. Your block should update this
-     * data to the value you wish to write to this location, and then return an
-     * instance of FIRTransactionResult with the new data.
+     * Updates the data at this location atomically: `update` gets the current
+     * data and returns the new data (or aborts), and runs again if another
+     * client changed the data first, until the update succeeds.
      *
-     * If, when the operation reaches the server, it turns out that this client had
-     * stale data, your block will be run again with the latest data from the
-     * server.
+     * `update` may first see stale or empty data (a guess at the current
+     * value), and then run again with the server's.
      *
-     * When your block is run, you may decide to abort the transaction by returning
-     * [FIRTransactionResult abort].
-     *
-     * @param block This block receives the current data at this location and must
-     * return an instance of FIRTransactionResult
+     * - Parameters:
+     *   - applyLocally: Whether to raise events for the intermediate states, or
+     *     only for the final one.
+     *   - update: Gets the current data and returns `.success(withValue:)` with
+     *     the new data, or `.abort()`.
+     * - Returns: Whether the update was committed (not if it aborted), and the
+     *   data at this location afterwards.
      */
-    public func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult) {
-        FValidation.validateFrom("runTransactionBlock:", writablePath: path)
-        runTransactionBlock(block, andCompletionBlock: nil, withLocalEvents: true)
-    }
-
-    /**
-     * Performs an optimistic-concurrency transactional update to the data at this
-     * location. Your block will be called with a FIRMutableData instance that
-     * contains the current data at this location. Your block should update this
-     * data to the value you wish to write to this location, and then return an
-     * instance of FIRTransactionResult with the new data.
-     *
-     * If, when the operation reaches the server, it turns out that this client had
-     * stale data, your block will be run again with the latest data from the
-     * server.
-     *
-     * When your block is run, you may decide to abort the transaction by returning
-     * [FIRTransactionResult abort].
-     *
-     * @param block This block receives the current data at this location and must
-     * return an instance of FIRTransactionResult
-     * @param completionBlock This block will be triggered once the transaction is
-     * complete, whether it was successful or not. It will indicate if there was an
-     * error, whether or not the data was committed, and what the current value of
-     * the data at this location is.
-     */
-    func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult, andCompletionBlock completionBlock: @escaping @Sendable (Error?, Bool, DataSnapshot?) -> Void) {
-        FValidation.validateFrom("runTransactionBlock:andCompletionBlock:", writablePath: path)
-        runTransactionBlock(block, andCompletionBlock: completionBlock, withLocalEvents: true)
-    }
-
-    /**
-     * Performs an optimistic-concurrency transactional update to the data at this
-     * location. Your block will be called with a FIRMutableData instance that
-     * contains the current data at this location. Your block should update this
-     * data to the value you wish to write to this location, and then return an
-     * instance of FIRTransactionResult with the new data.
-     *
-     * If, when the operation reaches the server, it turns out that this client had
-     * stale data, your block will be run again with the latest data from the
-     * server.
-     *
-     * When your block is run, you may decide to abort the transaction by return
-     * [FIRTransactionResult abort].
-     *
-     * Since your block may be run multiple times, this client could see several
-     * immediate states that don't exist on the server. You can suppress those
-     * immediate states until the server confirms the final state of the
-     * transaction.
-     *
-     * @param block This block receives the current data at this location and must
-     * return an instance of FIRTransactionResult
-     * @param completionBlock This block will be triggered once the transaction is
-     * complete, whether it was successful or not. It will indicate if there was an
-     * error, whether or not the data was committed, and what the current value of
-     * the data at this location is.
-     * @param localEvents Set this to NO to suppress events raised for intermediate
-     * states, and only get events based on the final state of the transaction.
-     */
-    func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult, andCompletionBlock onComplete: (@Sendable (Error?, Bool, DataSnapshot?) -> Void)?, withLocalEvents localEvents: Bool) {
+    @discardableResult
+    public func runTransaction(
+        applyLocally: Bool = true,
+        _ update: @escaping @Sendable (inout MutableData) -> TransactionResult
+    ) async throws -> (committed: Bool, snapshot: DataSnapshot) {
         FValidation.validateFrom("runTransactionBlock:andCompletionBlock:withLocalEvents", writablePath: path)
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            self.repo.startTransactionOnPath(self.path, update: block, onComplete: onComplete, withLocalEvents: localEvents)
-        }
-    }
-
-    /**
-     * Performs an optimistic-concurrency transactional update to the data at this
-     * location, and returns once the transaction is complete. See
-     * runTransactionBlock(_:) for how the block is run.
-     *
-     * @param block This block receives the current data at this location and must
-     * return a TransactionResult
-     * @return Whether the data was committed (false if the block aborted), and
-     * the current value of the data at this location.
-     */
-    public func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult) async throws -> (Bool, DataSnapshot) {
-        try await runTransactionBlock(block, withLocalEvents: true)
-    }
-
-    /**
-     * The same as runTransactionBlock(_:), with the option of suppressing the
-     * events raised for intermediate states.
-     *
-     * @param block This block receives the current data at this location and must
-     * return a TransactionResult
-     * @param localEvents Set this to false to suppress events raised for intermediate
-     * states, and only get events based on the final state of the transaction.
-     * @return Whether the data was committed (false if the block aborted), and
-     * the current value of the data at this location.
-     */
-    public func runTransactionBlock(_ block: @escaping @Sendable (inout MutableData) -> TransactionResult, withLocalEvents localEvents: Bool) async throws -> (Bool, DataSnapshot) {
-        FValidation.validateFrom("runTransactionBlock:andCompletionBlock:withLocalEvents", writablePath: path)
-        return try await withCheckedThrowingContinuation { continuation in
-            runTransactionBlock(block, andCompletionBlock: { error, committed, snapshot in
+        return try await repo.run { [path] repo, completion in
+            repo.startTransactionOnPath(path, update: update, onComplete: { error, committed, snapshot in
                 if let error {
-                    continuation.resume(throwing: error)
+                    completion(.failure(error))
                 } else if let snapshot {
-                    continuation.resume(returning: (committed, snapshot))
+                    completion(.success((committed, snapshot)))
                 } else {
-                    continuation.resume(throwing: NSError(domain: kFirebaseCoreErrorDomain, code: 1, userInfo: [
+                    completion(.failure(NSError(domain: kFirebaseCoreErrorDomain, code: 1, userInfo: [
                         NSLocalizedDescriptionKey: "Transaction completed without a snapshot",
-                    ]))
+                    ])))
                 }
-            }, withLocalEvents: localEvents)
+            }, withLocalEvents: applyLocally)
         }
     }
 

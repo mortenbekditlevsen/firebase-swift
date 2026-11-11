@@ -234,7 +234,8 @@ struct PersistentConnectionTests {
         let wire = try await connect()
         connection.shutdown()
         try await wire.waitUntilClosed()
-        #expect(delegate.disconnects == 1)
+        // The transport closes just before the actor reports the disconnect.
+        try await eventually("disconnected") { delegate.disconnects == 1 }
         UserDefaults.standard.removeObject(forKey: "firebase:host:\(host)")
     }
 }

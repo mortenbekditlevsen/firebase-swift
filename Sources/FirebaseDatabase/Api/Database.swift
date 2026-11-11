@@ -158,10 +158,7 @@ public final class Database:  Sendable {
     func purgeOutstandingWrites() {
         let repo = ensureRepo()
 
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            repo.purgeOutstandingWrites()
-        }
+        repo.enqueue { $0.purgeOutstandingWrites() }
     }
 
     /**
@@ -171,10 +168,7 @@ public final class Database:  Sendable {
     public func goOffline() {
         let repo = ensureRepo()
 
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            repo.interrupt()
-        }
+        repo.enqueue { $0.interrupt() }
     }
 
     /**
@@ -184,10 +178,7 @@ public final class Database:  Sendable {
     public func goOnline() {
         let repo = ensureRepo()
 
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            repo.resume()
-        }
+        repo.enqueue { $0.resume() }
     }
 
     /**

@@ -14,7 +14,7 @@
 
 import Foundation
 
-public enum DataEventType: Int {
+enum DataEventType: Int {
     /// A new child node is added to a location.
     case childAdded
     /// A child node is removed from a location.
