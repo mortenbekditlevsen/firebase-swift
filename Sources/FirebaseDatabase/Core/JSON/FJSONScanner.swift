@@ -90,6 +90,7 @@ struct FJSONScanner: ~Escapable {
         return bytes[offset]
     }
 
+    @_lifetime(self: copy self)
     mutating func expect(_ byte: UInt8) throws {
         let next = try peek()
         guard next == byte else { throw error(.unexpectedByte(next)) }
@@ -111,6 +112,7 @@ struct FJSONScanner: ~Escapable {
 
     /// The next member's key, with the scanner at its value, or nil after the
     /// object's end. `first` is true before the first member.
+    @_lifetime(self: copy self)
     mutating func nextKey(_ first: inout Bool) throws -> String? {
         var next = try peek()
         if next == UInt8(ascii: "}") {
@@ -136,6 +138,7 @@ struct FJSONScanner: ~Escapable {
 
     /// Whether there's another element, with the scanner at it; false after
     /// the array's end. `first` is true before the first element.
+    @_lifetime(self: copy self)
     mutating func nextElement(_ first: inout Bool) throws -> Bool {
         let next = try peek()
         if next == UInt8(ascii: "]") {
@@ -172,6 +175,7 @@ struct FJSONScanner: ~Escapable {
         }
     }
 
+    @_lifetime(self: copy self)
     private mutating func readLiteral(_ literal: StaticString) throws {
         let count = literal.utf8CodeUnitCount
         guard offset + count <= bytes.count else { throw error(.unexpectedEnd) }
@@ -217,9 +221,16 @@ struct FJSONScanner: ~Escapable {
         let end = end ?? bytes.count
         guard start < end else { return nil }
         return unsafe bytes.withUnsafeBufferPointer { buffer in
+            #if os(Android)
+            // Bionic's header declares C++'s overloads of memchr (this module
+            // uses C++ interop), which Swift can't choose between.
+            let range = unsafe UnsafeBufferPointer(rebasing: buffer[start ..< end])
+            return unsafe range.firstIndex(of: byte).map { start + $0 }
+            #else
             let base = unsafe buffer.baseAddress!
             guard let found = unsafe memchr(base + start, Int32(byte), end - start) else { return nil }
             return unsafe found.assumingMemoryBound(to: UInt8.self) - base
+            #endif
         }
     }
 
@@ -230,6 +241,7 @@ struct FJSONScanner: ~Escapable {
         }
     }
 
+    @_lifetime(self: copy self)
     private mutating func readEscape(into utf8: inout [UInt8]) throws {
         guard offset < bytes.count else { throw error(.unexpectedEnd) }
         let byte = bytes[offset]

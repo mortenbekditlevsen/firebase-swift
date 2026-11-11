@@ -40,6 +40,7 @@ extension FJSONScanner {
         return writes
     }
 
+    @_lifetime(self: copy self)
     private mutating func readNode(depth: Int) throws -> FNode {
         guard depth <= kFirebaseMaxObjectDepth else { throw error(.tooDeep) }
         switch try peek() {
@@ -59,6 +60,7 @@ extension FJSONScanner {
         }
     }
 
+    @_lifetime(self: copy self)
     private mutating func readObjectNode(depth: Int) throws -> FNode {
         try beginObject()
         var children: [FChild] = []
@@ -120,6 +122,7 @@ extension FJSONScanner {
         return result
     }
 
+    @_lifetime(self: copy self)
     private mutating func readArrayNode(depth: Int) throws -> FNode {
         try beginArray()
         var children: [FChild] = []
@@ -169,11 +172,13 @@ extension FJSONScanner {
     ///
     /// - Parameter rawAt: A path of keys whose value is kept as a `RawJSON`
     ///   slice of `message` instead (`message` holds the bytes being read).
+    @_lifetime(self: copy self)
     mutating func readFoundationValue(rawAt rawPath: ArraySlice<String> = [],
                                       in message: ByteBuffer? = nil) throws -> Any {
         try readFoundationValue(depth: 0, rawPath: rawPath, message: message)
     }
 
+    @_lifetime(self: copy self)
     private mutating func readFoundationValue(depth: Int, rawPath: ArraySlice<String>,
                                               message: ByteBuffer?) throws -> Any {
         guard depth <= kFirebaseMaxObjectDepth else { throw error(.tooDeep) }

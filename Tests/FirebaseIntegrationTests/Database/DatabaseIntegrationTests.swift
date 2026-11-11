@@ -137,7 +137,13 @@ struct DatabaseIntegrationTests {
   }
 
   @Test func autoIDsSortInCreationOrder() async throws {
-    let ref = try scratchRef(EmulatorApp().database())
+    let database = try EmulatorApp().database()
+    // IDs start with the server's time: the local clock plus the server's
+    // offset, known once connected. Connect first, so all IDs use it (a client
+    // whose clock differs from the emulator's, as in a Linux VM on a Mac, would
+    // otherwise make its first ID with a different clock).
+    try await scratchRef(database).setValueAndWait(true)
+    let ref = scratchRef(database)
     var keys: [String] = []
     for i in 0 ..< 3 {
       let child = ref.childByAutoId()
