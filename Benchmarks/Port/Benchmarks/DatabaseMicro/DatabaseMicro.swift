@@ -65,9 +65,15 @@ let benchmarks: @Sendable () -> Void = {
     }
   }
 
-  Benchmark("decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)") { benchmark in
+  Benchmark("decode: node -> [String: BenchItem] (FNodeDecoder)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(try DatabaseBenchmarking.decode([String: BenchItem].self, from: node))
+    }
+  }
+
+  Benchmark("decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(try DatabaseBenchmarking.decodeFoundationValue([String: BenchItem].self, from: node))
     }
   }
 
@@ -78,6 +84,18 @@ let benchmarks: @Sendable () -> Void = {
   }
 
   // Outbound: what a write does before the socket.
+  Benchmark("encode: [String: BenchItem] -> node (FNodeEncoder)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(try DatabaseBenchmarking.encode(items))
+    }
+  }
+
+  Benchmark("encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(try DatabaseBenchmarking.encodeFoundationValue(items))
+    }
+  }
+
   Benchmark("serialize: node -> JSON bytes (FJSONWriter)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(try DatabaseBenchmarking.serialize(node))

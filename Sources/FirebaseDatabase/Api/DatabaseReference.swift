@@ -176,7 +176,7 @@ public final class DatabaseReference: DatabaseQuery, @unchecked Sendable {
         return FSnapshotUtilities.compoundWriteFromDictionary(values, withValidationFrom: fn)
     }
 
-    private func write(_ node: FNode, at path: FPath? = nil) async throws {
+    func write(_ node: FNode, at path: FPath? = nil) async throws {
         let path = path ?? self.path
         let _: Void = try await repo.run { repo, completion in
             repo.set(path, withNode: node) { completion($0.map(Result.failure) ?? .success(())) }

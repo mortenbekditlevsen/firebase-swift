@@ -146,6 +146,55 @@ struct DatabaseAPITests {
         try await cancelling.value
     }
 
+    private struct Item: Codable, Equatable, Sendable {
+        var name: String
+        var count: Int
+    }
+
+    @Test func typedSequencesDecode() async throws {
+        _ = try await connected()
+        let ref = root.child("typed")
+        var values = ref.child("one").values(as: Item?.self).makeAsyncIterator()
+        var children = ref.child("list").childEvents(as: Item.self, [.added]).makeAsyncIterator()
+        try ref.child("one").setValue(from: Item(name: "a", count: 1))
+        try ref.child("list/x").setValue(from: Item(name: "x", count: 2))
+        #expect(try await values.next() == Item(name: "a", count: 1))
+        let added = try #require(try await children.next())
+        #expect(added.key == "x" && added.value == Item(name: "x", count: 2) && added.kind == .added)
+        ref.child("one").removeValue()
+        #expect(try await values.next() == .some(nil))
+    }
+
+    @Test func aTypedSequenceThrowsIfTheDataDoesntDecode() async throws {
+        _ = try await connected()
+        let ref = root.child("bad")
+        ref.setValue("not an item")
+        await #expect(throws: DecodingError.self) {
+            for try await _ in ref.values(as: Item.self) {}
+        }
+    }
+
+    @Test func typedTransactions() async throws {
+        let wire = try await connected()
+        let ref = root.child("item")
+        let transaction = Task {
+            try await ref.runTransaction(as: Item.self) { item in
+                item = Item(name: "n", count: (item?.count ?? 0) + 1)
+            }
+        }
+        wire.respond(to: try await wire.nextRequest("q").number, data: [:])
+        let put = try await wire.nextRequest("p")
+        #expect((put.body["d"] as? [String: Any])?["count"] as? Int == 1)
+        wire.respond(to: put.number)
+        #expect(try await transaction.value == Item(name: "n", count: 1))
+
+        // Throwing aborts, and the error comes out.
+        struct Stop: Error {}
+        await #expect(throws: Stop.self) {
+            try await ref.runTransaction(as: Item.self) { _ in throw Stop() }
+        }
+    }
+
     @Test func transactionsCommitWithTheServersAcknowledgement() async throws {
         let wire = try await connected()
         let ref = root.child("likes")

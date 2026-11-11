@@ -1,0 +1,178 @@
+[0/3] Write swift-version-B202F8225C79B6E.txt
+[1/4] Compiling CSystem shims.c
+[2/5] Write Objects.LinkFileList
+[3/5] Linking BenchmarkBoilerplateGenerator-tool
+[4/5] Applying BenchmarkBoilerplateGenerator-tool
+Building for debugging...
+[0/3] Write swift-version-B202F8225C79B6E.txt
+[1/4] Compiling CSystem shims.c
+[2/5] Write Objects.LinkFileList
+[3/5] Linking BenchmarkTool-tool
+[4/5] Applying BenchmarkTool-tool
+Build of product 'BenchmarkTool' complete! (3.14s)
+Build complete!
+Building BenchmarkTool in release mode...
+Building benchmark targets in release mode for benchmark run...
+Building DatabaseMicro
+
+==================
+Running Benchmarks
+==================
+
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K  2% [-                                                           ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 10% [------                                                      ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 16% [---------                                                   ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 26% [---------------                                             ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 32% [-------------------                                         ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 42% [-------------------------                                   ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 50% [------------------------------                              ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 60% [------------------------------------                        ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 70% [------------------------------------------                  ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 76% [---------------------------------------------               ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 86% [---------------------------------------------------         ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 92% [-------------------------------------------------------     ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 98% [----------------------------------------------------------  ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K  2% [-                                                           ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K  8% [----                                                        ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 14% [--------                                                    ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 20% [------------                                                ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 24% [--------------                                              ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 32% [-------------------                                         ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 42% [-------------------------                                   ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 50% [------------------------------                              ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 54% [--------------------------------                            ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 72% [-------------------------------------------                 ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 80% [------------------------------------------------            ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 90% [------------------------------------------------------      ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 94% [--------------------------------------------------------    ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K 98% [----------------------------------------------------------  ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (FNodeDecoder)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K  5% [---                                                         ] ETA: 00:00:06 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 11% [------                                                      ] ETA: 00:00:05 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 16% [---------                                                   ] ETA: 00:00:05 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 27% [----------------                                            ] ETA: 00:00:04 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:04 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 49% [-----------------------------                               ] ETA: 00:00:03 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 55% [---------------------------------                           ] ETA: 00:00:03 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 66% [---------------------------------------                     ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 77% [----------------------------------------------              ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 83% [-------------------------------------------------           ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 89% [-----------------------------------------------------       ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K  2% [-                                                           ] ETA: 00:00:05 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 12% [-------                                                     ] ETA: 00:00:05 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 22% [-------------                                               ] ETA: 00:00:04 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 26% [---------------                                             ] ETA: 00:00:04 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 32% [-------------------                                         ] ETA: 00:00:04 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:03 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 48% [----------------------------                                ] ETA: 00:00:03 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:02 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 68% [----------------------------------------                    ] ETA: 00:00:02 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 74% [--------------------------------------------                ] ETA: 00:00:02 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 82% [-------------------------------------------------           ] ETA: 00:00:01 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K 92% [-------------------------------------------------------     ] ETA: 00:00:01 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:encode: [String: BenchItem] -> node (FNodeEncoder)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K  5% [---                                                         ] ETA: 00:00:06 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 11% [------                                                      ] ETA: 00:00:05 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 21% [------------                                                ] ETA: 00:00:05 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 26% [---------------                                             ] ETA: 00:00:04 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 37% [----------------------                                      ] ETA: 00:00:04 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 47% [----------------------------                                ] ETA: 00:00:03 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:03 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:02 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 69% [-----------------------------------------                   ] ETA: 00:00:02 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 79% [-----------------------------------------------             ] ETA: 00:00:02 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 84% [--------------------------------------------------          ] ETA: 00:00:01 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K 90% [------------------------------------------------------      ] ETA: 00:00:01 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+
+====================================================================================================
+Baseline 'Current_run'
+====================================================================================================
+
+Host 'Mortens-M5.local' with 18 'arm64' processors with 36 GB memory, running:
+Darwin Kernel Version 27.0.0: Tue Aug 11 21:06:40 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T6050
+
+=============
+DatabaseMicro
+=============
+
+decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       140 │       140 │       140 │       140 │       140 │       140 │       140 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       239 │       240 │       240 │       240 │       240 │       240 │       240 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        26 │        27 │        28 │        30 │        31 │        32 │        32 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        26 │        27 │        28 │        30 │        31 │        32 │        32 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+decode: node -> [String: BenchItem] (FNodeDecoder)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       310 │       310 │       310 │       310 │       310 │       310 │       310 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       222 │       222 │       222 │       222 │       222 │       222 │       222 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        29 │        30 │        31 │        32 │        32 │        35 │        35 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        29 │        30 │        31 │        32 │        32 │        35 │        35 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       525 │       525 │       525 │       525 │       525 │       525 │       525 │        18 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       269 │       270 │       270 │       270 │       270 │       270 │       270 │        18 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       274 │       275 │       277 │       281 │       286 │       287 │       287 │        18 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       274 │       275 │       277 │       281 │       286 │       287 │       287 │        18 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+encode: [String: BenchItem] -> node (FNodeEncoder)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       600 │       600 │       600 │       600 │       600 │       600 │       600 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       410 │       411 │       411 │       411 │       411 │       411 │       411 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        86 │        89 │        90 │        92 │        93 │       101 │       101 │        50 │
+├─────────────────────────────�warning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.
+�─┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        86 │        89 │        90 │        92 │        93 │       101 │       101 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+encode: [String: BenchItem] -> node (FirebaseDataEncoder + nodeFrom)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       571 │       571 │       571 │       571 │       571 │       571 │       571 │        19 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       425 │       431 │       440 │       449 │       454 │       455 │       455 │        19 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       255 │       263 │       265 │       269 │       276 │       277 │       277 │        19 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       255 │       263 │       265 │       269 │       276 │       277 │       277 │        19 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
