@@ -38,10 +38,10 @@ public extension DatabaseReference {
       setValue(encoded)
   }
     
-    func setValue<T: Encodable>(from value: T,
-                                encoder: Database.Encoder = Database.Encoder()) async throws {
+    func setValueAndWait<T: Encodable>(from value: T,
+                                       encoder: Database.Encoder = Database.Encoder()) async throws {
         let encoded = try encoder.encode(value)
-        _ = try await setValue(encoded)
+        try await setValueAndWait(encoded)
     }
 
 }

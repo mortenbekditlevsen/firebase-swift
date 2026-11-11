@@ -18,7 +18,6 @@ import BenchmarkScenarios
 import FirebaseCore
 import FirebaseDatabase
 import Foundation
-import Synchronization
 
 struct PortDriver: BenchmarkDriver {
   let target = "port"
@@ -53,47 +52,28 @@ final class PortClient: BenchmarkClient {
   }
 
   func firstValue(at path: String) async throws -> Int {
-    let ref = ref(path)
-    return try await withCheckedThrowingContinuation { continuation in
-      ref.observeSingleEventOfType(.value, withBlock: { snapshot in
-        continuation.resume(returning: Int(snapshot.childrenCount))
-      }, withCancelBlock: { error in
-        continuation.resume(throwing: error)
-      })
-    }
+    Int(try await ref(path).firstValue().childrenCount)
   }
 
   func firstValueDecoded(at path: String) async throws -> (count: Int, decode: Duration) {
-    let ref = ref(path)
-    return try await withCheckedThrowingContinuation { continuation in
-      ref.observeSingleEventOfType(.value, withBlock: { snapshot in
-        let start = ContinuousClock.now
-        do {
-          let items = try snapshot.data(as: [String: BenchItem].self)
-          continuation.resume(returning: (items.count, ContinuousClock.now - start))
-        } catch {
-          continuation.resume(throwing: error)
-        }
-      }, withCancelBlock: { error in
-        continuation.resume(throwing: error)
-      })
-    }
+    let snapshot = try await ref(path).firstValue()
+    let start = ContinuousClock.now
+    let items = try snapshot.data(as: [String: BenchItem].self)
+    return (items.count, ContinuousClock.now - start)
   }
 
   func childAdded(at path: String, count: Int,
                   trigger: @escaping @Sendable () async throws -> Void) async throws {
+    // Children that exist when listening starts arrive as `.added` too, so
+    // the count doesn't depend on which comes first.
     let ref = ref(path)
-    let (events, continuation) = AsyncStream<Void>.makeStream()
-    let seen = Mutex(0)
-    let handle = ref.observeEventType(.childAdded) { _ in
-      if seen.withLock({ $0 += 1; return $0 }) == count {
-        continuation.finish()
-      }
-    }
-    defer { ref.removeObserverWithHandle(handle) }
     try await withThrowingTaskGroup { group in
       group.addTask { try await trigger() }
-      for await _ in events {}
+      var seen = 0
+      for try await _ in ref.childEvents([.added]) {
+        seen += 1
+        if seen == count { break }
+      }
       try await group.waitForAll()
     }
   }
@@ -101,7 +81,7 @@ final class PortClient: BenchmarkClient {
   func writeSequentially(at path: String, items: [BenchItem]) async throws {
     let ref = ref(path)
     for item in items {
-      _ = try await ref.child(item.id).setValue(item.firebaseValue)
+      try await ref.child(item.id).setValueAndWait(item.firebaseValue)
     }
   }
 
@@ -109,7 +89,7 @@ final class PortClient: BenchmarkClient {
     let ref = ref(path)
     try await withThrowingDiscardingTaskGroup { group in
       for item in items {
-        group.addTask { _ = try await ref.child(item.id).setValue(item.firebaseValue) }
+        group.addTask { try await ref.child(item.id).setValueAndWait(item.firebaseValue) }
       }
     }
   }
@@ -119,7 +99,7 @@ final class PortClient: BenchmarkClient {
     try await withThrowingDiscardingTaskGroup { group in
       for _ in 0 ..< count {
         group.addTask {
-          _ = try await ref.runTransactionBlock { data in
+          try await ref.runTransaction { data in
             data.value = ((data.value as? NSNumber)?.intValue ?? 0) + 1
             return .success(withValue: data)
           }

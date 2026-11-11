@@ -279,16 +279,6 @@ final class FPersistentConnection {
         }
     }
 
-    func putData(_ data: Any,
-                 forPath pathString: String,
-                 withHash hash: String?) async -> (String, String?) {
-        await withCheckedContinuation { continuation in
-            putData(data, forPath: pathString, withHash: hash) { status, errorReason in
-                continuation.resume(returning: (status, errorReason))
-            }
-        }
-    }
-
     /// Queues the put before returning, which transactions rely on: their
     /// hash must still match the local data when the put is queued.
     func putData(_ data: Any,
@@ -303,15 +293,13 @@ final class FPersistentConnection {
     }
 
     func mergeData(_ data: Any,
-                   forPath pathString: String) async -> (String, String?) {
-        await withCheckedContinuation { continuation in
-            putInternal(data,
-                        forAction: kFWPRequestActionMerge,
-                        forPath: pathString,
-                        withHash: nil) { status, errorReason in
-                continuation.resume(returning: (status, errorReason))
-            }
-        }
+                   forPath pathString: String,
+                   onComplete: @escaping (String, String?) -> Void) {
+        putInternal(data,
+                    forAction: kFWPRequestActionMerge,
+                    forPath: pathString,
+                    withHash: nil,
+                    onComplete: onComplete)
     }
 
     func onDisconnectPutData(_ data: Any,

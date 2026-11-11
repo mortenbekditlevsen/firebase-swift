@@ -54,49 +54,31 @@ class FRepoManager {
     }
 
     class func interruptAll() {
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            let configValues = configs.withLock { $0.values }
-            for repos in configValues {
-                for repo in repos.values {
-                    repo.interrupt()
-                }
+        for repos in configs.withLock({ Array($0.values) }) {
+            for repo in repos.values {
+                repo.enqueue { $0.interrupt() }
             }
         }
     }
     
     class func interrupt(_ config: DatabaseConfig) {
         let sessionIdentifier = config.sessionIdentifier
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            let repos = configs.withLock { $0[sessionIdentifier] }
-            guard let repos else { return }
-            for repo in repos.values {
-                repo.interrupt()
-            }
+        for repo in configs.withLock({ $0[sessionIdentifier] })?.values ?? [:].values {
+            repo.enqueue { $0.interrupt() }
         }
     }
     class func resumeAll() {
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            let configValues = configs.withLock { $0.values }
-            for repos in configValues {
-                for repo in repos.values {
-                    repo.resume()
-                }
+        for repos in configs.withLock({ Array($0.values) }) {
+            for repo in repos.values {
+                repo.enqueue { $0.resume() }
             }
         }
 
     }
     class func resume(_ config: DatabaseConfig) {
         let sessionIdentifier = config.sessionIdentifier
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            let repos = configs.withLock { $0[sessionIdentifier] }
-            guard let repos else { return }
-            for repo in repos.values {
-                repo.resume()
-            }
+        for repo in configs.withLock({ $0[sessionIdentifier] })?.values ?? [:].values {
+            repo.enqueue { $0.resume() }
         }
     }
     class func disposeRepos(_ config: DatabaseConfig) {
@@ -104,17 +86,11 @@ class FRepoManager {
         // before returning, allowing LevelDB to close and release its exclusive
         // locks.
         let sessionIdentifier = config.sessionIdentifier
-        // was: DatabaseQuery.sharedQueue.async {
-        Task { @DatabaseActor in
-            FFLog("I-RDB040001", "Disposing all repos for Config with name \(config.sessionIdentifier)")
-            let repos = configs.withLock { $0[sessionIdentifier] }
-            guard let repos else { return }
-            for repo in repos.values {
-                repo.dispose()
-            }
-            configs.withLock {
-                _ = $0.removeValue(forKey: sessionIdentifier)
-            }
+        FFLog("I-RDB040001", "Disposing all repos for Config with name \(config.sessionIdentifier)")
+        let repos = configs.withLock { $0.removeValue(forKey: sessionIdentifier) }
+        // After the repos' pending operations.
+        for repo in repos?.values ?? [:].values {
+            repo.enqueue { $0.dispose() }
         }
     }
 }
