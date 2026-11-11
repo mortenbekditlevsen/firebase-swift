@@ -1,0 +1,391 @@
+[0/3] Write swift-version-B202F8225C79B6E.txt
+[1/4] Compiling CSystem shims.c
+[3/6] Compiling BenchmarkBoilerplateGenerator BenchmarkBoilerplateGenerator.swift
+[4/6] Emitting module BenchmarkBoilerplateGenerator
+[4/7] Write Objects.LinkFileList
+[5/7] Linking BenchmarkBoilerplateGenerator-tool
+[6/7] Applying BenchmarkBoilerplateGenerator-tool
+Building for debugging...
+[0/10] Write sources
+[1/10] Compiling interposer-unix.c
+[2/10] Compiling interposer-darwin.c
+[3/10] Compiling CSystem shims.c
+[4/10] Write swift-version-B202F8225C79B6E.txt
+[6/14] Compiling BenchmarkShared Command+Helpers.swift
+[7/14] Emitting module BenchmarkShared
+[8/14] Emitting module MallocInterposerSwift
+[9/14] Compiling MallocInterposerSwift MallocInterposerSwift.swift
+[9/14] Write Objects.LinkFileList
+[10/14] Linking libMallocInterposerSwift-tool.dylib
+[12/49] Compiling Benchmark BenchmarkThresholds+Defaults.swift
+[13/49] Compiling Benchmark BenchmarkThresholds.swift
+[14/49] Compiling Benchmark Progress.swift
+[15/49] Compiling Benchmark ProgressElements.swift
+[16/49] Compiling Benchmark BenchmarkInternals.swift
+[17/49] Compiling Benchmark BenchmarkMetric+Defaults.swift
+[18/49] Compiling Benchmark MallocStats.swift
+[19/49] Compiling Benchmark MallocStatsProducer+jemalloc.swift
+[20/49] Compiling Benchmark AllocationStackReport+Formatting.swift
+[21/49] Compiling Benchmark AllocationStackReport.swift
+[22/49] Compiling Benchmark BenchmarkExecutor+Extensions.swift
+[23/49] Compiling Benchmark BenchmarkExecutor.swift
+[24/49] Compiling Benchmark BenchmarkRunner+ReadWrite.swift
+[25/49] Compiling Benchmark BenchmarkRunner.swift
+[26/49] Compiling Benchmark Blackhole.swift
+[27/49] Compiling Benchmark Diagnostics.swift
+[28/49] Compiling Benchmark OperatingSystemStats.swift
+[29/49] Compiling Benchmark OperatingSystemStatsProducer+Darwin.swift
+[30/49] Compiling Benchmark AllocationStackRecorder.swift
+[31/49] Compiling Benchmark AllocationStackReport+Folded.swift
+[32/49] Compiling Benchmark AllocationStackSymbolicator.swift
+[33/49] Compiling Benchmark Benchmark+ConvenienceInitializers.swift
+[34/49] Compiling Benchmark Int+Extensions.swift
+[35/49] Compiling Benchmark MallocStats+jemalloc-support.swift
+[36/49] Emitting module Benchmark
+[37/49] Compiling Benchmark BenchmarkMetric.swift
+[38/49] Compiling Benchmark BenchmarkResult.swift
+[39/49] Compiling Benchmark ARCStats.swift
+[40/49] Compiling Benchmark ARCStatsProducer.swift
+[41/49] Compiling Benchmark NIOLock.swift
+[42/49] Compiling Benchmark lock.swift
+[43/49] Compiling Benchmark Benchmark.swift
+[44/49] Compiling Benchmark BenchmarkClock.swift
+[45/49] Compiling Benchmark OperatingSystemStatsProducer+Linux.swift
+[46/49] Compiling Benchmark OutputSuppressor.swift
+[47/51] Compiling Benchmark Utilities.swift
+[48/51] Compiling Benchmark Statistics.swift
+[49/69] Compiling BenchmarkTool BenchmarkTool+Thresholds.swift
+[50/69] Compiling BenchmarkTool BenchmarkTool+PrettyPrinting.swift
+[51/69] Compiling BenchmarkTool BenchmarkTool+Export+JMHElement.swift
+[52/69] Compiling BenchmarkTool BenchmarkTool+Baselines.swift
+[53/69] Compiling BenchmarkTool BenchmarkTool+Machine.swift
+[54/69] Compiling BenchmarkTool BenchmarkTool+ReadP90AbsoluteThresholds.swift
+[55/69] Compiling BenchmarkTool FilePath+DirectoryView.swift
+[56/69] Compiling BenchmarkTool BenchmarkTool+Operations.swift
+[57/69] Compiling BenchmarkTool BenchmarkTool+Export+JSON.swift
+[58/69] Compiling BenchmarkTool BenchmarkTool+Export.swift
+[59/69] Compiling BenchmarkTool BenchmarkTool+Export+InfluxCSVFormatter.swift
+[60/69] Compiling BenchmarkTool FilePath+Additions.swift
+[61/69] Compiling BenchmarkTool BenchmarkTool+JSON.swift
+[62/69] Compiling BenchmarkTool BenchmarkTool+Export+JMHFormatter.swift
+[63/69] Compiling BenchmarkTool BenchmarkTool+CreateBenchmark.swift
+[64/69] Compiling BenchmarkTool BenchmarkTool+AllocationStacks.swift
+[65/69] Emitting module BenchmarkTool
+[66/69] Compiling BenchmarkTool BenchmarkTool.swift
+[67/70] Compiling BenchmarkTool String+Additions.swift
+[67/70] Write Objects.LinkFileList
+[68/70] Linking BenchmarkTool-tool
+[69/70] Applying BenchmarkTool-tool
+Build of product 'BenchmarkTool' complete! (5.40s)
+Build complete!
+Building BenchmarkTool in release mode...
+Building benchmark targets in release mode for benchmark run...
+Building DatabaseMicro
+
+==================
+Running Benchmarks
+==================
+
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K  4% [--                                                          ] ETA: 00:00:06 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 13% [-------                                                     ] ETA: 00:00:05 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 22% [-------------                                               ] ETA: 00:00:05 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 31% [------------------                                          ] ETA: 00:00:04 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 36% [---------------------                                       ] ETA: 00:00:04 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 45% [---------------------------                                 ] ETA: 00:00:03 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 54% [--------------------------------                            ] ETA: 00:00:03 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:03 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 67% [----------------------------------------                    ] ETA: 00:00:02 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 82% [-------------------------------------------------           ] ETA: 00:00:01 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 92% [-------------------------------------------------------     ] ETA: 00:00:01 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K 97% [----------------------------------------------------------  ] ETA: 00:00:01 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:build: Foundation value -> node (nodeFrom)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K  2% [-                                                           ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 10% [------                                                      ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 14% [--------                                                    ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 22% [-------------                                               ] ETA: 00:00:02 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 28% [----------------                                            ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 46% [---------------------------                                 ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 56% [---------------------------------                           ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 66% [---------------------------------------                     ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 70% [------------------------------------------                  ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 78% [----------------------------------------------              ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 86% [---------------------------------------------------         ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K 96% [---------------------------------------------------------   ] ETA: 00:00:01 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K  5% [---                                                         ] ETA: 00:00:06 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 16% [---------                                                   ] ETA: 00:00:05 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 22% [-------------                                               ] ETA: 00:00:04 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 33% [-------------------                                         ] ETA: 00:00:04 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:04 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 44% [--------------------------                                  ] ETA: 00:00:03 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 55% [---------------------------------                           ] ETA: 00:00:03 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 66% [---------------------------------------                     ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 77% [----------------------------------------------              ] ETA: 00:00:02 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 88% [----------------------------------------------------        ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K 99% [----------------------------------------------------------- ] ETA: 00:00:01 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K  2% [-                                                           ] ETA: 00:00:05 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 10% [------                                                      ] ETA: 00:00:04 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 20% [------------                                                ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 26% [---------------                                             ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 30% [------------------                                          ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 40% [------------------------                                    ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 48% [----------------------------                                ] ETA: 00:00:02 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:02 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 68% [----------------------------------------                    ] ETA: 00:00:02 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 78% [----------------------------------------------              ] ETA: 00:00:01 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 88% [----------------------------------------------------        ] ETA: 00:00:01 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K 96% [---------------------------------------------------------   ] ETA: 00:00:01 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:parse: JSON bytes -> node (FJSONScanner)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K  4% [--                                                          ] ETA: 00:00:06 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K  9% [-----                                                       ] ETA: 00:00:05 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 19% [-----------                                                 ] ETA: 00:00:05 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 33% [-------------------                                         ] ETA: 00:00:04 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:04 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 43% [-------------------------                                   ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 52% [-------------------------------                             ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 56% [----------------------------------                          ] ETA: 00:00:03 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 62% [-------------------------------------                       ] ETA: 00:00:02 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 71% [------------------------------------------                  ] ETA: 00:00:02 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 81% [------------------------------------------------            ] ETA: 00:00:01 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 91% [------------------------------------------------------      ] ETA: 00:00:01 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K 96% [---------------------------------------------------------   ] ETA: 00:00:01 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:parse: JSONSerialization only
+[1A[K  2% [-                                                           ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K  6% [---                                                         ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 12% [-------                                                     ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 20% [------------                                                ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 26% [---------------                                             ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 34% [--------------------                                        ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 44% [--------------------------                                  ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 48% [----------------------------                                ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 54% [--------------------------------                            ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 74% [--------------------------------------------                ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 82% [-------------------------------------------------           ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 90% [------------------------------------------------------      ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K 96% [---------------------------------------------------------   ] ETA: 00:00:01 | DatabaseMicro:parse: JSONSerialization only
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:parse: JSONSerialization only
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:parse: JSONSerialization only
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K  2% [-                                                           ] ETA: 00:00:08 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 14% [--------                                                    ] ETA: 00:00:05 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 20% [------------                                                ] ETA: 00:00:05 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 28% [-----------------                                           ] ETA: 00:00:04 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 35% [---------------------                                       ] ETA: 00:00:04 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 46% [---------------------------                                 ] ETA: 00:00:03 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 52% [-------------------------------                             ] ETA: 00:00:03 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:03 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 70% [------------------------------------------                  ] ETA: 00:00:02 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 79% [-----------------------------------------------             ] ETA: 00:00:02 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 87% [----------------------------------------------------        ] ETA: 00:00:01 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K 93% [-------------------------------------------------------     ] ETA: 00:00:01 | DatabaseMicro:read: node -> Foundation value (val)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:read: node -> Foundation value (val)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K  2% [-                                                           ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 12% [-------                                                     ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 18% [----------                                                  ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 24% [--------------                                              ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 34% [--------------------                                        ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 44% [--------------------------                                  ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 48% [----------------------------                                ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 52% [-------------------------------                             ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 64% [--------------------------------------                      ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 70% [------------------------------------------                  ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 76% [---------------------------------------------               ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 84% [--------------------------------------------------          ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K 94% [--------------------------------------------------------    ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:serialize: node -> JSON bytes (FJSONWriter)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K  3% [-                                                           ] ETA: 00:00:07 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 11% [------                                                      ] ETA: 00:00:05 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 15% [---------                                                   ] ETA: 00:00:05 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 23% [-------------                                               ] ETA: 00:00:04 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 27% [----------------                                            ] ETA: 00:00:04 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 34% [--------------------                                        ] ETA: 00:00:04 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 42% [-------------------------                                   ] ETA: 00:00:03 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 50% [------------------------------                              ] ETA: 00:00:03 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 57% [----------------------------------                          ] ETA: 00:00:03 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 69% [-----------------------------------------                   ] ETA: 00:00:02 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 77% [----------------------------------------------              ] ETA: 00:00:02 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 84% [--------------------------------------------------          ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K 92% [-------------------------------------------------------     ] ETA: 00:00:01 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+
+[1A[K  0% [                                                            ] ETA: 00:00:00 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K  2% [-                                                           ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K  8% [----                                                        ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 18% [----------                                                  ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 24% [--------------                                              ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 30% [------------------                                          ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 38% [----------------------                                      ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 44% [--------------------------                                  ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 54% [--------------------------------                            ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 62% [-------------------------------------                       ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 66% [---------------------------------------                     ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 76% [---------------------------------------------               ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 82% [-------------------------------------------------           ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K 92% [-------------------------------------------------------     ] ETA: 00:00:01 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+[1A[K100% [------------------------------------------------------------] ETA: 00:00:00 | DatabaseMicro:sort: 10k push-ID-like keys (compareKey)
+
+====================================================================================================
+Baseline 'Current_run'
+====================================================================================================
+
+Host 'Mortens-M5.local' with 18 'arm64' processors with 36 GB memory, running:
+Darwin Kernel Version 27.0.0: Tue Aug 11 21:06:40 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T6050
+
+=============
+DatabaseMicro
+=============
+
+build: Foundation value -> node (nodeFrom)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       380 │       380 │       380 │       380 │       380 │       380 │       380 │        21 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       414 │       415 │       417 │       418 │       421 │       421 │       421 │        21 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       218 │       222 │       224 │       231 │       241 │       306 │       306 │        21 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       218 │       222 │       224 │       231 │       243 │       516 │       516 │        21 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+decode reference: JSON bytes -> [String: BenchItem] (JSONDecoder)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       140 │       140 │       140 │       140 │       140 │       140 │       140 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       236 │       236 │       236 │       236 │       236 │       236 │       236 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        25 │        26 │        26 │        26 │        27 │        28 │        28 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        25 │        26 │        26 │        26 │        27 │        28 │        28 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+decode: node -> [String: BenchItem] (val + FirebaseDataDecoder)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       525 │       525 │       525 │       525 │       525 │       525 │       525 │        19 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       268 │       268 │       268 │       268 │       268 │       268 │       268 │        19 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       272 │       274 │       274 │       276 │       279 │       283 │       283 │        19 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       272 │       274 │       274 │       277 │       279 │       283 │       283 │        19 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+parse: JSON bytes -> node (FJSONScanner)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       191 │       191 │       191 │       191 │       191 │       191 │       191 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       402 │       403 │       403 │       403 │       403 │       403 │       403 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        65 │        68 │        69 │        70 │        72 │        82 │        82 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        65 │        68 │        69 │        70 │        73 │        83 │        83 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+parse: JSON bytes -> node (JSONSerialization + nodeFrom)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       445 │       445 │       445 │       445 │       445 │       445 │       445 │        21 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       425 │       456 │       487 │       517 │       536 │       548 │       548 │        21 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       233 │       238 │       239 │       241 │       244 │       258 │       258 │        21 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       233 │       238 │       239 │       241 │       245 │       261 │       261 │        21 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+parse: JSONSerialization only
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │        64 │        64 │        64 │        64 │        64 │        64 │        64 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       233 │       297 │       369 │       444 │       483 │       512 │       512 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        11 │        12 │        12 │        12 │        12 │        14 │        14 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        11 │        12 │        12 │        12 │        12 │        14 │        14 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+read: node -> Foundation value (val)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       315 │       315 │       315 │       315 │       315 │       315 │       315 │        35 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       254 │       255 │       255 │       255 │       255 │       255 │       255 │        35 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       143 │       145 │       146 │       148 │       149 │       152 │       152 │        35 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       143 │       145 │       146 │       148 │       149 │       153 │       153 │        35 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+serialize: node -> JSON bytes (FJSONWriter)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │        50 │        50 │        50 │        50 │        50 │        50 │        50 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       221 │       222 │       222 │       222 │       222 │       222 │       222 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │        16 │        16 │        17 │        17 │        17 │        19 │        19 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │        16 │        16 │        17 │        17 │        17 │        19 │        19 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+serialize: node -> JSON bytes (val(forExport:) + JSONSerialization)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) (K) *          │       475 │       475 │       475 │       475 │       475 │       475 │       475 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       272 │       276 │       280 │       285 │       287 │       288 │       288 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (ms) *       │       189 │       191 │       192 │       194 │       197 │       200 │       200 │        26 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (ms) *      │       189 │       191 │       192 │       194 │       197 │       200 │       200 │        26 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+
+sort: 10k push-ID-like keys (compareKey)
+╒═══════════════════════════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╤═══════════╕
+│ Metric                        │        p0 │       p25 │       p50 │       p75 │       p90 │       p99 │      p100 │   Samples │
+╞═══════════════════════════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+│ Malloc (total) *              │         6 │         6 │         6 │         6 │         6 │         6 │         6 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼──────warning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.
+─────┼───────────┼───────────┼───────────┤
+│ Memory (resident peak) (M)    │       221 │       222 │       222 │       222 │       222 │       222 │       222 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (total CPU) (μs) *       │      4449 │      4866 │      5124 │      5403 │      7184 │     10156 │     10156 │        50 │
+├───────────────────────────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┼───────────┤
+│ Time (wall clock) (μs) *      │      4448 │      4866 │      5124 │      5403 │      7188 │     10164 │     10164 │        50 │
+╘═══════════════════════════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╧═══════════╛
+

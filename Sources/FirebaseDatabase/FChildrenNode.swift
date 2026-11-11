@@ -26,6 +26,8 @@
 //    public static var emptyNode: FNode = FChildrenNode(children: [:])
 //}
 //
+import Foundation
+
 private let kMinName = "[MIN_NAME]"
 private let kMaxName = "[MAX_NAME]"
 //
@@ -56,12 +58,58 @@ struct FNamedNode: Hashable {
     }
 }
 
+/// A child's key, ordered as upstream orders keys (`FUtilities.compareKey`):
+/// the minimum name, then 32-bit integers by value, then the other keys by
+/// UTF-16 code units, then the maximum name.
 struct KeyIndex: Comparable, Hashable {
-    static func < (lhs: KeyIndex, rhs: KeyIndex) -> Bool {
-        FUtilities.compareKey(lhs.key, rhs.key) == .orderedAscending
+    let key: String
+    /// The key's place among the special names and integers, worked out once
+    /// (comparisons happen at every lookup).
+    private let rank: Int64
+
+    private static let minRank = Int64.min
+    private static let maxRank = Int64.max
+    private static let stringRank = Int64.max - 1
+
+    init(key: String) {
+        self.key = key
+        if let int = FUtilities.intForString(key) {
+            rank = Int64(int)
+        } else if key == FUtilities.minName {
+            rank = Self.minRank
+        } else if key == FUtilities.maxName {
+            rank = Self.maxRank
+        } else {
+            rank = Self.stringRank
+        }
     }
 
-    let key: String
+    static func == (lhs: KeyIndex, rhs: KeyIndex) -> Bool {
+        lhs.key == rhs.key
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(key)
+    }
+
+    static func < (lhs: KeyIndex, rhs: KeyIndex) -> Bool {
+        compare(lhs, rhs) == .orderedAscending
+    }
+
+    static func compare(_ lhs: KeyIndex, _ rhs: KeyIndex) -> ComparisonResult {
+        if lhs.rank == stringRank && rhs.rank == stringRank {
+            return compareUTF16(lhs.key, rhs.key)
+        }
+        if lhs.key == rhs.key { return .orderedSame }
+        if lhs.rank == minRank || rhs.rank == maxRank { return .orderedAscending }
+        if lhs.rank == maxRank || rhs.rank == minRank { return .orderedDescending }
+        if lhs.rank != rhs.rank {
+            return lhs.rank < rhs.rank ? .orderedAscending : .orderedDescending
+        }
+        // Equal integers ("1" and "01"): the shorter first.
+        let lhsCount = lhs.key.utf8.count, rhsCount = rhs.key.utf8.count
+        return lhsCount == rhsCount ? .orderedSame : (lhsCount < rhsCount ? .orderedAscending : .orderedDescending)
+    }
 }
 //
 //class FChildrenNode: FNode {

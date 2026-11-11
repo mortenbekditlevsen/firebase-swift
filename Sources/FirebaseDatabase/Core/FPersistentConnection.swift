@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import NIOCore
 
 #if os(iOS) || os(tvOS)
 import UIKit
@@ -51,9 +52,9 @@ fileprivate class FOutstandingPut {
     var sent: Bool
 }
 
-struct FOutstandingGetResultData: @unchecked Sendable {
+struct FOutstandingGetResultData: Sendable {
     let status: String
-    let data: Any?
+    let data: FNode?
     let errorReason: String?
 }
 
@@ -83,8 +84,7 @@ enum ConnectionState {
 protocol FPersistentConnectionDelegate: AnyObject {
     func onDataUpdate(_ fpconnection: FPersistentConnection,
                       forPath pathString: String,
-                      message: Any,
-                      isMerge: Bool,
+                      update: ServerUpdate,
                       tagId: Int?)
 
     func onRangeMerge(_ ranges: [FRangeMerge],
@@ -97,6 +97,21 @@ protocol FPersistentConnectionDelegate: AnyObject {
 
     func onServerInfoUpdate(_ fpconnection: FPersistentConnection, updates: [String: Any])
 }
+
+/// Data the server sends for a location.
+enum ServerUpdate {
+    /// The data at the location.
+    case overwrite(FNode)
+    /// The data at paths below the location (empty nodes remove data).
+    case merge([String: FNode])
+}
+
+/// Where a server message's data is (`{"t": "d", "d": {"b": {"d": …}}}`): the
+/// data of pushes and of responses. It's kept as bytes until it's known what
+/// it is, and pushes and gets read it straight into nodes.
+private let messageDataPath: ArraySlice<String> = [
+    kFWPAsyncServerEnvelopeData, kFWPAsyncServerPayloadBody, kFWPAsyncServerDataUpdateBodyData,
+]
 
 typealias OnDisconnectTuple = (pathString: String,
                                action: String,
@@ -558,7 +573,7 @@ final class FPersistentConnection {
     /// Handles the server's messages until the connection ends.
     private func receiveMessages(from connection: some DatabaseTransportConnection, on link: Link) async throws {
         for try await frame in connection.inbound {
-            receive(frame.string, on: link)
+            receive(frame, on: link)
             if link.end != nil { break }
         }
         throw link.end ?? SessionEnd.closed
@@ -660,10 +675,15 @@ final class FPersistentConnection {
     // MARK: -
     // MARK: Server messages
 
-    private func receive(_ frame: String, on link: Link) {
+    private func receive(_ frame: DatabaseFrame, on link: Link) {
         link.lastActivity = clock.now()
         guard let message = link.assembler.receive(frame) else { return }
-        guard let json = (try? JSONSerialization.jsonObject(with: Data(message.utf8))) as? [String: Any] else {
+        let parsed = try? FJSONScanner.withScanner(message) { scanner in
+            let value = try scanner.readFoundationValue(rawAt: messageDataPath, in: message)
+            try scanner.expectEnd()
+            return value
+        }
+        guard let json = parsed as? [String: Any] else {
             FFLog("I-RDB082009", "Unrecognized raw server packet received")
             return
         }
@@ -750,6 +770,12 @@ final class FPersistentConnection {
 
     private func onResponse(_ requestNumber: Int, data: [String: Any]?) {
         guard let response = pending.removeValue(forKey: requestNumber) else { return }
+        var data = data
+        if case .get = response {
+            // Read as a node.
+        } else if let raw = data?[kFWPResponseForActionData] as? RawJSON {
+            data?[kFWPResponseForActionData] = try? raw.foundationValue()
+        }
         let status = data?[kFWPResponseForActionStatus] as? String
         switch response {
         case .put(let index, let put):
@@ -892,16 +918,20 @@ final class FPersistentConnection {
             return
         }
         outstandingGets.removeValue(forKey: index)
-        var resultData: Any? = data?[kFWPResponseForActionData]
-        if resultData is NSNull {
-            resultData = nil
-        }
+        let raw = data?[kFWPResponseForActionData] as? RawJSON
         // Always resumes: a response without a status is a failure.
         let status = data?[kFWPResponseForActionStatus] as? String ?? kFWPResponseForActionStatusFailed
         if status == kFWPResponseForActionStatusOk {
-            get.onComplete.resume(returning: .init(status: status, data: resultData, errorReason: nil))
+            do {
+                let node = try raw?.node() ?? .empty
+                get.onComplete.resume(returning: .init(status: status, data: node, errorReason: nil))
+            } catch {
+                get.onComplete.resume(returning: .init(status: kFWPResponseForActionStatusFailed, data: nil,
+                                                       errorReason: "\(error)"))
+            }
         } else {
-            get.onComplete.resume(returning: .init(status: status, data: nil, errorReason: resultData as? String))
+            let reason = (try? raw?.foundationValue()) as? String
+            get.onComplete.resume(returning: .init(status: status, data: nil, errorReason: reason))
         }
     }
 
@@ -1070,14 +1100,15 @@ better performance
         } else {
             FFLog("I-RDB082005", "Sending: \(message)")
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: message),
-              let text = String(data: data, encoding: .utf8)
-        else {
-            FFWarn("I-RDB082022", "Couldn't encode a \(action) request")
+        let bytes: ByteBuffer
+        do {
+            bytes = try FJSONWriter.bytes(message)
+        } catch {
+            FFWarn("I-RDB082022", "Couldn't encode a \(action) request: \(error)")
             return nil
         }
-        for frame in FrameAssembler.frames(for: text) {
-            link.outbox.yield(DatabaseFrame(frame))
+        for frame in FrameAssembler.frames(for: bytes) {
+            link.outbox.yield(frame)
         }
         link.lastActivity = clock.now()
         if let response {
@@ -1110,12 +1141,19 @@ better performance
         case kFWPAsyncServerDataUpdate, kFWPAsyncServerDataMerge:
             let isMerge = action == kFWPAsyncServerDataMerge
             if let path = body[kFWPAsyncServerDataUpdateBodyPath] as? String,
-               let payloadData = body[kFWPAsyncServerDataUpdateBodyData] {
-                if let dict = payloadData as? [String: Any], dict.isEmpty, isMerge {
+               let data = body[kFWPAsyncServerDataUpdateBodyData] as? RawJSON {
+                let update: ServerUpdate
+                do {
+                    update = isMerge ? .merge(try data.merge()) : .overwrite(try data.node())
+                } catch {
+                    FFLog("I-RDB034030", "Malformed data from server: \(error)")
+                    return
+                }
+                if case .merge(let writes) = update, writes.isEmpty {
                     // ignore empty merge
                 } else {
                     let tagId = body[kFWPAsyncServerDataUpdateBodyTag] as? Int
-                    delegate?.onDataUpdate(self, forPath: path, message: payloadData, isMerge: isMerge, tagId: tagId)
+                    delegate?.onDataUpdate(self, forPath: path, update: update, tagId: tagId)
                 }
             } else {
                 FFLog(
@@ -1124,18 +1162,21 @@ better performance
             }
         case kFWPAsyncServerDataRangeMerge:
             guard let path = body[kFWPAsyncServerDataUpdateBodyPath] as? String else { return }
-            let ranges = (body[kFWPAsyncServerDataUpdateBodyData] as? [[String: Any]]) ?? []
+            // An array of {"s": start, "e": end, "m": data}, as a node: in order.
+            let ranges = (try? (body[kFWPAsyncServerDataUpdateBodyData] as? RawJSON)?.node()) ?? .empty
             let tag = body[kFWPAsyncServerDataUpdateBodyTag] as? Int
             var rangeMerges: [FRangeMerge] = []
-            for range in ranges {
-                let startString = range[kFWPAsyncServerDataUpdateStartPath] as? String
-                let endString = range[kFWPAsyncServerDataUpdateEndPath] as? String
-                let updateData = range[kFWPAsyncServerDataUpdateRangeMerge]
-                let updates = FSnapshotUtilities.nodeFrom(updateData)
-                let start = startString.map(FPath.init(with:))
-                let end = endString.map(FPath.init(with:))
-                let merge = FRangeMerge(start: start, end: end, updates: updates)
-                rangeMerges.append(merge)
+            if case .children(let children) = ranges.type {
+                for (_, range) in children {
+                    func path(_ key: String) -> FPath? {
+                        guard case .leaf(.string(let path)) = range.getImmediateChild(key).type else { return nil }
+                        return FPath(with: path)
+                    }
+                    let updates = range.getImmediateChild(kFWPAsyncServerDataUpdateRangeMerge)
+                    rangeMerges.append(FRangeMerge(start: path(kFWPAsyncServerDataUpdateStartPath),
+                                                   end: path(kFWPAsyncServerDataUpdateEndPath),
+                                                   updates: updates))
+                }
             }
             delegate?.onRangeMerge(rangeMerges, forPath: path, tagId: tag)
         case kFWPAsyncServerAuthRevoked:

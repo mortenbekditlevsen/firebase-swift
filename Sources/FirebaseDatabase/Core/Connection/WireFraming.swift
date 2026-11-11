@@ -12,44 +12,50 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import NIOCore
+
 /// The protocol's framing over WebSocket messages: a JSON message longer
 /// than a frame is sent as its number of frames, then the frames.
 struct FrameAssembler {
     private var remaining = 0
-    private var buffer = ""
+    private var buffer = ByteBuffer()
 
     /// The complete message, if `frame` completes one.
-    mutating func receive(_ frame: String) -> String? {
+    mutating func receive(_ frame: DatabaseFrame) -> ByteBuffer? {
         guard remaining > 0 else {
-            if frame.utf8.count <= 4, let count = Int(frame), count > 0 {
+            if frame.count <= 4, let count = Int(frame.string), count > 0 {
                 remaining = count
-                buffer = ""
+                buffer.clear()
                 FFLog("I-RDB083006", "handleNewFrameCount: \(count)")
                 return nil
             }
-            return frame
+            return frame.byteBuffer
         }
-        buffer += frame
+        frame.withUnsafeBytes { buffer.writeBytes($0) }
         remaining -= 1
         guard remaining == 0 else { return nil }
-        defer { buffer = "" }
+        defer { buffer = ByteBuffer() }
         return buffer
     }
 
     /// The frames to send `message` in, preceded by their count if there's
-    /// more than one.
-    static func frames(for message: String) -> [String] {
-        var frames: [String] = []
-        var start = message.startIndex
-        while start < message.endIndex {
-            let end = message.index(start, offsetBy: kWebsocketMaxFrameSize, limitedBy: message.endIndex)
-                ?? message.endIndex
-            frames.append(String(message[start ..< end]))
-            start = end
+    /// more than one. Frames end at character boundaries, so each is valid
+    /// UTF-8.
+    static func frames(for message: ByteBuffer) -> [DatabaseFrame] {
+        guard message.readableBytes > kWebsocketMaxFrameSize else { return [DatabaseFrame(message)] }
+        var message = message
+        var frames: [DatabaseFrame] = []
+        while message.readableBytes > 0 {
+            var length = min(kWebsocketMaxFrameSize, message.readableBytes)
+            // Not before a continuation byte (10xxxxxx).
+            while length < message.readableBytes,
+                  let byte = message.getInteger(at: message.readerIndex + length, as: UInt8.self),
+                  byte & 0xC0 == 0x80 {
+                length -= 1
+            }
+            frames.append(DatabaseFrame(message.readSlice(length: length)!))
         }
-        if frames.count > 1 {
-            frames.insert("\(frames.count)", at: 0)
-        }
+        frames.insert(DatabaseFrame("\(frames.count)"), at: 0)
         return frames
     }
 }
