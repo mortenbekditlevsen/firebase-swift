@@ -204,6 +204,10 @@ let likes = try await ref.child("likes").runTransaction(as: Int.self) { likes in
 }
 ```
 
+`Database.Encoder` and `Database.Decoder` are upstream's `FirebaseDataEncoder`
+and `FirebaseDataDecoder`, and here they only supply the settings. Decoding
+`snapshot.value` with one yourself goes through Foundation values again.
+
 A sequence throws if the data doesn't decode; a typed transaction is aborted,
 and rethrows, if its closure throws. Data the database can't store, such as
 keys with `.#$[]/` or NaN, makes `setValue(from:)` throw (upstream stops the
