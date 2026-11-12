@@ -32,6 +32,8 @@ typealias CppNamedAggregateFunctionBridges = firebase.firestore.swift_bridge
   .NamedAggregateFunctionBridges
 typealias CppOrderingBridge = firebase.firestore.swift_bridge.OrderingBridge
 typealias CppOrderingBridgeVector = firebase.firestore.swift_bridge.OrderingBridgeVector
+typealias CppWindowValueBridge = firebase.firestore.swift_bridge.WindowValueBridge
+typealias CppWindowSpecBridge = firebase.firestore.swift_bridge.WindowSpecBridge
 typealias CppRawStageParamBridge = firebase.firestore.swift_bridge.RawStageParamBridge
 typealias CppRawStageParamBridgeVector = firebase.firestore.swift_bridge
   .RawStageParamBridgeVector
@@ -111,18 +113,68 @@ public final class __PipelineExprBridge: __ExprBridge {
 
 // MARK: - Aggregate Function Bridge
 
-/// Bridge for aggregate function expressions.
+/// Bridge for aggregate function expressions, and for window functions (such as `Rank`, or an
+/// aggregate framed with `over(_:)`), which have a window.
 public final class __AggregateFunctionBridge: @unchecked Sendable {
   private let name: String
   private let args: [__ExprBridge]
+  private let window: __WindowSpecBridge?
 
-  public init(name: String, args: [__ExprBridge]) {
+  public convenience init(name: String, args: [__ExprBridge]) {
+    self.init(name: name, args: args, window: nil)
+  }
+
+  public init(name: String, args: [__ExprBridge], window: __WindowSpecBridge?) {
     self.name = name
     self.args = args
+    self.window = window
   }
 
   func makeCpp(_ db: Firestore) -> CppAggregateFunctionBridge {
-    CppAggregateFunctionBridge.Create(std.string(name), cppExprs(args, db))
+    if let window {
+      return CppAggregateFunctionBridge.Create(std.string(name), cppExprs(args, db),
+                                               window.makeCpp(db))
+    }
+    return CppAggregateFunctionBridge.Create(std.string(name), cppExprs(args, db))
+  }
+}
+
+// MARK: - Window Spec Bridge
+
+/// Bridge for a window function's partition, sort and frame. A bound or unit is an
+/// `__ExprBridge`, a string, an integer or a floating-point number, as `WindowSpec` passes them.
+public final class __WindowSpecBridge: @unchecked Sendable {
+  private let groups: [__ExprBridge]
+  private let sort: [__OrderingBridge]?
+  private let preceding: Any?
+  private let following: Any?
+  private let type: String?
+  private let unit: Any?
+
+  public init(groups: [__ExprBridge], sort: [__OrderingBridge]?, preceding: Any?,
+              following: Any?, type: String?, unit: Any?) {
+    self.groups = groups
+    self.sort = sort
+    self.preceding = preceding
+    self.following = following
+    self.type = type
+    self.unit = unit
+  }
+
+  func makeCpp(_ db: Firestore) -> CppWindowSpecBridge {
+    CppWindowSpecBridge.Create(cppExprs(groups, db), cppOrderings(sort ?? [], db),
+                               std.string(type ?? ""), Self.value(preceding, db),
+                               Self.value(following, db), Self.value(unit, db))
+  }
+
+  private static func value(_ value: Any?, _ db: Firestore) -> CppWindowValueBridge {
+    switch value {
+    case let expr as __ExprBridge: CppWindowValueBridge.Expr(expr.makeCpp(db))
+    case let string as String: CppWindowValueBridge.String(std.string(string))
+    case let int as Int: CppWindowValueBridge.Integer(Int64(int))
+    case let double as Double: CppWindowValueBridge.Double(double)
+    default: CppWindowValueBridge.None()
+    }
   }
 }
 
@@ -374,6 +426,24 @@ public final class __AggregateStageBridge: __StageBridge {
   }
 
   override public var name: String { "aggregate" }
+}
+
+public final class __AddWindowFieldsStageBridge: __StageBridge {
+  public init(window: __WindowSpecBridge, fields: [String: __AggregateFunctionBridge],
+              options: [String: __ExprBridge]?) {
+    super.init { db in
+      var cppFields = CppNamedAggregateFunctionBridges()
+      for (alias, field) in fields {
+        cppFields.push_back(
+          CppNamedAggregateFunctionBridge(first: std.string(alias), second: field.makeCpp(db))
+        )
+      }
+      return CppStageBridge.AddWindowFields(window.makeCpp(db), cppFields,
+                                            cppNamed(options ?? [:], db))
+    }
+  }
+
+  override public var name: String { "add_window_fields" }
 }
 
 public final class __FindNearestStageBridge: __StageBridge {

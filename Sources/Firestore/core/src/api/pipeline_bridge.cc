@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // The pipeline part of the Swift bridge, after upstream's
-// Firestore/Source/API/FIRPipelineBridge.mm (13.1.1).
+// Firestore/Source/API/FIRPipelineBridge.mm (13.2.0).
 
 #include "Firestore/include/PipelineBridge.h"
 
@@ -83,6 +83,18 @@ struct PipelineAccess {
   static const std::shared_ptr<api::AggregateFunction>& Get(
       const AggregateFunctionBridge& function) {
     return function.function_;
+  }
+  static const std::shared_ptr<WindowSpecBridge>& GetWindow(
+      const AggregateFunctionBridge& function) {
+    return function.window_;
+  }
+  static const std::shared_ptr<WindowValueBridge::Impl>& Get(
+      const WindowValueBridge& value) {
+    return value.impl_;
+  }
+  static const std::shared_ptr<WindowSpecBridge::Impl>& Get(
+      const WindowSpecBridge& window) {
+    return window.impl_;
   }
   static const Ordering& Get(const OrderingBridge& ordering) {
     return *ordering.ordering_;
@@ -267,8 +279,203 @@ ExprBridge ExprBridge::Pipeline(const StageBridgeVector& stages) noexcept {
 }
 
 // ===========================================================================
+// WindowValueBridge, WindowSpecBridge
+// ===========================================================================
+
+namespace {
+
+google_firestore_v1_Value StringValue(const std::string& value) {
+  google_firestore_v1_Value result{};
+  result.which_value_type = google_firestore_v1_Value_string_value_tag;
+  result.string_value = nanopb::MakeBytesArray(value);
+  return result;
+}
+
+google_firestore_v1_Value ArrayValue(
+    const std::vector<google_firestore_v1_Value>& values) {
+  google_firestore_v1_Value result{};
+  result.which_value_type = google_firestore_v1_Value_array_value_tag;
+  nanopb::SetRepeatedField(
+      &result.array_value.values, &result.array_value.values_count, values,
+      [](const google_firestore_v1_Value& value) { return value; });
+  return result;
+}
+
+google_firestore_v1_Value MapValue(
+    const std::vector<std::pair<std::string, google_firestore_v1_Value>>&
+        fields) {
+  google_firestore_v1_Value result{};
+  result.which_value_type = google_firestore_v1_Value_map_value_tag;
+  nanopb::SetRepeatedField(
+      &result.map_value.fields, &result.map_value.fields_count, fields,
+      [](const std::pair<std::string, google_firestore_v1_Value>& field) {
+        return google_firestore_v1_MapValue_FieldsEntry{
+            nanopb::MakeBytesArray(field.first), field.second};
+      });
+  return result;
+}
+
+}  // namespace
+
+struct WindowValueBridge::Impl {
+  // `api::`: in this scope, `Expr` is WindowValueBridge::Expr.
+  std::shared_ptr<api::Expr> expr;
+  absl::optional<std::string> string;
+  absl::optional<int64_t> integer;
+  absl::optional<double> number;
+
+  google_firestore_v1_Value ToProto() const {
+    google_firestore_v1_Value result{};
+    if (expr) return expr->to_proto();
+    if (string) return StringValue(*string);
+    if (integer) {
+      result.which_value_type = google_firestore_v1_Value_integer_value_tag;
+      result.integer_value = *integer;
+    } else if (number) {
+      result.which_value_type = google_firestore_v1_Value_double_value_tag;
+      result.double_value = *number;
+    } else {
+      result.which_value_type = google_firestore_v1_Value_null_value_tag;
+    }
+    return result;
+  }
+};
+
+WindowValueBridge::WindowValueBridge() noexcept = default;
+WindowValueBridge::~WindowValueBridge() noexcept = default;
+WindowValueBridge::WindowValueBridge(const WindowValueBridge&) noexcept =
+    default;
+WindowValueBridge& WindowValueBridge::operator=(
+    const WindowValueBridge&) noexcept = default;
+WindowValueBridge::WindowValueBridge(WindowValueBridge&&) noexcept = default;
+WindowValueBridge& WindowValueBridge::operator=(WindowValueBridge&&) noexcept =
+    default;
+
+WindowValueBridge WindowValueBridge::None() noexcept {
+  WindowValueBridge result;
+  result.impl_ = std::make_shared<Impl>();
+  return result;
+}
+
+WindowValueBridge WindowValueBridge::Expr(const ExprBridge& expr) noexcept {
+  WindowValueBridge result = None();
+  result.impl_->expr = PipelineAccess::Get(expr);
+  return result;
+}
+
+WindowValueBridge WindowValueBridge::String(const std::string& value) noexcept {
+  WindowValueBridge result = None();
+  result.impl_->string = value;
+  return result;
+}
+
+WindowValueBridge WindowValueBridge::Integer(int64_t value) noexcept {
+  WindowValueBridge result = None();
+  result.impl_->integer = value;
+  return result;
+}
+
+WindowValueBridge WindowValueBridge::Double(double value) noexcept {
+  WindowValueBridge result = None();
+  result.impl_->number = value;
+  return result;
+}
+
+struct WindowSpecBridge::Impl {
+  ExprBridgeVector groups;
+  OrderingBridgeVector sort;
+  std::string type;
+  WindowValueBridge preceding;
+  WindowValueBridge following;
+  WindowValueBridge unit;
+
+  // As upstream's `toV1ValueWithReader:`: `partition` and `sort` when not
+  // empty, and the frame under its type, with `unit` inside it.
+  google_firestore_v1_Value ToProto() const {
+    std::vector<std::pair<std::string, google_firestore_v1_Value>> fields;
+    if (!groups.empty()) {
+      std::vector<google_firestore_v1_Value> values;
+      for (const auto& group : groups) {
+        values.push_back(PipelineAccess::Get(group)->to_proto());
+      }
+      fields.emplace_back("partition", ArrayValue(values));
+    }
+    if (!sort.empty()) {
+      std::vector<google_firestore_v1_Value> values;
+      for (const auto& ordering_bridge : sort) {
+        const Ordering& ordering = PipelineAccess::Get(ordering_bridge);
+        values.push_back(MapValue(
+            {{"expression", ordering.expr()->to_proto()},
+             {"direction",
+              StringValue(ordering.direction() == Ordering::ASCENDING
+                              ? "ascending"
+                              : "descending")}}));
+      }
+      fields.emplace_back("sort", ArrayValue(values));
+    }
+    if (!type.empty()) {
+      std::vector<std::pair<std::string, google_firestore_v1_Value>> frame{
+          {"preceding", PipelineAccess::Get(preceding)->ToProto()},
+          {"following", PipelineAccess::Get(following)->ToProto()}};
+      const auto& unit_impl = PipelineAccess::Get(unit);
+      if (unit_impl->expr || unit_impl->string || unit_impl->integer ||
+          unit_impl->number) {
+        frame.emplace_back("unit", unit_impl->ToProto());
+      }
+      fields.emplace_back(type, MapValue(frame));
+    }
+    return MapValue(fields);
+  }
+};
+
+WindowSpecBridge::WindowSpecBridge() noexcept = default;
+WindowSpecBridge::~WindowSpecBridge() noexcept = default;
+WindowSpecBridge::WindowSpecBridge(const WindowSpecBridge&) noexcept = default;
+WindowSpecBridge& WindowSpecBridge::operator=(const WindowSpecBridge&) noexcept =
+    default;
+WindowSpecBridge::WindowSpecBridge(WindowSpecBridge&&) noexcept = default;
+WindowSpecBridge& WindowSpecBridge::operator=(WindowSpecBridge&&) noexcept =
+    default;
+
+WindowSpecBridge WindowSpecBridge::Create(
+    const ExprBridgeVector& groups,
+    const OrderingBridgeVector& sort,
+    const std::string& type,
+    const WindowValueBridge& preceding,
+    const WindowValueBridge& following,
+    const WindowValueBridge& unit) noexcept {
+  WindowSpecBridge result;
+  result.impl_ = std::make_shared<Impl>(
+      Impl{groups, sort, type, preceding, following, unit});
+  return result;
+}
+
+// ===========================================================================
 // AggregateFunctionBridge, OrderingBridge, RawStageParamBridge
 // ===========================================================================
+
+namespace {
+
+/// The function, wrapped in `over(function, window)` for a window function.
+google_firestore_v1_Value AggregateProto(
+    const AggregateFunctionBridge& function) {
+  google_firestore_v1_Value function_value =
+      PipelineAccess::Get(function)->to_proto();
+  const auto& window = PipelineAccess::GetWindow(function);
+  if (!window) return function_value;
+
+  google_firestore_v1_Value result{};
+  result.which_value_type = google_firestore_v1_Value_function_value_tag;
+  result.function_value = google_firestore_v1_Function{};
+  result.function_value.name = nanopb::MakeBytesArray("over");
+  result.function_value.args_count = 2;
+  result.function_value.args = nanopb::MakeArray<google_firestore_v1_Value>(2);
+  result.function_value.args[0] = function_value;
+  result.function_value.args[1] = PipelineAccess::Get(*window)->ToProto();
+  return result;
+}
+
+}  // namespace
 
 AggregateFunctionBridge::AggregateFunctionBridge() noexcept = default;
 AggregateFunctionBridge::~AggregateFunctionBridge() noexcept = default;
@@ -286,6 +493,15 @@ AggregateFunctionBridge AggregateFunctionBridge::Create(
   AggregateFunctionBridge result;
   result.function_ =
       std::make_shared<api::AggregateFunction>(name, MakeExprs(args));
+  return result;
+}
+
+AggregateFunctionBridge AggregateFunctionBridge::Create(
+    const std::string& name,
+    const ExprBridgeVector& args,
+    const WindowSpecBridge& window) noexcept {
+  AggregateFunctionBridge result = Create(name, args);
+  result.window_ = std::make_shared<WindowSpecBridge>(window);
   return result;
 }
 
@@ -308,14 +524,14 @@ OrderingBridge OrderingBridge::Create(const ExprBridge& expr,
 struct RawStageParamBridge::Impl {
   // `api::`: in this scope, `Expr` is RawStageParamBridge::Expr.
   std::shared_ptr<api::Expr> expr;
-  std::shared_ptr<api::AggregateFunction> aggregate;
+  absl::optional<AggregateFunctionBridge> aggregate;
   // A map when neither is set.
   std::vector<std::string> keys;
   RawStageParamBridgeVector values;
 
   google_firestore_v1_Value ToProto() const {
     if (expr) return expr->to_proto();
-    if (aggregate) return aggregate->to_proto();
+    if (aggregate) return AggregateProto(*aggregate);
 
     google_firestore_v1_Value result{};
     result.which_value_type = google_firestore_v1_Value_map_value_tag;
@@ -359,7 +575,7 @@ RawStageParamBridge RawStageParamBridge::Aggregate(
     const AggregateFunctionBridge& function) noexcept {
   RawStageParamBridge result;
   result.impl_ = std::make_shared<Impl>();
-  result.impl_->aggregate = PipelineAccess::Get(function);
+  result.impl_->aggregate = function;
   return result;
 }
 
@@ -574,6 +790,20 @@ StageBridge StageBridge::Unnest(const ExprBridge& field,
   return PipelineAccess::MakeStage(std::make_shared<api::Unnest>(
       PipelineAccess::Get(field), PipelineAccess::Get(alias),
       std::move(cpp_index_field)));
+}
+
+StageBridge StageBridge::AddWindowFields(
+    const WindowSpecBridge& window,
+    const NamedAggregateFunctionBridges& fields,
+    const NamedExprBridges& options) noexcept {
+  std::vector<std::pair<std::string, google_firestore_v1_Value>> cpp_fields;
+  for (const auto& field : fields) {
+    cpp_fields.emplace_back(field.first, AggregateProto(field.second));
+  }
+  std::vector<google_firestore_v1_Value> params{
+      PipelineAccess::Get(window)->ToProto(), MapValue(cpp_fields)};
+  return PipelineAccess::MakeStage(std::make_shared<api::RawStage>(
+      "add_window_fields", std::move(params), MakeExprMap(options)));
 }
 
 StageBridge StageBridge::Raw(const std::string& name,
