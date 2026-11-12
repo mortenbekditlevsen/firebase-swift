@@ -140,8 +140,12 @@ aggregations → listeners → bundles → BSON types → pipelines.
       upstream re-parses the canonical string and so splits a segment that contains a dot.
 - [x] Realtime pipelines (`realtimePipeline()`, internal upstream too): listeners, changes,
       metadata and listen options.
+- [x] Window functions (13.2.0): `WindowSpec`, `WindowFunction`, `Rank` and the
+      `addWindowFields` stage, with `WindowSpecBridge` and `StageBridge::AddWindowFields` in
+      `pipeline_bridge.cc` (a raw `add_window_fields` stage, as upstream).
 - They need an Enterprise-edition database. The emulator's Enterprise edition runs everything
-  except search (`document_matches`, `geo_distance`), which it doesn't have.
+  except search (`document_matches`, `geo_distance`) and window functions (`add_window_fields`),
+  which it doesn't have.
 
 ## Platform notes
 

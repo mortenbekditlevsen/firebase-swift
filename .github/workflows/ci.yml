@@ -34,6 +34,9 @@ jobs:
       - name: Test
         timeout-minutes: 20
         run: swift test --skip-build
+      # Only FirebaseFirestore may need C++ interoperability in its importers.
+      - name: Build an app without C++ interop
+        run: swift build --package-path Tests/WithoutCxxInterop
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -122,8 +125,10 @@ jobs:
   # Cross-compiles with the Swift SDK for Android and runs the unit tests in an
   # Android emulator. The integration tests skip themselves: the Firebase
   # emulators aren't reachable from it.
+  # Ubuntu 24.04: swift.org has no Swift 6.3 toolchain for the newer image,
+  # which the Android action downloads.
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4
@@ -173,6 +178,9 @@ jobs:
       - name: Test
         timeout-minutes: 20
         run: swift test --skip-build
+      # Only FirebaseFirestore may need C++ interoperability in its importers.
+      - name: Build an app without C++ interop
+        run: swift build --package-path Tests/WithoutCxxInterop
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -205,10 +213,10 @@ jobs:
   # The vendored Firestore core's C++ unit tests (GoogleTest), built with
   # upstream's CMake build; see scripts/test-firestore-core.sh.
   firestore-core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build ccache libssl-dev zlib1g-dev
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build ccache libssl-dev zlib1g-dev python3-venv
       - uses: actions/cache@v4
         with:
           path: .ccache

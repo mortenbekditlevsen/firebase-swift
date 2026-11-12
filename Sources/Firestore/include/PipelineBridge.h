@@ -57,6 +57,8 @@ namespace swift_bridge {
 class ExprBridge;
 class AggregateFunctionBridge;
 class OrderingBridge;
+class WindowValueBridge;
+class WindowSpecBridge;
 class StageBridge;
 class PipelineBridge;
 class PipelineResultBridge;
@@ -118,9 +120,59 @@ class ExprBridge {
 };
 
 // ---------------------------------------------------------------------------
-// AggregateFunctionBridge, OrderingBridge
+// WindowValueBridge, WindowSpecBridge, AggregateFunctionBridge, OrderingBridge
 // ---------------------------------------------------------------------------
-/// Wraps `api::AggregateFunction`.
+/// A window frame's bound or unit: an expression, a string ("unbounded",
+/// "current", a unit's name), a number, or none (serialized as null).
+class WindowValueBridge {
+ public:
+  WindowValueBridge() noexcept;
+  ~WindowValueBridge() noexcept;
+  WindowValueBridge(const WindowValueBridge&) noexcept;
+  WindowValueBridge& operator=(const WindowValueBridge&) noexcept;
+  WindowValueBridge(WindowValueBridge&&) noexcept;
+  WindowValueBridge& operator=(WindowValueBridge&&) noexcept;
+
+  static WindowValueBridge None() noexcept;
+  static WindowValueBridge Expr(const ExprBridge& expr) noexcept;
+  static WindowValueBridge String(const std::string& value) noexcept;
+  static WindowValueBridge Integer(int64_t value) noexcept;
+  static WindowValueBridge Double(double value) noexcept;
+
+ private:
+  friend struct PipelineAccess;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+/// A window function's partition, sort and frame (upstream's
+/// `__FIRWindowSpecBridge`), which the backend takes as a map value.
+class WindowSpecBridge {
+ public:
+  WindowSpecBridge() noexcept;
+  ~WindowSpecBridge() noexcept;
+  WindowSpecBridge(const WindowSpecBridge&) noexcept;
+  WindowSpecBridge& operator=(const WindowSpecBridge&) noexcept;
+  WindowSpecBridge(WindowSpecBridge&&) noexcept;
+  WindowSpecBridge& operator=(WindowSpecBridge&&) noexcept;
+
+  /// `type` is the frame's kind ("range" or "documents"), or empty for no
+  /// frame; `unit` is left out when it's `None`.
+  static WindowSpecBridge Create(const ExprBridgeVector& groups,
+                                 const OrderingBridgeVector& sort,
+                                 const std::string& type,
+                                 const WindowValueBridge& preceding,
+                                 const WindowValueBridge& following,
+                                 const WindowValueBridge& unit) noexcept;
+
+ private:
+  friend struct PipelineAccess;
+  struct Impl;
+  std::shared_ptr<Impl> impl_;
+};
+
+/// Wraps `api::AggregateFunction`, and also a window function: an aggregate
+/// framed by a window (sent as `over(function, window)`).
 class AggregateFunctionBridge {
  public:
   AggregateFunctionBridge() noexcept;
@@ -132,10 +184,15 @@ class AggregateFunctionBridge {
 
   static AggregateFunctionBridge Create(const std::string& name,
                                         const ExprBridgeVector& args) noexcept;
+  static AggregateFunctionBridge Create(const std::string& name,
+                                        const ExprBridgeVector& args,
+                                        const WindowSpecBridge& window) noexcept;
 
  private:
   friend struct PipelineAccess;
   std::shared_ptr<api::AggregateFunction> function_;
+  /// The window, for a window function.
+  std::shared_ptr<WindowSpecBridge> window_;
 };
 
 /// Wraps `api::Ordering`.
@@ -212,6 +269,12 @@ class StageBridge {
   static StageBridge Limit(int32_t limit) noexcept;
   static StageBridge Offset(int32_t offset) noexcept;
   static StageBridge AddFields(const NamedExprBridges& fields) noexcept;
+  /// Window functions computed over `window` (upstream's
+  /// `__FIRAddWindowFieldsStageBridge`, a raw stage).
+  static StageBridge AddWindowFields(
+      const WindowSpecBridge& window,
+      const NamedAggregateFunctionBridges& fields,
+      const NamedExprBridges& options) noexcept;
   static StageBridge RemoveFields(const FieldPathVector& fields) noexcept;
   static StageBridge Select(const NamedExprBridges& selections) noexcept;
   static StageBridge Define(const NamedExprBridges& variables) noexcept;

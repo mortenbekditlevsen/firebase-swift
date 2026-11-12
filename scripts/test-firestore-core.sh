@@ -24,6 +24,8 @@
 # Firestore directory, and builds that.
 #
 # Usage: scripts/test-firestore-core.sh [ctest arguments, e.g. -R firestore_util_test]
+# (ctest names a test after its binary, e.g. firestore_core_test or
+# firestore_remote_test, not after its source files.)
 #
 # Environment:
 #   FIRESTORE_UPSTREAM_TAG  upstream release tag (default: Firestore's synced_to
@@ -33,7 +35,9 @@
 #
 # Needs CMake, Ninja, Python 3 (with venv), Git and a C++17 compiler. OpenSSL
 # and zlib development packages are used when found, which saves building
-# BoringSSL and zlib.
+# BoringSSL and zlib. Upstream's CMake files need CMake 3 (CMake 4 removed
+# policies they set, such as CMP0058); with a newer one installed, this gets
+# CMake 3 from PyPI into the work directory.
 
 set -euo pipefail
 
@@ -64,6 +68,15 @@ if [ ! -f "$SRC/.firebase-swift-tag" ] ||
   echo "$FIRESTORE_UPSTREAM_TAG" > "$SRC/.firebase-swift-tag"
 fi
 ln -sfn "$ROOT/Sources/Firestore" "$SRC/Firestore"
+
+if ! cmake --version 2>/dev/null | grep -q "^cmake version 3\."; then
+  if [ ! -x "$WORK/cmake3/bin/cmake" ]; then
+    echo "Installing CMake 3 into $WORK/cmake3"
+    python3 -m venv "$WORK/cmake3"
+    "$WORK/cmake3/bin/pip" install --quiet "cmake>=3.24,<4"
+  fi
+  export PATH="$WORK/cmake3/bin:$PATH"
+fi
 
 # The test binaries are large: linking many at once with GNU ld runs out of
 # memory on 16 GB machines (such as GitHub's runners), so links take turns.

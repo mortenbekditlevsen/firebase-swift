@@ -17,7 +17,7 @@ Nothing has been released yet, and the API can still change.
 | `FirebaseCore` | `FirebaseApp` (default and named apps, `delete()`), `FirebaseOptions` from `GoogleService-Info.plist`, `google-services.json` or a web app's config |
 | `FirebaseAuth` | Email and password, email links, anonymous, custom tokens, and credentials from Google, Apple, Facebook, GitHub, Twitter, Game Center and other OAuth providers. Also multi-factor auth (phone and TOTP), user management, and listeners. Phone auth and web-based sign-in (`OAuthProvider`) need iOS. |
 | `FirebaseDatabase` | Realtime Database: reads, writes, listeners, queries, transactions, `onDisconnect`, offline persistence |
-| `FirebaseFirestore` | Upstream's C++ core with the Swift API: documents, queries, listeners, batches, transactions, aggregations, bundles, cache settings, `Codable`, vector and BSON values. Pipelines are not ported yet ([status](Docs/FirestoreStatus.md)). |
+| `FirebaseFirestore` | Upstream's C++ core with the Swift API: documents, queries, listeners, batches, transactions, aggregations, bundles, cache settings, `Codable`, vector and BSON values, pipelines (including realtime pipelines and window functions) ([status](Docs/FirestoreStatus.md)). |
 | `FirebaseFunctions` | Callable functions, including `Codable` and streaming calls |
 | `FirebaseStorage` | Uploads, downloads, listing, metadata |
 
