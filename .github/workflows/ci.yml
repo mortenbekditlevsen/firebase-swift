@@ -97,7 +97,8 @@ jobs:
       - run: npm install -g firebase-tools
       - name: iOS-only tests (iOS Simulator, Auth emulator)
         timeout-minutes: 60
-        run: scripts/test-ios.sh -clonedSourcePackagesDirPath .build-ios-packages -quiet
+        # Without -quiet, which hides why a test failed.
+        run: scripts/test-ios.sh -clonedSourcePackagesDirPath .build-ios-packages
 
   other-apple-platforms:
     runs-on: macos-26

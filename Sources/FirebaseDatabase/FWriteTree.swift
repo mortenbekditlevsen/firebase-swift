@@ -101,15 +101,16 @@ class FWriteTree {
         var removedWriteOverlapsWithOtherWrites = false
         var i = allWrites.count - 1
         
+        // Reads the writes in place: copying each one retains its path and
+        // data, and this runs for every pending write on every acknowledgement.
         while (removedWriteWasVisible && i >= 0) {
-            let currentWrite = allWrites[i]
-            if currentWrite.visible {
-                if i >= index && self.record(currentWrite,
+            if allWrites[i].visible {
+                if i >= index && self.record(allWrites[i],
                                              containsPath:writeToRemove.path) {
                     // The removed write was completely shadowed by a subsequent
                     // write.
                     removedWriteWasVisible = false
-                } else if writeToRemove.path.contains(currentWrite.path) {
+                } else if writeToRemove.path.contains(allWrites[i].path) {
                     // Either we're covering some writes or they're covering part of
                     // us (depending on which came first).
                     removedWriteOverlapsWithOtherWrites = true

@@ -16,32 +16,32 @@
 #if canImport(CommonCrypto)
 import CommonCrypto
 
-extension Data {
-    func sha1() -> Data {
-        // Use CC_SHA1
-        var digest = [UInt8](repeating: 0, count:Int(CC_SHA1_DIGEST_LENGTH))
-        self.withUnsafeBytes {
-            _ = CC_SHA1($0.baseAddress, CC_LONG(self.count), &digest)
-        }
-        return Data(bytes: digest, count: Int(CC_SHA1_DIGEST_LENGTH))
+/// The SHA-1 digest of `bytes`.
+private func sha1(_ bytes: UnsafeBufferPointer<UInt8>) -> Data {
+    var digest = Data(count: Int(CC_SHA1_DIGEST_LENGTH))
+    digest.withUnsafeMutableBytes { output in
+        _ = CC_SHA1(bytes.baseAddress, CC_LONG(bytes.count),
+                    output.baseAddress!.assumingMemoryBound(to: UInt8.self))
     }
+    return digest
 }
 #elseif os(Linux) || os(Windows) || os(Android) || os(FreeBSD)
 import Crypto
-extension Data {
-    func sha1() -> Data {
-        // Use Insecure.SHA1
-        return Data(Insecure.SHA1.hash(data: self))
-    }
+
+/// The SHA-1 digest of `bytes`.
+private func sha1(_ bytes: UnsafeBufferPointer<UInt8>) -> Data {
+    Data(Insecure.SHA1.hash(data: UnsafeRawBufferPointer(bytes)))
 }
 #endif
 
 import Foundation
 
 enum FStringUtilities {
+    /// The SHA-1 of the string's UTF-8, in base 64 (data hashes). Hashes the
+    /// string's bytes in place: listens hash every node of their cached data.
     static func base64EncodedSha1(_ input: String) -> String  {
-        let data = Data(input.utf8)
-        return data.sha1().base64EncodedString()
+        var input = input
+        return input.withUTF8(sha1).base64EncodedString()
     }
 
     static func urlDecoded(_ url: String) -> String {

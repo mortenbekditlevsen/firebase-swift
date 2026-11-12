@@ -46,6 +46,68 @@ against 175, S2 227 against 484, S4a 141 against 245.
 Memory is now about level with upstream. S1 and S3 peak at 5 MB more, S4b at
 15 MB more, and S2 and S5 lower.
 
+## Since P8: hashes and writes
+
+`Benchmarks/results/5e56f510-hashes-writes-ab-*.jsonl`, measured A/B: the
+builds before and after took turns in one emulator session, so both saw the
+same machine load (Spotlight indexing made back-to-back runs incomparable).
+
+| Scenario | Before (wall / CPU ms) | After (wall / CPU ms) |
+|---|---:|---:|
+| S4a | 278 / 143 | 247 / 125 |
+| S4b | 646 / 1303 | **288 / 506** |
+| S1, S2, S3, S5, S6 | | unchanged |
+
+Micro-benchmarks for 10k items (p50):
+
+| Step | Before | Now |
+|---|---:|---:|
+| A listen's compound hash of cached data | 853 ms | 28 ms |
+| A listen's simple hash (`dataHash`) | 305 ms | 57 ms |
+| Write tree: 5k sibling writes, acknowledged oldest first | 463 ms | 120 ms |
+| Node from Swift values (writes) | 120 ms | 77 ms |
+| Node from Foundation values | 213 ms | 192 ms |
+
+- **Listen hashes.** A listen on cached data sends both hashes (above 1 kB),
+  computed on the Database actor, again on every reconnect, so resuming a
+  listen on S1's data held the actor for over a second.
+  - Each number was formatted with 8 `String(format:)` calls via
+    `NSNumber`; now it's formatted from the double's bits.
+  - The compound hash asked for its range's length in characters after
+    every leaf, which counts the whole string: quadratic. Now it uses UTF-8
+    bytes. That only moves where ranges end (upstream counts UTF-16 units),
+    which the client chooses.
+  - SHA-1 reads the string's bytes in place, and strings needing no
+    escaping skip `replacingOccurrences`.
+- **Writes of Swift values.** `nodeFrom` cast every value to `NSNumber` and
+  other bridged types, whose conformance lookups were S4b's largest cost. It
+  now recognizes `String`, `Int`, `Int64`, `Double` and `Bool` by their
+  exact type first, and skips validating a priority there isn't.
+- **Acknowledging writes.** Removing a write checks every other pending
+  write for overlap, as upstream: quadratic in pending writes. Each check
+  now reads the record in place, and path containment compares from the
+  last piece, where siblings differ.
+
+## Linux
+
+`Benchmarks/run-linux.sh` (a `swift:6.2` container with 8 cores, the emulator
+inside it); `Benchmarks/results/5e56f510-linux.jsonl` before the changes
+above, `5e56f510-hashes-writes-linux.jsonl` after:
+
+| Scenario | Before (wall / CPU ms) | After (wall / CPU ms) | Peak MB |
+|---|---:|---:|---:|
+| S1 | 76 / 49 | 78 / 52 | 115 |
+| S2 | 177 / 202 | 198 / 213 | 69 |
+| S3 (decode) | 109 / 100 (27) | 119 / 111 (32) | 145 |
+| S4a | 532 / 239 | 524 / 225 | 42 |
+| S4b | 1083 / 1530 | 725 / 1048 | 130 |
+| S5 | 49 / 46 | 48 / 47 | 62 |
+| S6 | 2.9 / 2.7 | 2.7 / 2.8 | 41 |
+
+The emulator shares the container's 8 cores, so wall times aren't comparable
+with the Mac's. CPU times are roughly the Mac's, except S4b's (about twice),
+and peak memory is about twice the Mac's, as glibc's allocator keeps more.
+
 ## What made the difference
 
 Port medians by phase, in ms:
@@ -143,11 +205,15 @@ Micro-benchmarks for 10k items, without a network (p50; before → now):
 ## Open
 
 - **Data hashes aren't cached.** `FNode.dataHash()` recomputes for every
-  listen with cached data and every transaction. Caching it per node would
-  cost a box per node. It's worth it if listens on large cached trees show it.
+  listen with cached data and every transaction: now 57 ms (and 28 ms for
+  the compound hash) for 10k items, on the Database actor. Caching it per
+  node would cost a box per node.
+- **Pending writes are quadratic.** Acknowledging a write still checks every
+  other pending one (upstream's algorithm): 120 ms for 5k at once. An index
+  of the writes by path would make it linear.
+- **S4b on Linux** uses about twice the Mac's CPU time; not profiled yet.
 - **The encoder still makes as many allocations as the old path.** It's 4×
   faster, but its containers are reference boxes.
 - **Parsing builds a tree.** It's 2× JSONSerialization alone, which makes
   none. Most of the rest is copying and releasing keys and nodes.
-- **The device study** (the background probe, P7) and **Linux numbers**
-  aren't in yet.
+- **The device study** (the background probe, P7) isn't in yet.

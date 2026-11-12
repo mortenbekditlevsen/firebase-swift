@@ -153,12 +153,18 @@ public struct FPath: Hashable, Sendable, CustomStringConvertible {
     }
 
     func contains(_ other: FPath) -> Bool {
-        guard self.length() <= other.length() else {
+        let length = self.length()
+        guard length <= other.length() else {
             return false
         }
-
-        for (a, b) in zip(pieces[pieceNum...], other.pieces[other.pieceNum...]) {
-            if a != b {
+        // From the last piece: siblings, the common case (e.g. pending writes
+        // to the children of one location), differ only there.
+        var index = pieceNum + length
+        var otherIndex = other.pieceNum + length
+        while index > pieceNum {
+            index -= 1
+            otherIndex -= 1
+            if pieces[index] != other.pieces[otherIndex] {
                 return false
             }
         }

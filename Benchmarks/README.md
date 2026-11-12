@@ -28,6 +28,14 @@ prints a Markdown table of medians. Results go to
 `Benchmarks/results/<revision>-<date>.jsonl`. Combine files with
 `Benchmarks/Scenarios/.build/release/bench-compare results/a.jsonl results/b.jsonl`.
 
+On Linux (upstream only builds for Apple platforms), `Benchmarks/run-linux.sh`
+runs `run.sh` for the port in a `swift:6.2` container, Apple's `container` or
+Docker, with the emulator in the same container:
+
+```sh
+Benchmarks/run-linux.sh --iterations 10
+```
+
 The port uses its default transport. To measure another one, set
 `BENCHMARK_DATABASE_TRANSPORT` to `nio`, `networkFramework` or `urlSession`
 (the results show it as the port's variant):

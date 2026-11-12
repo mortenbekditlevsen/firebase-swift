@@ -41,6 +41,18 @@ class FPathTests: XCTestCase {
     XCTAssertTrue(FPath(pieces: pathPieces, andPieceNum: 1).contains(FPath(with: "/b/c/d")))
   }
 
+  // Port note: not upstream's. `contains` compares from the last piece, so
+  // check offsets on both sides and siblings that differ only there.
+  func testContainsWithOffsetsAndSiblings() {
+    let other = FPath(pieces: ["x", "a", "b", "c"], andPieceNum: 1)
+    XCTAssertTrue(FPath(with: "/a/b").contains(other))
+    XCTAssertTrue(FPath(pieces: ["y", "a"], andPieceNum: 1).contains(other))
+    XCTAssertFalse(FPath(pieces: ["a", "x"], andPieceNum: 1).contains(other))
+    XCTAssertFalse(FPath(with: "/a/b/d").contains(FPath(with: "/a/b/c")))
+    XCTAssertFalse(FPath(with: "/a/x/c").contains(FPath(with: "/a/b/c")))
+    XCTAssertFalse(FPath(with: "/z/b/c").contains(FPath(with: "/a/b/c/d")))
+  }
+
   func testPopFront() {
     XCTAssertEqual(FPath(with: "/a/b/c").popFront(), FPath(with: "/b/c"))
     XCTAssertEqual(FPath(with: "/a/b/c").popFront().popFront(), FPath(with: "/c"))

@@ -76,11 +76,16 @@ public enum FSnapshotUtilities {
              return .empty
          }
 
+         if priority == nil, let leaf = swiftLeaf(val, withValidationFrom: fn, path: path) {
+             return FNode.leaf(leaf, priority: .empty)
+         }
          if (val as? NSNull) === NSNull() {
              return .empty
          }
          var value: Any = val
-         FValidation.validateFrom(fn, isValidPriorityValue: priority as Any, withPath: path)
+         if let priority {
+             FValidation.validateFrom(fn, isValidPriorityValue: priority, withPath: path)
+         }
          var priority = FSnapshotUtilities.nodeFrom(priority)
          var isLeafNode = false
          if let dict = val as? [String: Any] {
@@ -135,11 +140,11 @@ public enum FSnapshotUtilities {
              var children: [String: FNode] = .init(minimumCapacity: dval.count)
 
              // Avoid creating a million newPaths by appending to old one
-             for keyId in dval.keys {
+             for (keyId, child) in dval {
                  let key = FValidation.validateFrom(fn, validDictionaryKey: keyId, withPath: path)
                  if !key.hasPrefix(kPayloadMetadataPrefix) {
                      path.append(key)
-                     let childNode = nodeFrom(dval[key], priority: nil, withValidationFrom: fn, atDepth: depth + 1, path: &path)
+                     let childNode = nodeFrom(child, priority: nil, withValidationFrom: fn, atDepth: depth + 1, path: &path)
                      path.removeLast()
                      if !childNode.isEmpty {
                          children[key] = childNode
@@ -178,6 +183,34 @@ public enum FSnapshotUtilities {
              fatalError("(\(fn)) Cannot store object of type \(type(of: value)) at \(pathString). Can only store objects of type NSNumber, NSString, NSDictionary, and NSArray.")
          }
      }
+
+    /// The leaf for a value of the Swift types writes usually hold, found by
+    /// its exact type, or nil for any other value. The general path casts the
+    /// value to `NSNumber` and other bridged types, and looking up the
+    /// conformances for those casts took most of the time of a write.
+    private static func swiftLeaf(_ value: Any, withValidationFrom fn: String,
+                                  path: [String]) -> LeafValue? {
+        let valueType = type(of: value)
+        if valueType == String.self {
+            let string = value as! String
+            _ = FValidation.validateFrom(fn, isValidLeafValue: string, withPath: path)
+            return .string(string)
+        } else if valueType == Int.self {
+            return .int64(Int64(value as! Int))
+        } else if valueType == Double.self {
+            let double = value as! Double
+            if double.isNaN {
+                let pathString = path.prefix(50).joined(separator: ".")
+                fatalError("(\(fn)) Cannot store NaN at path: \(pathString).")
+            }
+            return .double(double)
+        } else if valueType == Bool.self {
+            return .bool(value as! Bool)
+        } else if valueType == Int64.self {
+            return .int64(value as! Int64)
+        }
+        return nil
+    }
 
     static func validatePriorityNode(_ priorityNode: FNode) {
         if case let .leaf(leafValue) = priorityNode.type {
@@ -259,7 +292,7 @@ public enum FSnapshotUtilities {
         case .int64, .double:
             // As doubles, as the server (and upstream, and Android) hash numbers.
             output += "number:"
-            output += FUtilities.ieee754String(for: NSNumber(value: leafValue.doubleValue!))
+            output += FUtilities.ieee754String(for: leafValue.doubleValue!)
         case .string(let v):
             output += "string:"
             switch hashVersion {
@@ -276,9 +309,13 @@ public enum FSnapshotUtilities {
 
     static func appendHashV2Representation(for string: String, to output: inout String) {
         output += "\""
-        output += string
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        if string.utf8.contains(where: { $0 == UInt8(ascii: "\\") || $0 == UInt8(ascii: "\"") }) {
+            output += string
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+        } else {
+            output += string
+        }
         output += "\""
     }
 

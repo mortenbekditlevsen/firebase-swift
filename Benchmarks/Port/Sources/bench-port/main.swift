@@ -38,8 +38,10 @@ struct PortDriver: BenchmarkDriver {
     database.useEmulator(withHost: emulator.host, port: emulator.port)
     switch variant {
     case "nio": database.transport = NIODatabaseTransport()
-    case "networkFramework": database.transport = NIOTSDatabaseTransport()
-    case "urlSession": database.transport = URLSessionDatabaseTransport()
+    #if canImport(Darwin)
+      case "networkFramework": database.transport = NIOTSDatabaseTransport()
+      case "urlSession": database.transport = URLSessionDatabaseTransport()
+    #endif
     default: break
     }
     return PortClient(app: app, database: database)

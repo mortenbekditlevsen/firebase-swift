@@ -41,9 +41,16 @@ public struct BenchmarkRecord: Codable, Sendable {
 
 /// Process CPU time and peak memory.
 public enum ProcessMetrics {
+  #if canImport(Glibc)
+    // Glibc imports RUSAGE_SELF as an enum case.
+    private static let selfUsage = __rusage_who_t(RUSAGE_SELF.rawValue)
+  #else
+    private static let selfUsage = RUSAGE_SELF
+  #endif
+
   public static func cpuTime() -> Duration {
     var usage = rusage()
-    getrusage(RUSAGE_SELF, &usage)
+    getrusage(selfUsage, &usage)
     func duration(_ time: timeval) -> Duration {
       .seconds(Int64(time.tv_sec)) + .microseconds(Int64(time.tv_usec))
     }
@@ -52,7 +59,7 @@ public enum ProcessMetrics {
 
   public static func peakResidentMegabytes() -> Double {
     var usage = rusage()
-    getrusage(RUSAGE_SELF, &usage)
+    getrusage(selfUsage, &usage)
     #if canImport(Darwin)
       return Double(usage.ru_maxrss) / 1_048_576 // bytes
     #else

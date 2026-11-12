@@ -42,7 +42,8 @@ for target in $targets; do
 done
 swift build -c release --package-path Benchmarks/Scenarios --product bench-compare >/dev/null
 
-revision=$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- Sources/FirebaseDatabase || echo "-dirty")
+# BENCHMARK_GIT_REVISION names the revision where this isn't a git checkout.
+revision=${BENCHMARK_GIT_REVISION:-$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- Sources/FirebaseDatabase || echo "-dirty")}
 output="Benchmarks/results/$revision-$(date +%Y%m%d-%H%M%S).jsonl"
 export BENCHMARK_GIT_REVISION="$revision" BENCHMARK_OUTPUT="$output"
 export BENCHMARK_ITERATIONS="$iterations" BENCHMARK_SCENARIOS="$scenarios" BENCHMARK_TARGETS="$targets"
