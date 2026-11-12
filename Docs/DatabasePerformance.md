@@ -88,6 +88,38 @@ Micro-benchmarks for 10k items (p50):
   now reads the record in place, and path containment compares from the
   last piece, where siblings differ.
 
+## Cached data hashes
+
+Children nodes keep their data hash once computed, as a 20-byte SHA-1
+digest, in one box with the node's priority (`NodeExtras`). Nodes are
+immutable values, so nothing needs clearing: a change makes new nodes on the
+path to the root, which start without a hash, and unchanged subtrees keep
+theirs. Leaves aren't cached: one SHA-1 of a short string each, and a box
+per leaf would cost the most memory.
+
+For the 10k items (micro-benchmarks, p50; memory from the allocator):
+
+| | Before | Now |
+|---|---:|---:|
+| Hash again, unchanged | 60 ms | 0.2 µs |
+| Hash after one item changed | 59 ms | 2.5 ms |
+| First hash (parse + hash) | 88 ms | 71 ms |
+| Parse | 27 ms | 28 ms |
+| Tree, parsed and hashed | 11.6 MB | 12.8 MB (+11%) |
+| Tree written from Swift values | 18.5 MB | 11.5 MB |
+
+- The 11% is one 64-byte box per children node (about 20k here); nodes
+  stay 40 bytes.
+- A parent's hash input is now bytes, with the children's digests appended
+  in base 64, so even the first hash is faster.
+- Written trees shrank because an empty priority no longer gets a box
+  (it equals none): every written leaf had one.
+- A listen on large data still computes the compound hash (29 ms here),
+  which can't be cached per node: its ranges depend on the whole tree.
+
+An earlier version kept a `String` per hash and a pointer in every node: 48
+bytes per node and +23% for the same tree, for the same speed.
+
 ## Linux
 
 `Benchmarks/run-linux.sh` (a `swift:6.2` container with 8 cores, the emulator
@@ -204,10 +236,9 @@ Micro-benchmarks for 10k items, without a network (p50; before → now):
 
 ## Open
 
-- **Data hashes aren't cached.** `FNode.dataHash()` recomputes for every
-  listen with cached data and every transaction: now 57 ms (and 28 ms for
-  the compound hash) for 10k items, on the Database actor. Caching it per
-  node would cost a box per node.
+- **The compound hash isn't cached.** A listen on more than 1 kB of cached
+  data computes it every time: 29 ms for 10k items, on the Database actor.
+  Its ranges depend on the whole tree's size, so it can't be kept per node.
 - **Pending writes are quadratic.** Acknowledging a write still checks every
   other pending one (upstream's algorithm): 120 ms for 5k at once. An index
   of the writes by path would make it linear.

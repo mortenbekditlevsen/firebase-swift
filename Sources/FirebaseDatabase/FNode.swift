@@ -14,6 +14,23 @@
 
 import Foundation
 import SortedCollections
+import Synchronization
+
+/// What a node keeps outside its inline storage: its priority, and for a
+/// children node its data hash once computed. Children nodes always have one
+/// (so the hash can be cached), other nodes only with a priority.
+///
+/// Nodes are immutable values, so a cached hash stays right: a change makes
+/// new nodes on the path to the root, which start without one, and unchanged
+/// subtrees keep theirs.
+private final class NodeExtras: Sendable {
+    let priority: NodeBox?
+    let hash = Mutex<SHA1Digest?>(nil)
+
+    init(priority: NodeBox?) {
+        self.priority = priority
+    }
+}
 
 private final class NodeBox: Hashable, Sendable {
     static func == (lhs: NodeBox, rhs: NodeBox) -> Bool {
@@ -162,12 +179,18 @@ enum LeafValue: Hashable, Sendable {
 struct FNode: Equatable, Hashable, Sendable {
     static let empty: FNode = FNode(type: .empty)
     static func leaf(_ value: LeafValue, priority: FNode? = nil) -> FNode {
-        FNode(type: .leaf(value), priorityNode: priority.map(NodeBox.init(node:)))
+        FNode(type: .leaf(value), extras: priorityBox(priority).map(NodeExtras.init(priority:)))
     }
     static func children(_ children: FChildren, priority: FNode? = nil) -> FNode {
-        FNode(type: .children(children), priorityNode: priority.map(NodeBox.init(node:)))
+        FNode(type: .children(children), extras: NodeExtras(priority: priorityBox(priority)))
     }
-    static let max: FNode = FNode(type: .empty, isMax: true, priorityNode: nil)
+    static let max: FNode = FNode(type: .empty, isMax: true, extras: nil)
+
+    /// An empty priority is stored as none, which it equals.
+    private static func priorityBox(_ priority: FNode?) -> NodeBox? {
+        guard let priority, !priority.isEmpty else { return nil }
+        return NodeBox(node: priority)
+    }
 
     enum NodeType: Equatable, Hashable, Sendable {
         case leaf(LeafValue)
@@ -176,7 +199,8 @@ struct FNode: Equatable, Hashable, Sendable {
     }
     var type: NodeType
     var isMax: Bool = false
-    private var priorityNode: NodeBox?
+    private var extras: NodeExtras?
+    private var priorityNode: NodeBox? { extras?.priority }
 
     // As upstream: an empty node equals a children node without children,
     // and the cached hash doesn't count.
@@ -430,27 +454,36 @@ struct FNode: Equatable, Hashable, Sendable {
         }
     }
 
-    /*mutating*/ func dataHash() -> String {
-        let calculatedHash: String
+    func dataHash() -> String {
+        dataHashDigest()?.base64 ?? ""
+    }
+
+    /// The data hash's digest, or nil for the empty hash. Cached in children
+    /// nodes, so hashing unchanged data again is free.
+    func dataHashDigest() -> SHA1Digest? {
         switch type {
         case .leaf:
             var toHash = ""
             FSnapshotUtilities.appendHashRepresentation(for: self, to: &toHash, hashVersion: .v1)
-            calculatedHash = FStringUtilities.base64EncodedSha1(toHash)
+            return FStringUtilities.sha1(toHash)
 
         case .empty:
-            calculatedHash = ""
+            return nil
 
         case .children(let children):
-            var toHash = ""
+            if let cached = extras?.hash.withLock({ $0 }) {
+                return cached
+            }
+            var toHash: [UInt8] = []
 
             if !getPriority().isEmpty {
-                toHash += "priority:"
+                var priority = "priority:"
                 FSnapshotUtilities
                     .appendHashRepresentation(for: self.getPriority(),
-                                                 to: &toHash,
+                                                 to: &priority,
                                                  hashVersion: .v1)
-                toHash += ":"
+                priority += ":"
+                toHash.append(contentsOf: priority.utf8)
             }
             var sawPriority = false
             for node in children.values {
@@ -468,30 +501,28 @@ struct FNode: Equatable, Hashable, Sendable {
                         .compareNamedNode(lhs: a, rhs: b) == .orderedAscending
                 }
                 for namedNode in array {
-                    let childHash = namedNode.node.dataHash()
-                    if !childHash.isEmpty {
-                        toHash += ":"
-                        toHash += namedNode.name
-                        toHash += ":"
-                        toHash += childHash
-                    }
+                    Self.appendChildHash(namedNode.node, key: namedNode.name, to: &toHash)
                 }
             } else {
                 for (key, node) in children {
-                    let childHash = node.dataHash()
-                    if !childHash.isEmpty {
-                        toHash += ":"
-                        toHash += key.key
-                        toHash += ":"
-                        toHash += childHash
-                    }
+                    Self.appendChildHash(node, key: key.key, to: &toHash)
                 }
             }
 
-            calculatedHash = toHash.isEmpty ? "" : FStringUtilities.base64EncodedSha1(toHash)
-
+            guard !toHash.isEmpty else { return nil }
+            let digest = FStringUtilities.sha1(toHash)
+            extras?.hash.withLock { $0 = digest }
+            return digest
         }
-        return calculatedHash;
+    }
+
+    /// ":key:hash" for a child with a non-empty hash.
+    private static func appendChildHash(_ node: FNode, key: String, to toHash: inout [UInt8]) {
+        guard let digest = node.dataHashDigest() else { return }
+        toHash.append(UInt8(ascii: ":"))
+        toHash.append(contentsOf: key.utf8)
+        toHash.append(UInt8(ascii: ":"))
+        digest.appendBase64(to: &toHash)
     }
 
     func enumerateChildrenAndPriority(usingBlock block: @escaping (_ key: String, _ node: FNode, _ stop: inout Bool) -> Void) {

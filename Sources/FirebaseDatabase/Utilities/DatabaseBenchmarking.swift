@@ -93,6 +93,20 @@ public enum DatabaseBenchmarking {
     node.node.dataHash()
   }
 
+  /// Parses `json` and hashes the node: a listen's first hash of new data.
+  public static func parseAndHash(_ json: Data) throws -> String {
+    try parseNode(json).node.dataHash()
+  }
+
+  /// The node with one leaf below `path` replaced, as a server update or a
+  /// write does.
+  public static func updating(_ node: Node, at path: String, to value: Int) -> Node {
+    Node(node: node.node.updateChild(FPath(with: path), withNewChild: .leaf(.int64(Int64(value)))))
+  }
+
+  /// Bytes a node takes inline (in its parent's children).
+  public static var nodeStride: Int { MemoryLayout<FNode>.stride }
+
   /// A listen's compound hash of the cached data, sent when it's large.
   public static func compoundHashCount(of node: Node) -> Int {
     FCompoundHash.fromNode(node: node.node).hashes.count
