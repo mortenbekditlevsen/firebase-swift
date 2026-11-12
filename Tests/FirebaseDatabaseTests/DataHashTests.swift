@@ -60,4 +60,26 @@ struct DataHashTests {
     #expect(node.dataHash() == expected)
     #expect(NODE(1).dataHash() == FStringUtilities.base64EncodedSha1("number:3ff0000000000000"))
   }
+
+  @Test func digestsAreEncodedAsFoundationEncodesBase64() {
+    for input in (0 ..< 200).map({ "input \($0) " + String(repeating: "æ", count: $0 % 7) }) {
+      var bytes = Array(input.utf8)
+      let digest = FStringUtilities.sha1(bytes)
+      bytes = withUnsafeBytes(of: digest) { Array($0.prefix(20)) }
+      #expect(digest.base64 == Data(bytes).base64EncodedString())
+    }
+  }
+
+  @Test func cachedHashesFollowChanges() {
+    let node = NODE(["a": ["x": 1], "b": ["y": 2]])
+    let hash = node.dataHash()
+    #expect(node.dataHash() == hash)
+    let changed = node.updateChild(PATH("a/x"), withNewChild: NODE(3))
+    #expect(changed.dataHash() != hash)
+    #expect(changed.dataHash() == NODE(["a": ["x": 3], "b": ["y": 2]]).dataHash())
+    // The unchanged node keeps its hash.
+    #expect(node.dataHash() == hash)
+    // A priority is part of the hash.
+    #expect(node.updatePriority(NODE("p")).dataHash() != hash)
+  }
 }

@@ -125,6 +125,23 @@ let benchmarks: @Sendable () -> Void = {
     }
   }
 
+  Benchmark("listen hash: simple, first time (parse + hash)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(try DatabaseBenchmarking.parseAndHash(json))
+    }
+  }
+
+  // A server update to one item, then the next listen's hash.
+  let firstKey = items.keys.sorted()[0]
+  Benchmark("listen hash: simple, after one item changed") { benchmark in
+    var value = 0
+    for _ in benchmark.scaledIterations {
+      value += 1
+      let updated = DatabaseBenchmarking.updating(node, at: "\(firstKey)/score", to: value)
+      blackHole(DatabaseBenchmarking.dataHash(of: updated))
+    }
+  }
+
   Benchmark("listen hash: compound (FCompoundHash)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(DatabaseBenchmarking.compoundHashCount(of: node))
