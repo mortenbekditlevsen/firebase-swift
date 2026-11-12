@@ -88,6 +88,38 @@ public enum DatabaseBenchmarking {
     keys.sorted { FUtilities.compareKey($0, $1) == .orderedAscending }
   }
 
+  /// A listen's simple hash of the cached data (`FNode.dataHash()`).
+  public static func dataHash(of node: Node) -> String {
+    node.node.dataHash()
+  }
+
+  /// A listen's compound hash of the cached data, sent when it's large.
+  public static func compoundHashCount(of node: Node) -> Int {
+    FCompoundHash.fromNode(node: node.node).hashes.count
+  }
+
+  /// The size estimate that decides whether a listen sends the compound hash.
+  public static func estimatedSize(of node: Node) -> Int {
+    FSnapshotUtilities.estimateSerializedNodeSize(node.node)
+  }
+
+  /// S4b's pending writes without the network: `count` overwrites of sibling
+  /// locations, then their acknowledgements, oldest first. Returns how many
+  /// removals were visible.
+  public static func writeTreeAddAndRemove(count: Int) -> Int {
+    let tree = FWriteTree()
+    let parent = FPath(with: "public/bench/s4b")
+    for id in 0 ..< count {
+      tree.addOverwriteAtPath(parent.child(fromString: "item\(id)"), newData: .leaf(.int64(Int64(id))),
+                              writeId: id, isVisible: true)
+    }
+    var visible = 0
+    for id in 0 ..< count where tree.removeWriteId(id) {
+      visible += 1
+    }
+    return visible
+  }
+
   /// The number of children of a node.
   public static func childCount(of node: Node) -> Int {
     node.node.numChildren()

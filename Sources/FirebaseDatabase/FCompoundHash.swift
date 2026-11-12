@@ -86,8 +86,12 @@ class FCompoundHashBuilder {
       optHashValueBuilder != nil
   }
 
+  /// In UTF-8 bytes, which a native string knows without counting (`count`,
+  /// in characters, is linear, and the split strategy asks after every
+  /// leaf). Upstream counts UTF-16 units; that only moves where a range ends,
+  /// which the client chooses.
   var currentHashLength: Int {
-    optHashValueBuilder?.count ?? 0
+    optHashValueBuilder?.utf8.count ?? 0
   }
 
 

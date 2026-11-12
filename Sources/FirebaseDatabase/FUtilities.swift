@@ -246,20 +246,11 @@ enum FUtilities {
         KeyIndex.compare(KeyIndex(key: a), KeyIndex(key: b))
     }
 
-    static func ieee754String(for number: NSNumber) -> String {
-        var d = number.doubleValue
-        let capacity = MemoryLayout<Double>.size
-        let bytes = withUnsafePointer(to: &d) {
-            $0.withMemoryRebound(to: UInt8.self, capacity: capacity) {
-                Array(UnsafeBufferPointer(start: $0, count: capacity))
-            }
-        }
-
-        let output = bytes
-            .reversed()
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return output
+    /// The double's IEEE 754 bits as 16 lowercase hex digits, most significant
+    /// first (how data hashes represent numbers).
+    static func ieee754String(for double: Double) -> String {
+        let hex = String(double.bitPattern, radix: 16)
+        return String(repeating: "0", count: 16 - hex.utf8.count) + hex
     }
 
     static func getJavascriptType(_ obj: Any) -> JavaScriptType {

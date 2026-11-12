@@ -26,6 +26,8 @@ let benchmarks: @Sendable () -> Void = {
   let json = try! Fixtures.json(items)
   let node = try! DatabaseBenchmarking.parseNode(json)
   let foundationValue = try! JSONSerialization.jsonObject(with: json)
+  // As apps write: Swift dictionaries of Swift values.
+  let swiftValue: [String: Any] = items.mapValues { $0.firebaseValue }
 
   Benchmark.defaultConfiguration = .init(
     metrics: [.wallClock, .cpuTotal, .mallocCountTotal, .peakMemoryResident],
@@ -55,6 +57,12 @@ let benchmarks: @Sendable () -> Void = {
   Benchmark("build: Foundation value -> node (nodeFrom)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(DatabaseBenchmarking.node(from: foundationValue))
+    }
+  }
+
+  Benchmark("build: Swift values -> node (nodeFrom)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(DatabaseBenchmarking.node(from: swiftValue))
     }
   }
 
@@ -110,6 +118,32 @@ let benchmarks: @Sendable () -> Void = {
 
   // Ordering: sorting children by key, which node building does per level.
   let keys = items.keys.shuffled()
+  // Listening with cached data: the hashes a listen sends, again on every reconnect.
+  Benchmark("listen hash: simple (dataHash)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(DatabaseBenchmarking.dataHash(of: node))
+    }
+  }
+
+  Benchmark("listen hash: compound (FCompoundHash)") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(DatabaseBenchmarking.compoundHashCount(of: node))
+    }
+  }
+
+  Benchmark("listen hash: size estimate") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(DatabaseBenchmarking.estimatedSize(of: node))
+    }
+  }
+
+  // Writing: S4b's 5k pending writes, acknowledged oldest first.
+  Benchmark("write tree: add and acknowledge 5k writes") { benchmark in
+    for _ in benchmark.scaledIterations {
+      blackHole(DatabaseBenchmarking.writeTreeAddAndRemove(count: 5_000))
+    }
+  }
+
   Benchmark("sort: 10k push-ID-like keys (compareKey)") { benchmark in
     for _ in benchmark.scaledIterations {
       blackHole(DatabaseBenchmarking.sortKeys(keys))

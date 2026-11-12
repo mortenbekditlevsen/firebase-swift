@@ -470,14 +470,20 @@ struct FNode: Equatable, Hashable, Sendable {
                 for namedNode in array {
                     let childHash = namedNode.node.dataHash()
                     if !childHash.isEmpty {
-                        toHash += ":\(namedNode.name):\(childHash)"
+                        toHash += ":"
+                        toHash += namedNode.name
+                        toHash += ":"
+                        toHash += childHash
                     }
                 }
             } else {
                 for (key, node) in children {
                     let childHash = node.dataHash()
                     if !childHash.isEmpty {
-                        toHash += ":\(key.key):\(childHash)"
+                        toHash += ":"
+                        toHash += key.key
+                        toHash += ":"
+                        toHash += childHash
                     }
                 }
             }
