@@ -77,6 +77,8 @@ bridge in `Swift/Source/Bridge/`, so a few upstream files differ:
   range, where upstream's throws an exception, and
   `Codable/GeoPoint+Codable.swift` throws a `DecodingError` for them instead.
   Equality uses `==`, so 0 and -0 are equal (upstream compares bits).
+- `Codable/DocumentID.swift`: `DocumentID` is `Sendable` when its value is,
+  so `Sendable` models can use `@DocumentID` (`firebase-swift:` comment).
 
 Upstream's integration tests (`Swift/Tests/Integration/`) are changed only
 where marked `Port note:`: deprecated settings, `NSErrorPointer` transaction

@@ -116,7 +116,7 @@ public final class Database:  Sendable {
      * @param path Path to a location in your Firebase Database.
      * @return A FIRDatabaseReference pointing to the specified path.
      */
-    func referenceWithPath(_ path: String) -> DatabaseReference {
+    public func reference(withPath path: String) -> DatabaseReference {
         let repo = ensureRepo()
         FValidation.validateFrom("referenceWithPath", validRootPathString: path)
         let childPath = FPath(with: path)
@@ -132,7 +132,7 @@ public final class Database:  Sendable {
      * @param databaseUrl A URL to a path within your database.
      * @return A FIRDatabaseReference for the provided URL.
      */
-    func referenceFromURL(_ databaseUrl: String) -> DatabaseReference {
+    public func reference(fromURL databaseUrl: String) -> DatabaseReference {
         let repo = ensureRepo()
         let parsedUrl = FUtilities.parseUrl(databaseUrl)
         FValidation.validateFrom("referenceFromURL:", validURL: parsedUrl)
@@ -155,7 +155,7 @@ public final class Database:  Sendable {
      * affected event listeners, and the client will not (re-)send them to the
      * Firebase Database backend.
      */
-    func purgeOutstandingWrites() {
+    public func purgeOutstandingWrites() {
         let repo = ensureRepo()
 
         repo.enqueue { $0.purgeOutstandingWrites() }
