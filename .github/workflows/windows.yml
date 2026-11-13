@@ -23,10 +23,12 @@ jobs:
       # gRPC and abseil have paths longer than Windows' default limit.
       - run: git config --global core.longpaths true
       - uses: actions/checkout@v5
+      # 6.3: the runner's MSVC standard library needs Clang 20 or newer,
+      # which 6.2's isn't.
       - uses: compnerd/gha-setup-swift@v0.5.1
         with:
-          swift-version: swift-6.2-release
-          swift-build: 6.2-RELEASE
+          swift-version: swift-6.3-release
+          swift-build: 6.3-RELEASE
       - run: swift --version
 
       # Without the Firestore trait, so gRPC isn't fetched for the other modules.
