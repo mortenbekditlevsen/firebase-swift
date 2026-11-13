@@ -88,7 +88,7 @@ public struct FRepoInfo: Hashable, Sendable {
     }
 
     var description: String {
-        return "http\(secure ? "s" : ""):\(host)"
+        return "http\(secure ? "s" : "")://\(host)"
     }
 
     init(info: FRepoInfo, emulatedHost: String) {

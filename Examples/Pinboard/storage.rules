@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// attachments/{uid}/{note}/{file}: anyone signed in reads; the owner adds
+// files up to 10 MB and deletes them.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /attachments/{uid}/{note}/{file} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

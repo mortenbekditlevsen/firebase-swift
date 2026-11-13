@@ -188,7 +188,6 @@ struct GetAccountInfoResponseUser: Decodable, Sendable {
              // XXX TODO: Not actually deserialized. That is harder with Decoding. Is it necessary though?
              throw AuthErrorUtils.unexpectedResponse(deserializedResponse: users)
          }
-         print("USERSDATA", users[0])
          self.user = users[0]
 
      }

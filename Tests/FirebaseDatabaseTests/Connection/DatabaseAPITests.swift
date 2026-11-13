@@ -46,6 +46,13 @@ struct DatabaseAPITests {
         wire.push(json: ["t": "d", "d": ["a": "d", "b": ["p": path, "d": data]]])
     }
 
+    @Test func referencesByPathAndURL() {
+        let byChild = root.child("a").child("b")
+        #expect(database.reference(withPath: "a/b").url == byChild.url)
+        #expect(database.reference(withPath: "a/b").key == "b")
+        #expect(database.reference(fromURL: byChild.url).url == byChild.url)
+    }
+
     @Test func writesReachTheServerInTheOrderTheyreMade() async throws {
         let wire = try await connected()
         let ref = root.child("counter")

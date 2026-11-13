@@ -134,6 +134,10 @@ public struct DocumentID<Value: DocumentIDWrappable & Codable>:
   }
 }
 
+// firebase-swift: it only stores the value, so Sendable models can use it
+// (upstream's isn't Sendable).
+extension DocumentID: Sendable where Value: Sendable {}
+
 extension DocumentID: DocumentIDProtocol {
   init(from documentReference: DocumentReference?) throws {
     if let documentReference {

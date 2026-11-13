@@ -53,7 +53,8 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
     @StorageActor
     var state: StorageTaskState<StorageMetadata> {
         get { observer.base.state }
-        set { observer.base.state = newValue }
+        // Through the observer: a finished task (e.g. cancelled) stays finished.
+        set { observer.setState(newValue) }
     }
     
     @StorageActor
@@ -146,8 +147,11 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
             if let responseDictionary = StorageUtils.jsonDictionary(from: data) {
                 var metadata = StorageMetadata(dictionary: responseDictionary)
                 metadata.fileType = .file
-                self.state = .success(metadata)
                 self.observer.base.metadata = metadata
+                // Through the observer, so that observers get the outcome
+                // and their streams end. (Setting the state directly marked
+                // the task finished, and `fire` then ignored the outcome.)
+                self.observer.succeed(with: metadata)
                 return metadata
             } else {
                 throw StorageErrorCode.error(withInvalidRequest: data)
@@ -157,7 +161,7 @@ public final class StorageUploadTask: StorageTaskManagement, Sendable {
             let error = StorageErrorCode.error(withServerError: error,
                                                ref: self.reference)
             self.observer.base.metadata = self.uploadMetadata
-            self.state = .failed(error)
+            self.observer.fail(with: error)
             throw error
         }
     }

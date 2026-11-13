@@ -48,6 +48,24 @@ struct StorageIntegrationTests {
     }
   }
 
+  /// The task of an upload, to observe it. (In an async context, `putData`
+  /// is the overload that waits for the metadata.)
+  private func uploadTask(_ data: Data, to ref: StorageReference) -> StorageUploadTask {
+    ref.putData(data)
+  }
+
+  @Test func anObservedUploadEndsWithItsOutcome() async throws {
+    let ref = try scratchRef(EmulatorApp().storage()).child("observed.bin")
+    let (_, events) = await uploadTask(Data(count: 4096), to: ref).observe()
+    var uploaded: StorageMetadata?
+    for try await event in events {
+      if case .success(let metadata) = event.status {
+        uploaded = metadata
+      }
+    }
+    #expect(uploaded?.size == 4096)
+  }
+
   @Test func uploadsAndDownloadsData() async throws {
     let ref = try scratchRef(EmulatorApp().storage()).child("hello.txt")
     let data = Data("Hello, Storage".utf8)

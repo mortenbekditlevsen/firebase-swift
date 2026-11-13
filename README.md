@@ -302,6 +302,14 @@ look up an app's storage directories, so set these before using Firebase:
 a file at run time. Pass its contents in `FIREBASE_OPTIONS`, or copy it to the
 files directory and use `FirebaseOptions(contentsOfFile:)`.
 
+## Sample app
+
+[Examples/Pinboard](Examples/Pinboard) is a small desktop app, built with
+[SwiftCrossUI](https://swiftcrossui.dev), that uses Auth, Firestore, Storage,
+Functions and the Realtime Database together. It runs on the Firebase
+emulators without a Firebase project, and comes with the rules and functions
+to deploy to your own.
+
 ## Tests
 
 - **Unit tests:** `swift test` runs them, with no network.
