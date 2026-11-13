@@ -34,13 +34,13 @@ struct SignInView: View {
             SecureField("Password", text: $password)
 
             HStack {
-                Button("Sign in") {
+                ActionButton("Sign in") {
                     Task { await board.signIn(email: email, password: password) }
                 }
-                Button("Create account") {
+                ActionButton("Create account") {
                     Task { await board.createAccount(name: name, email: email, password: password) }
                 }
-                Button("Continue as guest") {
+                ActionButton("Continue as guest") {
                     Task { await board.signInAnonymously(name: name) }
                 }
             }

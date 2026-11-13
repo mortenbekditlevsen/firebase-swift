@@ -27,7 +27,7 @@ struct BoardView: View {
                     Text("Signed in as \(board.userName)")
                         .font(.headline)
                     Spacer()
-                    Button("Sign out") { board.signOut() }
+                    ActionButton("Sign out") { board.signOut() }
                 }
                 ComposeView(board: board)
                 Divider()
@@ -60,7 +60,7 @@ struct ComposeView: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("What's on your mind?", text: $board.draft)
             HStack {
-                Button(board.attachment == nil ? "Attach a file…" : "Change file…") {
+                ActionButton(board.attachment == nil ? "Attach a file…" : "Change file…") {
                     Task {
                         if let file = await chooseFile(title: "Attach a file") {
                             board.attachment = file
@@ -69,10 +69,10 @@ struct ComposeView: View {
                 }
                 if let attachment = board.attachment {
                     Text(attachment.lastPathComponent)
-                    Button("Remove") { board.attachment = nil }
+                    ActionButton("Remove") { board.attachment = nil }
                 }
                 Spacer()
-                Button("Pin") {
+                ActionButton("Pin") {
                     Task { await board.pin() }
                 }
                 .disabled(board.isBusy || board.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -102,7 +102,7 @@ struct NoteView: View {
                 }
                 Spacer()
                 if note.authorID == board.user?.uid {
-                    Button("Delete") {
+                    ActionButton("Delete") {
                         Task { await board.delete(note) }
                     }
                 }
@@ -113,11 +113,11 @@ struct NoteView: View {
                     Text("📎 \(attachment.name) (\(ByteCountFormatter.string(fromByteCount: Int64(attachment.size), countStyle: .file)))")
                         .font(.caption)
                     if attachment.isImage, board.previews[note.id] == nil {
-                        Button("Show") {
+                        ActionButton("Show") {
                             Task { await board.preview(note) }
                         }
                     }
-                    Button("Save…") {
+                    ActionButton("Save…") {
                         Task {
                             if let file = await chooseFileSaveDestination(defaultFileName: attachment.name) {
                                 await board.download(note, to: file)
