@@ -112,6 +112,12 @@ git clone https://github.com/grpc/grpc-ios.git /tmp/grpc-ios
 swift package edit grpc-ios --path /tmp/grpc-ios
 ```
 
+## Known issue: bordered buttons on macOS 26 and later
+
+SwiftCrossUI 0.10's AppKit backend adds a bordered button's bezel after its
+label, so on macOS 26 and later the bezel hides the title until the button is
+pressed. Pinboard's buttons are borderless instead (`ActionButton`).
+
 ## To do
 
 - Windows: SwiftCrossUI has a WinUI backend; the app and firebase-swift
