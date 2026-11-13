@@ -1,0 +1,86 @@
+name: Windows
+
+# Windows support is being worked on: this builds each module on its own, so
+# one module that doesn't build yet doesn't hide the others, and lists the
+# outcome. It runs for branches named windows/… and on demand, not on main.
+on:
+  push:
+    branches: ['windows/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # gRPC and abseil have paths longer than Windows' default limit.
+      - run: git config --global core.longpaths true
+      - uses: actions/checkout@v5
+      - uses: compnerd/gha-setup-swift@v0.5.1
+        with:
+          swift-version: swift-6.2-release
+          swift-build: 6.2-RELEASE
+      - run: swift --version
+
+      # Without the Firestore trait, so gRPC isn't fetched for the other modules.
+      - name: FirebaseCore
+        id: core
+        continue-on-error: true
+        run: swift build --disable-default-traits --product FirebaseCore
+      - name: FirebaseAuth
+        id: auth
+        continue-on-error: true
+        run: swift build --disable-default-traits --product FirebaseAuth
+      - name: FirebaseAppCheck
+        id: appcheck
+        continue-on-error: true
+        run: swift build --disable-default-traits --product FirebaseAppCheck
+      - name: FirebaseFunctions
+        id: functions
+        continue-on-error: true
+        run: swift build --disable-default-traits --product FirebaseFunctions
+      - name: FirebaseStorage
+        id: storage
+        continue-on-error: true
+        run: swift build --disable-default-traits --product FirebaseStorage
+      - name: FirebaseDatabase
+        id: database
+        continue-on-error: true
+        run: swift build --disable-default-traits --product FirebaseDatabase
+      - name: FirebaseFirestore
+        id: firestore
+        continue-on-error: true
+        run: swift build --product FirebaseFirestore
+
+      - name: Summary
+        if: always()
+        env:
+          CORE: ${{ steps.core.outcome }}
+          AUTH: ${{ steps.auth.outcome }}
+          APPCHECK: ${{ steps.appcheck.outcome }}
+          FUNCTIONS: ${{ steps.functions.outcome }}
+          STORAGE: ${{ steps.storage.outcome }}
+          DATABASE: ${{ steps.database.outcome }}
+          FIRESTORE: ${{ steps.firestore.outcome }}
+        run: |
+          {
+            echo "| Module | Build |"
+            echo "|---|---|"
+            echo "| FirebaseCore | $CORE |"
+            echo "| FirebaseAuth | $AUTH |"
+            echo "| FirebaseAppCheck | $APPCHECK |"
+            echo "| FirebaseFunctions | $FUNCTIONS |"
+            echo "| FirebaseStorage | $STORAGE |"
+            echo "| FirebaseDatabase | $DATABASE |"
+            echo "| FirebaseFirestore | $FIRESTORE |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          for outcome in "$CORE" "$AUTH" "$APPCHECK" "$FUNCTIONS" "$STORAGE" "$DATABASE" "$FIRESTORE"; do
+            [ "$outcome" = success ] || exit 1
+          done
