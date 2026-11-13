@@ -46,7 +46,8 @@ let package = Package(
         ),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.0.0"),
+        // 2.37.3: builds with recent Windows SDKs (10.0.26100).
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.3"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.21.0"),
         .package(
             url: "https://github.com/mortenbekditlevsen/leveldb.git",
