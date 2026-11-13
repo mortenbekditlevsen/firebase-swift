@@ -14,8 +14,17 @@ else is on the board.
 
 ## Run it on the emulators (no Firebase project needed)
 
-You need Swift 6.2 or later, Java 21, Node 22 and the Firebase CLI
+You need Swift 6.2 or later, Java 21 or later, Node 22 and the Firebase CLI
 (`npm install -g firebase-tools`). On Linux, also GTK 4 (`libgtk-4-dev`).
+
+The emulators use the first `java` on your `PATH`. If they stop with
+"firebase-tools no longer supports Java version before 21", install a newer
+JDK (e.g. `brew install openjdk@21`) or point your shell at one you have:
+
+```sh
+export JAVA_HOME=$(/usr/libexec/java_home -v 21+)   # macOS
+export PATH="$JAVA_HOME/bin:$PATH"
+```
 
 ```sh
 cd Examples/Pinboard
