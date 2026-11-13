@@ -31,35 +31,45 @@ jobs:
           swift-build: 6.3-RELEASE
       - run: swift --version
 
+      # Targets rather than products: on Windows and Linux, building a product
+      # builds every target in the package, the Firestore core among them.
       # Without the Firestore trait, so gRPC isn't fetched for the other modules.
       - name: FirebaseCore
         id: core
         continue-on-error: true
-        run: swift build --disable-default-traits --product FirebaseCore
+        run: swift build --disable-default-traits --target FirebaseCore
       - name: FirebaseAuth
         id: auth
         continue-on-error: true
-        run: swift build --disable-default-traits --product FirebaseAuth
+        run: swift build --disable-default-traits --target FirebaseAuth
       - name: FirebaseAppCheck
         id: appcheck
         continue-on-error: true
-        run: swift build --disable-default-traits --product FirebaseAppCheck
+        run: swift build --disable-default-traits --target FirebaseAppCheck
       - name: FirebaseFunctions
         id: functions
         continue-on-error: true
-        run: swift build --disable-default-traits --product FirebaseFunctions
+        run: swift build --disable-default-traits --target FirebaseFunctions
       - name: FirebaseStorage
         id: storage
         continue-on-error: true
-        run: swift build --disable-default-traits --product FirebaseStorage
+        run: swift build --disable-default-traits --target FirebaseStorage
       - name: FirebaseDatabase
         id: database
         continue-on-error: true
-        run: swift build --disable-default-traits --product FirebaseDatabase
+        run: swift build --disable-default-traits --target FirebaseDatabase
       - name: FirebaseFirestore
         id: firestore
         continue-on-error: true
-        run: swift build --product FirebaseFirestore
+        # grpc-ios excludes "src/objective-c/" and "src/cpp/", and SwiftPM on
+        # Windows ignores excludes that end in "/" (so PrivacyInfo.xcprivacy
+        # gets two rules). Until firebase-swift uses a grpc-ios without them,
+        # build against an edited copy.
+        run: |
+          swift package edit grpc-ios
+          sed -i 's#"src/objective-c/"#"src/objective-c"#g; s#"src/cpp/"#"src/cpp"#g' Packages/grpc-ios/Package.swift
+          git -C Packages/grpc-ios diff --stat
+          swift build --target FirebaseFirestore
 
       - name: Summary
         if: always()
