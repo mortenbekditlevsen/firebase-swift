@@ -148,7 +148,9 @@ class AppCheckCoreBackoffWrapper: NSObject, AppCheckCoreBackoffWrapperProtocol {
     -> TimeInterval {
     let baseBackoff = pow(2.0, Double(failure.retryCount - 1))
     let maxRandom = 1000.0
-    let randomNumber = Double(arc4random_uniform(UInt32(maxRandom))) / maxRandom
+    // firebase-swift: the standard library's random rather than `arc4random_uniform`, which
+    // Windows doesn't have.
+    let randomNumber = Double(UInt32.random(in: 0 ..< UInt32(maxRandom))) / maxRandom
     let jitterCoefficient = 1.0 + randomNumber * kMaxJitterCoefficient
     let backoffIntervalWithJitter = baseBackoff * jitterCoefficient
     return min(backoffIntervalWithJitter, kMaxExponentialBackoffInterval)

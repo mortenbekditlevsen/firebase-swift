@@ -24,7 +24,11 @@ their own contents, as upstream already does for `filesystem_apple.mm` and
 - `connectivity_monitor_noop.cc` is compiled on every platform;
   `connectivity_monitor_apple.mm` is excluded.
 - `secure_random_openssl.cc` is compiled (it guards itself with
-  `HAVE_OPENSSL_RAND_H`, which `config.h` sets only on Linux).
+  `HAVE_OPENSSL_RAND_H`, which `config.h` sets on Linux and Windows).
+- `filesystem_win.cc` is compiled (it guards itself with `_WIN32`).
+
+`src/util/config.h` also sets `HAVE_OPENSSL_RAND_H` for Windows under SwiftPM;
+upstream only knows Apple and Linux there, and builds Windows with CMake.
 
 `src/util/filesystem_posix.cc` builds on Android, where upstream has `#error`
 placeholders: the data directory is `$XDG_DATA_HOME` (or
