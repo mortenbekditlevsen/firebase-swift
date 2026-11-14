@@ -78,6 +78,13 @@ jobs:
             -e 's#\.linkedLibrary("z"),#.linkedLibrary("z", .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .macCatalyst, .linux, .android])),#' \
             Packages/grpc-ios/Package.swift
           git -C Packages/grpc-ios diff
+          # gRPC's BoringSSL needs the Windows defines swift-nio-ssl 2.37.3 added
+          # to its copy: windows.h's winsock.h clashes with winsock2.h otherwise.
+          swift package edit boringssl-swiftpm
+          sed -i \
+            -e 's#\.define("OPENSSL_NO_ASM", to: "1"),#&\n        .define("_WINSOCKAPI_", .when(platforms: [.windows])),\n        .define("NOMINMAX", .when(platforms: [.windows])),\n        .define("NOCRYPT", .when(platforms: [.windows])),#' \
+            Packages/boringssl-SwiftPM/Package.swift
+          git -C Packages/boringssl-SwiftPM diff
           swift build --target FirebaseFirestore
 
       # Everything, gRPC's C++ included: building a target compiles only what
