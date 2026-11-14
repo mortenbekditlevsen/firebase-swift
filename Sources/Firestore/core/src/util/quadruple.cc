@@ -225,7 +225,11 @@ Quadruple::operator double() const {
     }
     default:
       int32_t unbiased_exp = static_cast<int32_t>(exponent_ - kExponentBias);
-      return scalb((1LL << 52) | (mantissa_hi_ >> 12), -52 + unbiased_exp) *
+      // firebase-swift: std::scalbn rather than the obsolete POSIX scalb, which
+      // Windows doesn't have. The exponent is an integer, so it's the same.
+      return std::scalbn(
+                 static_cast<double>((1LL << 52) | (mantissa_hi_ >> 12)),
+                 -52 + unbiased_exp) *
              (negative_ ? -1 : 1);
   }
 }
