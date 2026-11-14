@@ -64,33 +64,46 @@ jobs:
         # grpc-ios excludes "src/objective-c/" and "src/cpp/", and SwiftPM on
         # Windows ignores excludes that end in "/" (so PrivacyInfo.xcprivacy
         # gets two rules). Until firebase-swift uses a grpc-ios without them,
-        # build against an edited copy.
+        # build against an edited copy. The copy also defines NOMINMAX, as
+        # gRPC's CMake build does on Windows: windows.h's min and max macros
+        # break re2's min() and max().
         run: |
           swift package edit grpc-ios
-          sed -i 's#"src/objective-c/"#"src/objective-c"#g; s#"src/cpp/"#"src/cpp"#g' Packages/grpc-ios/Package.swift
-          git -C Packages/grpc-ios diff --stat
+          sed -i \
+            -e 's#"src/objective-c/"#"src/objective-c"#g; s#"src/cpp/"#"src/cpp"#g' \
+            -e 's#\.headerSearchPath("src/core/ext/upbdefs-gen/"),#&\n        .define("NOMINMAX", .when(platforms: [.windows])),#' \
+            Packages/grpc-ios/Package.swift
+          git -C Packages/grpc-ios diff
           swift build --target FirebaseFirestore
+
+      # Everything, gRPC's C++ included: building a target compiles only what
+      # its modules need.
+      - name: Build tests
+        id: buildtests
+        if: steps.firestore.outcome == 'success'
+        continue-on-error: true
+        run: swift build --build-tests
 
       # On Windows the Database connects with URLSessionDatabaseTransport
       # (swift-nio-ssl doesn't build there), over swift-corelibs-foundation's
-      # WebSockets. Runs once everything builds.
+      # WebSockets.
       - uses: actions/setup-java@v4
-        if: steps.firestore.outcome == 'success'
+        if: steps.buildtests.outcome == 'success'
         with:
           distribution: temurin
           java-version: 21
       - uses: actions/setup-node@v4
-        if: steps.firestore.outcome == 'success'
+        if: steps.buildtests.outcome == 'success'
         with:
           node-version: 22
       - name: Database integration tests
         id: dbtests
-        if: steps.firestore.outcome == 'success'
+        if: steps.buildtests.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 40
         run: |
           npm install -g firebase-tools
-          firebase emulators:exec --project demo-firebase-swift --only auth,database "swift test --filter DatabaseIntegrationTests"
+          firebase emulators:exec --project demo-firebase-swift --only auth,database "swift test --skip-build --filter DatabaseIntegrationTests"
 
       - name: Summary
         if: always()
@@ -102,6 +115,7 @@ jobs:
           STORAGE: ${{ steps.storage.outcome }}
           DATABASE: ${{ steps.database.outcome }}
           FIRESTORE: ${{ steps.firestore.outcome }}
+          BUILDTESTS: ${{ steps.buildtests.outcome }}
           DBTESTS: ${{ steps.dbtests.outcome }}
         run: |
           {
@@ -117,8 +131,9 @@ jobs:
             echo
             echo "| Tests | Result |"
             echo "|---|---|"
+            echo "| Build (all targets and tests) | ${BUILDTESTS:-not run} |"
             echo "| Database integration (emulator) | ${DBTESTS:-not run} |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          for outcome in "$CORE" "$AUTH" "$APPCHECK" "$FUNCTIONS" "$STORAGE" "$DATABASE" "$FIRESTORE" "$DBTESTS"; do
+          for outcome in "$CORE" "$AUTH" "$APPCHECK" "$FUNCTIONS" "$STORAGE" "$DATABASE" "$FIRESTORE" "$BUILDTESTS" "$DBTESTS"; do
             [ "$outcome" = success ] || exit 1
           done
