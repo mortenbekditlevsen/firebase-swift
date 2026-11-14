@@ -36,6 +36,10 @@ Windows follows MSVC and types a hex literal that doesn't fit `long long` as a
 negative `long long` rather than `unsigned long long`, so brace-initializing
 `uint64_t` with it is a narrowing error. The values are the same everywhere.
 
+`src/util/quadruple.cc`: converting to `double` uses `std::scalbn` rather than
+POSIX's obsolete `scalb`, which Windows doesn't have. The exponent is an
+integer, so the result is the same.
+
 `src/util/filesystem_posix.cc` builds on Android, where upstream has `#error`
 placeholders: the data directory is `$XDG_DATA_HOME` (or
 `$HOME/.local/share`), as on Linux, and the temporary directory `$TMPDIR` (or
