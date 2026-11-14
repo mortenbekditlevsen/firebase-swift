@@ -246,6 +246,10 @@ let package = Package(
             .define("PB_NO_PACKED_STRUCTS", to: "1"),
             .define("PB_ENABLE_MALLOC", to: "1"),
             .define("FIRFirestore_VERSION", to: firebaseVersion),
+            // As upstream's CMake build (cmake/compiler_setup.cmake): no min and
+            // max macros from windows.h, which break std::min and std::max.
+            .define("WIN32_LEAN_AND_MEAN", to: "1", .when(platforms: [.windows])),
+            .define("NOMINMAX", to: "1", .when(platforms: [.windows])),
           ],
           cxxSettings: [
             .headerSearchPath("../")
