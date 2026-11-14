@@ -30,6 +30,12 @@ their own contents, as upstream already does for `filesystem_apple.mm` and
 `src/util/config.h` also sets `HAVE_OPENSSL_RAND_H` for Windows under SwiftPM;
 upstream only knows Apple and Linux there, and builds Windows with CMake.
 
+`src/util/quadruple_builder.cc`: the 64-bit hex constants in
+`POS_POWERS_OF_2` and `NEG_POWERS_OF_2` end in `ULL` rather than `LL`. Clang on
+Windows follows MSVC and types a hex literal that doesn't fit `long long` as a
+negative `long long` rather than `unsigned long long`, so brace-initializing
+`uint64_t` with it is a narrowing error. The values are the same everywhere.
+
 `src/util/filesystem_posix.cc` builds on Android, where upstream has `#error`
 placeholders: the data directory is `$XDG_DATA_HOME` (or
 `$HOME/.local/share`), as on Linux, and the temporary directory `$TMPDIR` (or

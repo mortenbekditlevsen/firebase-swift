@@ -148,7 +148,13 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                // swift-nio-ssl's Swift layer doesn't support Windows; the
+                // Database uses URLSessionDatabaseTransport there.
+                .product(
+                    name: "NIOSSL",
+                    package: "swift-nio-ssl",
+                    condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .macCatalyst, .linux, .android])
+                ),
                 .product(
                     name: "NIOTransportServices",
                     package: "swift-nio-transport-services",

@@ -231,7 +231,8 @@ public final class Database:  Sendable {
 
     /**
      * Opens the WebSocket connections to the server: by default
-     * `NIODatabaseTransport` (`URLSessionDatabaseTransport` on watchOS). Set it
+     * `NIODatabaseTransport` (`URLSessionDatabaseTransport` on watchOS and
+     * Windows). Set it
      * to another transport, e.g. your own `DatabaseTransport`, before any
      * other usage of the Database instance.
      */

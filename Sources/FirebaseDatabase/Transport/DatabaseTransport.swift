@@ -18,7 +18,7 @@ import NIOCore
 /// Opens the WebSocket connections a `Database` talks to its server over.
 ///
 /// The Database uses `NIODatabaseTransport` by default (`URLSessionDatabaseTransport`
-/// on watchOS). Set `Database.transport` to use another one, e.g. your own.
+/// on watchOS and Windows). Set `Database.transport` to use another one, e.g. your own.
 ///
 /// A transport must:
 /// - throw from `withConnection` if connecting, TLS or the WebSocket upgrade fails;
@@ -135,9 +135,10 @@ public enum DatabaseTransportError: Error, Sendable {
 
 extension Database {
     /// The transport used by default: `NIODatabaseTransport`, or
-    /// `URLSessionDatabaseTransport` on watchOS.
+    /// `URLSessionDatabaseTransport` on watchOS and on Windows, where swift-nio-ssl
+    /// doesn't build.
     public static let defaultTransport: any DatabaseTransport = {
-        #if os(watchOS)
+        #if os(watchOS) || !canImport(NIOSSL)
             URLSessionDatabaseTransport()
         #else
             NIODatabaseTransport()
