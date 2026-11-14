@@ -16,6 +16,10 @@
 
 #include "Firestore/core/src/util/filesystem.h"
 
+// firebase-swift: SwiftPM can't leave this file out on Windows, as upstream's
+// CMake build does, so it guards itself; filesystem_win.cc is used there.
+#if !_WIN32
+
 #include <dirent.h>
 #include <pwd.h>
 #include <sys/stat.h>
@@ -301,3 +305,5 @@ std::unique_ptr<DirectoryIterator> DirectoryIterator::Create(
 }  // namespace util
 }  // namespace firestore
 }  // namespace firebase
+
+#endif  // !_WIN32

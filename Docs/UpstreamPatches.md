@@ -8,7 +8,7 @@ Re-apply these after pulling in a new upstream version.
 
 ## Firestore C++ core (`Sources/Firestore/core`)
 
-SwiftPM can't exclude files per platform, so Apple-only `.mm` files guard
+SwiftPM can't exclude files per platform, so platform-specific files guard
 their own contents, as upstream already does for `filesystem_apple.mm` and
 `status_apple.mm`:
 
@@ -18,6 +18,7 @@ their own contents, as upstream already does for `filesystem_apple.mm` and
 | `src/util/byte_stream_apple.mm` | `#if __APPLE__` |
 | `src/util/error_apple.mm` | `#if __APPLE__` |
 | `src/util/exception_apple.mm` | `#if __APPLE__` |
+| `src/util/filesystem_posix.cc` | `#if !_WIN32` (upstream guards only parts; `filesystem_win.cc` is used on Windows) |
 
 `Package.swift` exclusions that differ from upstream:
 
