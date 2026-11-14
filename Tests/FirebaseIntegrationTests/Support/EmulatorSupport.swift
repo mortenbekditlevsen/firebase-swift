@@ -130,11 +130,13 @@ struct EmulatorApp {
     database.useEmulator(withHost: address.host, port: address.port)
     // DATABASE_TRANSPORT picks another transport than the default.
     switch ProcessInfo.processInfo.environment["DATABASE_TRANSPORT"] {
-    #if canImport(Darwin)
     case "urlSession": database.transport = URLSessionDatabaseTransport()
+    #if canImport(Darwin)
     case "networkFramework": database.transport = NIOTSDatabaseTransport()
     #endif
+    #if !os(Windows)
     case "nio": database.transport = NIODatabaseTransport()
+    #endif
     default: break
     }
     return database
