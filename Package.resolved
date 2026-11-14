@@ -1,5 +1,5 @@
 {
-  "originHash" : "060fd04246cf02d5a6130da4dff0247fcbc3962294f8a98e900aee51280e0afb",
+  "originHash" : "fc4e33b9c785c054abb52323bc1c05679f358f6e91ddea0d0cd355f2a064a131",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
@@ -96,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio.git",
       "state" : {
-        "revision" : "f71c8d2a5e74a2c6d11a0fbe324774b5d6084237",
-        "version" : "2.99.0"
+        "revision" : "2f58d8ef84438d6517fc78bcea2f8527e3c72936",
+        "version" : "2.105.0"
       }
     },
     {

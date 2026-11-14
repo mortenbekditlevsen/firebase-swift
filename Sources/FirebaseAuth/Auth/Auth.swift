@@ -144,7 +144,7 @@ extension Auth: AuthInterop {
   /// it. Unsigned binaries (command line tools, test runners) can't, and keep the user in
   /// UserDefaults instead.
   static var storageProvider: AuthStorage.Type {
-    #if os(Linux) || os(Android)
+    #if !canImport(Security)
       AuthUserDefaults.self
     #else
       if AuthKeychainServices.isAvailable {
@@ -155,7 +155,7 @@ extension Auth: AuthInterop {
     #endif
   }
 
-  #if !os(Linux) && !os(Android)
+  #if canImport(Security)
     private static let keychainUnavailableWarning: Void = AuthLog.logWarning(
       code: "I-AUT000036",
       message: "This process can't use the keychain (it isn't signed with a keychain entitlement), " +

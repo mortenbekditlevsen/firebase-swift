@@ -25,7 +25,7 @@ class AuthSharedKeychainServices {
    @return The item of the given query. `nil`` if not exist.
    */
   func getItem(query: [String: Any]) throws -> Data? {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return nil
       #else
 
@@ -63,7 +63,7 @@ class AuthSharedKeychainServices {
    @return Whether the operation succeed.
    */
   func setItem(_ item: Data, withQuery query: [String: Any]) throws {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return
       #else
 
@@ -93,7 +93,7 @@ class AuthSharedKeychainServices {
    @return Whether the operation succeed.
    */
   func removeItem(query: [String: Any]) throws {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return
       #else
 

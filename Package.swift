@@ -45,7 +45,8 @@ let package = Package(
             traits: ["UnstableSortedCollections"]
         ),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
+        // 2.102.0: NIOPosix builds on Windows.
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
         // 2.37.3: builds with recent Windows SDKs (10.0.26100).
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.3"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.21.0"),
@@ -215,7 +216,7 @@ let package = Package(
             // Exclude alternate implementations for other platforms
             // connectivity_monitor_noop.cc is used on every platform for now.
             "core/src/remote/connectivity_monitor_apple.mm",
-            "core/src/util/filesystem_win.cc",
+            // filesystem_win.cc and filesystem_posix.cc guard themselves.
             // Use log_stdio.cc instead of log_apple.mm to avoid ObjC FirebaseCore dependency
             "core/src/util/log_apple.mm",
             // Exclude ObjC++ files that depend on ObjC FirebaseCore
