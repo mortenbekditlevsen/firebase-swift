@@ -64,14 +64,18 @@ jobs:
         # grpc-ios excludes "src/objective-c/" and "src/cpp/", and SwiftPM on
         # Windows ignores excludes that end in "/" (so PrivacyInfo.xcprivacy
         # gets two rules). Until firebase-swift uses a grpc-ios without them,
-        # build against an edited copy. The copy also defines NOMINMAX, as
-        # gRPC's CMake build does on Windows: windows.h's min and max macros
-        # break re2's min() and max().
+        # build against an edited copy. On Windows the copy also
+        # - defines NOMINMAX, as gRPC's CMake build does: windows.h's min and
+        #   max macros break re2's min() and max();
+        # - finds zlib's headers in its bundled copy (gRPC-Core compiles it)
+        #   and doesn't link a system zlib, which Windows doesn't have.
         run: |
           swift package edit grpc-ios
           sed -i \
             -e 's#"src/objective-c/"#"src/objective-c"#g; s#"src/cpp/"#"src/cpp"#g' \
             -e 's#\.headerSearchPath("src/core/ext/upbdefs-gen/"),#&\n        .define("NOMINMAX", .when(platforms: [.windows])),#' \
+            -e 's#\.headerSearchPath("third_party/re2/"),#&\n        .headerSearchPath("third_party/zlib", .when(platforms: [.windows])),#' \
+            -e 's#\.linkedLibrary("z"),#.linkedLibrary("z", .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .macCatalyst, .linux, .android])),#' \
             Packages/grpc-ios/Package.swift
           git -C Packages/grpc-ios diff
           swift build --target FirebaseFirestore
