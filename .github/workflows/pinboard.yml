@@ -1,0 +1,70 @@
+name: Pinboard
+
+# The Pinboard sample (Examples/Pinboard): builds the app and runs
+# pinboard-check, its flow without a window, on the Firebase emulators.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinboard:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+          - os: ubuntu-latest
+            container: swift:6.2
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    defaults:
+      run:
+        working-directory: Examples/Pinboard
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift --version
+      - name: Install GTK 4
+        if: runner.os == 'Linux'
+        run: apt-get update && apt-get install -y libgtk-4-dev
+      - uses: actions/cache@v4
+        with:
+          path: Examples/Pinboard/.build
+          key: pinboard-${{ runner.os }}-spm-${{ hashFiles('Examples/Pinboard/Package.resolved', 'Package.resolved') }}
+          restore-keys: pinboard-${{ runner.os }}-spm-
+      # The workaround in README.md ("Known issue: gRPC's copy of zlib"):
+      # without gRPC's copy of zlib, the app links next to SwiftCrossUI's.
+      - name: Use a grpc-ios without its copy of zlib
+        run: |
+          swift package edit grpc-ios
+          perl -pi -e 's#"third_party/zlib/LICENSE",#"third_party/zlib",#' Packages/grpc-ios/Package.swift
+          if git -C Packages/grpc-ios diff --quiet; then echo "The edit didn't apply"; exit 1; fi
+          git -C Packages/grpc-ios diff
+      # The products rather than everything: on Linux, a plain `swift build`
+      # also builds SwiftCrossUI's WinUI backend, which needs Windows.
+      - name: Build
+        run: |
+          swift build --product Pinboard
+          swift build --product pinboard-check
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('Examples/Pinboard/firebase.json') }}
+          restore-keys: firebase-emulators-${{ runner.os }}-
+      - run: npm install -g firebase-tools
+      - run: npm ci --prefix functions
+      - name: pinboard-check (Firebase emulators)
+        timeout-minutes: 15
+        run: firebase emulators:exec "PINBOARD_EMULATORS=1 swift run --skip-build pinboard-check"
