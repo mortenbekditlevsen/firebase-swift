@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     defaults:
       run:
         shell: bash
@@ -89,10 +89,13 @@ jobs:
 
       # Everything, gRPC's C++ included: building a target compiles only what
       # its modules need.
+      # Once, after a compile error, the build sat waiting for an hour; the
+      # step's own limit keeps that from using up the job.
       - name: Build tests
         id: buildtests
         if: steps.firestore.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 75
         run: swift build --build-tests
 
       # On Windows the Database connects with URLSessionDatabaseTransport
