@@ -177,21 +177,26 @@ private final class SilentServer: Sendable {
     private typealias SocketAddress = sockaddr
   #endif
 
+  // Not POSIXError: Windows's POSIX error codes lack EADDRNOTAVAIL.
+  enum Failure: Error {
+    case socket, bind
+  }
+
   private let descriptor: Descriptor
   let port: Int
 
   init() throws {
     #if os(Windows)
       var data = WSADATA()
-      guard WSAStartup(0x0202, &data) == 0 else { throw POSIXError(.EIO) }
+      guard WSAStartup(0x0202, &data) == 0 else { throw Failure.socket }
       let fd = socket(AF_INET, SOCK_STREAM, 0)
-      guard fd != INVALID_SOCKET else { throw POSIXError(.EIO) }
+      guard fd != INVALID_SOCKET else { throw Failure.socket }
     #elseif canImport(Glibc)
       let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
-      guard fd >= 0 else { throw POSIXError(.EIO) }
+      guard fd >= 0 else { throw Failure.socket }
     #else
       let fd = socket(AF_INET, SOCK_STREAM, 0)
-      guard fd >= 0 else { throw POSIXError(.EIO) }
+      guard fd >= 0 else { throw Failure.socket }
     #endif
     var address = SocketAddressIn()
     let loopback = UInt32(0x7F00_0001).bigEndian
@@ -211,7 +216,7 @@ private final class SilentServer: Sendable {
     }
     guard bound else {
       Self.close(fd)
-      throw POSIXError(.EADDRNOTAVAIL)
+      throw Failure.bind
     }
     descriptor = fd
     port = Int(UInt16(bigEndian: address.sin_port))
