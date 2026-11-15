@@ -84,6 +84,11 @@ jobs:
           sed -i \
             -e 's#\.define("OPENSSL_NO_ASM", to: "1"),#&\n        .define("_WINSOCKAPI_", .when(platforms: [.windows])),\n        .define("NOMINMAX", .when(platforms: [.windows])),\n        .define("NOCRYPT", .when(platforms: [.windows])),#' \
             Packages/boringssl-SwiftPM/Package.swift
+          # Its thread-exit callback has the same unprefixed name as the one in
+          # swift-crypto's BoringSSL (Windows only), so the two don't link
+          # together.
+          sed -i 's/p_thread_callback_boringssl/p_thread_callback_boringssl_grpc/g' \
+            Packages/boringssl-SwiftPM/crypto/thread_win.cc
           git -C Packages/boringssl-SwiftPM diff
           swift build --target FirebaseFirestore
 
