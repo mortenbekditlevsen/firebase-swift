@@ -21,9 +21,17 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct TransportConformanceTests {
     enum Kind: String, CaseIterable, CustomTestStringConvertible {
-        case nio
-        #if canImport(Darwin)
+        // swift-nio-ssl, which NIODatabaseTransport needs, doesn't build on
+        // Windows.
+        #if !os(Windows)
+            case nio
+        #endif
+        // Off Apple platforms, only the Windows toolchain's libcurl has
+        // WebSockets (see URLSessionDatabaseTransport).
+        #if canImport(Darwin) || os(Windows)
             case urlSession
+        #endif
+        #if canImport(Darwin)
             case networkFramework
         #endif
 
@@ -31,9 +39,13 @@ struct TransportConformanceTests {
 
         var transport: any DatabaseTransport {
             switch self {
-            case .nio: NIODatabaseTransport()
-            #if canImport(Darwin)
+            #if !os(Windows)
+                case .nio: NIODatabaseTransport()
+            #endif
+            #if canImport(Darwin) || os(Windows)
                 case .urlSession: URLSessionDatabaseTransport()
+            #endif
+            #if canImport(Darwin)
                 case .networkFramework: NIOTSDatabaseTransport()
             #endif
             }
