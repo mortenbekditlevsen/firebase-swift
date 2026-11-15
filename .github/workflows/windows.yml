@@ -96,7 +96,21 @@ jobs:
         if: steps.firestore.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 75
-        run: swift build --build-tests
+        # CNIOWindows.h's inline wrappers pass void pointers where WinSock
+        # takes char pointers, which C allows and C++ doesn't; so importing
+        # NIO (as FirebaseDatabase does) from a module with C++ interop fails.
+        run: |
+          swift package edit swift-nio
+          sed -i \
+            -e 's#return getsockopt(s, level, optname, optval,#return getsockopt(s, level, optname, (char *)optval,#' \
+            -e 's#return recv(s, buf,#return recv(s, (char *)buf,#' \
+            -e 's#return recvfrom(s, buf,#return recvfrom(s, (char *)buf,#' \
+            -e 's#return send(s, buf,#return send(s, (const char *)buf,#' \
+            -e 's#return setsockopt(s, level, optname, optval,#return setsockopt(s, level, optname, (const char *)optval,#' \
+            -e 's#return sendto(s, buf,#return sendto(s, (const char *)buf,#' \
+            Packages/swift-nio/Sources/CNIOWindows/include/CNIOWindows.h
+          git -C Packages/swift-nio diff
+          swift build --build-tests
 
       # On Windows the Database connects with URLSessionDatabaseTransport
       # (swift-nio-ssl doesn't build there), over swift-corelibs-foundation's
