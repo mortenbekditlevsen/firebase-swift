@@ -57,7 +57,21 @@ jobs:
       - name: FirebaseDatabase
         id: database
         continue-on-error: true
-        run: swift build --disable-default-traits --target FirebaseDatabase
+        # leveldb lists its sources as "db/", "util/" and so on, which SwiftPM
+        # on Windows ignores, so it compiled nothing. It also needs its Windows
+        # Env there instead of the POSIX one; SwiftPM can't exclude files per
+        # platform, so each guards itself. (Both Envs use the same port, and
+        # the Windows one calls the ANSI functions by name, so no defines.)
+        run: |
+          swift package edit leveldb
+          sed -i \
+            -e '/^ *"util\/env_windows\.cc",$/d' \
+            -e 's#^\( *\)"\(db\|port\|table\|util\|include\)/",$#\1"\2",#' \
+            Packages/leveldb/Package.swift
+          sed -i -e '1i #if !defined(_WIN32)' -e '$a #endif  // !defined(_WIN32)' Packages/leveldb/util/env_posix.cc
+          sed -i -e '1i #if defined(_WIN32)' -e '$a #endif  // defined(_WIN32)' Packages/leveldb/util/env_windows.cc
+          git -C Packages/leveldb diff
+          swift build --disable-default-traits --target FirebaseDatabase
       - name: FirebaseFirestore
         id: firestore
         continue-on-error: true
