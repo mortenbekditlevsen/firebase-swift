@@ -84,6 +84,11 @@ jobs:
         # - finds zlib's headers in its bundled copy (gRPC-Core compiles it)
         #   and doesn't link a system zlib, which Windows doesn't have.
         run: |
+          # abseil's sources are "absl/", which SwiftPM on Windows ignores
+          # (as leveldb's above), so it compiled nothing.
+          swift package edit abseil-cpp-swiftpm
+          sed -i 's#^\( *\)"absl/"$#\1"absl"#' Packages/abseil-cpp-SwiftPM/Package.swift
+          git -C Packages/abseil-cpp-SwiftPM diff
           swift package edit grpc-ios
           sed -i \
             -e 's#"src/objective-c/"#"src/objective-c"#g; s#"src/cpp/"#"src/cpp"#g' \
