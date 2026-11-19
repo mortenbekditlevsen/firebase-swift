@@ -14,7 +14,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # Not windows-latest: its Visual Studio's C++ library moves ahead of the
+    # Clang in Swift's toolchain (MSVC 14.52 wants Clang 22, Swift 6.3 has
+    # an older one). Visual Studio 2022's no longer changes.
+    runs-on: windows-2022
     timeout-minutes: 180
     defaults:
       run:
