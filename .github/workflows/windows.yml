@@ -113,6 +113,12 @@ jobs:
           # together.
           sed -i 's/p_thread_callback_boringssl/p_thread_callback_boringssl_grpc/g' \
             Packages/boringssl-SwiftPM/crypto/thread_win.cc
+          # It compiles its error tables from err_data.c, but err.cc (C++)
+          # declares them without extern "C". Elsewhere a variable's C++ name
+          # is its C name; on Windows it isn't. gen/crypto/err_data.cc is the
+          # same tables in C++.
+          sed -i 's#^\( *\)"err_data\.c",$#\1"gen/crypto/err_data.cc",#' \
+            Packages/boringssl-SwiftPM/Package.swift
           git -C Packages/boringssl-SwiftPM diff
           swift build --target FirebaseFirestore
 
