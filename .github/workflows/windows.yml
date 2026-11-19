@@ -85,9 +85,14 @@ jobs:
         #   and doesn't link a system zlib, which Windows doesn't have.
         run: |
           # abseil's sources are "absl/", which SwiftPM on Windows ignores
-          # (as leveldb's above), so it compiled nothing.
+          # (as leveldb's above), so it compiled nothing. On Windows it also
+          # needs the defines its own build uses there (absl/copts), NOMINMAX
+          # first: windows.h's max() macro breaks numeric_limits<>::max().
           swift package edit abseil-cpp-swiftpm
-          sed -i 's#^\( *\)"absl/"$#\1"absl"#' Packages/abseil-cpp-SwiftPM/Package.swift
+          sed -i \
+            -e 's#^\( *\)"absl/"$#\1"absl"#' \
+            -e 's#\.headerSearchPath("\./"),#&\n        .define("NOMINMAX", .when(platforms: [.windows])),\n        .define("WIN32_LEAN_AND_MEAN", .when(platforms: [.windows])),\n        .define("_CRT_SECURE_NO_WARNINGS", .when(platforms: [.windows])),\n        .define("_SCL_SECURE_NO_WARNINGS", .when(platforms: [.windows])),\n        .define("_ENABLE_EXTENDED_ALIGNED_STORAGE", .when(platforms: [.windows])),#' \
+            Packages/abseil-cpp-SwiftPM/Package.swift
           git -C Packages/abseil-cpp-SwiftPM diff
           swift package edit grpc-ios
           sed -i \
