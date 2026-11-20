@@ -71,14 +71,16 @@ public struct URLSessionDatabaseTransport: DatabaseTransport {
         }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                delegate.onOpen(continuation)
-                task.resume()
+                if delegate.onOpen(continuation) {
+                    task.resume()
+                }
             }
         } onCancel: {
-            // Not cancel(with:reason:): before the socket opens there's no
-            // one to send a close to, and swift-corelibs-foundation only
-            // queues one, leaving a stalled upgrade to run until it times out.
             task.cancel()
+            // swift-corelibs-foundation can't cancel a WebSocket task before
+            // it opens: cancel() only queues a close, and the upgrade runs
+            // until it times out. So stop waiting for it here.
+            delegate.cancelOpen()
         }
         // swift-corelibs-foundation opens the socket on any response, a 404
         // included, where Apple's URLSession fails the task
@@ -149,6 +151,7 @@ public struct URLSessionDatabaseTransport: DatabaseTransport {
 private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     private struct State {
         var open: CheckedContinuation<Void, any Error>?
+        var openCancelled = false
         var closedNormally = false
         var failure: (any Error)?
     }
@@ -158,8 +161,28 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     var closedNormally: Bool { state.withLock { $0.closedNormally } }
     var failure: (any Error)? { state.withLock { $0.failure } }
 
-    func onOpen(_ continuation: CheckedContinuation<Void, any Error>) {
-        state.withLock { $0.open = continuation }
+    /// Resumes `continuation` when the socket opens or fails. Returns false,
+    /// having resumed it, if the open was already cancelled.
+    func onOpen(_ continuation: CheckedContinuation<Void, any Error>) -> Bool {
+        let cancelled = state.withLock { state in
+            if state.openCancelled { return true }
+            state.open = continuation
+            return false
+        }
+        if cancelled {
+            continuation.resume(throwing: CancellationError())
+        }
+        return !cancelled
+    }
+
+    /// Ends the wait for the socket to open with `CancellationError`.
+    func cancelOpen() {
+        state.withLock { state in
+            state.openCancelled = true
+            let continuation = state.open
+            state.open = nil
+            return continuation
+        }?.resume(throwing: CancellationError())
     }
 
     private func resumeOpen(_ result: Swift.Result<Void, any Error>) {
