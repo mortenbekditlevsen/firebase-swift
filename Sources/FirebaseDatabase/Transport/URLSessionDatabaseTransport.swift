@@ -37,6 +37,8 @@ import Synchronization
 /// - A refused connection fails only when the request times out, after 60
 ///   seconds by default
 ///   (https://github.com/swiftlang/swift-corelibs-foundation/issues/5673).
+///
+/// So on Windows, the Database uses `WinHTTPDatabaseTransport` instead.
 public struct URLSessionDatabaseTransport: DatabaseTransport {
     private let configuration: @Sendable () -> URLSessionConfiguration
 
