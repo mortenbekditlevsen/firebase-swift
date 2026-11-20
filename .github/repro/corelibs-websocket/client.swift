@@ -27,6 +27,12 @@ final class Delegate: NSObject, URLSessionWebSocketDelegate {
                     didOpenWithProtocol protocol: String?) {
         print("didOpen, status \((webSocketTask.response as? HTTPURLResponse)?.statusCode ?? -1)")
     }
+    // Optional on Apple platforms, but swift-corelibs-foundation's default
+    // implementations aren't public.
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        print("didClose after \(elapsed()), code \(closeCode.rawValue)")
+    }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
         print("didComplete after \(elapsed()), error: \(error.map { "\($0)" } ?? "none")")
     }
