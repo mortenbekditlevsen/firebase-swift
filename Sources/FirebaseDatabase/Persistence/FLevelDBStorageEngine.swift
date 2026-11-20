@@ -111,6 +111,12 @@ class FLevelDBStorageEngine: FStorageEngine {
     }
 
     init(path: String) {
+        #if os(Windows)
+            // The path includes the database's host, with a port for the
+            // emulator (127.0.0.1:9000), and Windows file names can't have ':'
+            // (or any of <>"|?*).
+            let path = String(path.map { #"<>:"|?*"#.contains($0) ? "_" : $0 })
+        #endif
         self.basePath = FLevelDBStorageEngine.firebaseDir.appendingPathComponent(path)
         /* For reference:
          serverDataDB = [aPersistence createDbByName:@"server_data"];
