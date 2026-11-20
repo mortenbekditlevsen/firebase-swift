@@ -40,10 +40,9 @@ struct TransportConformanceTests {
 
         var testDescription: String { rawValue }
 
-        /// The kinds that join a message's fragments. swift-corelibs-foundation
-        /// (Windows) takes each fragment for a whole message, and one that ends
-        /// inside a character for invalid text, which crashes it: it removes
-        /// the transfer from inside libcurl's callback.
+        /// The kinds that join a message's fragments. A fragmented message
+        /// crashes swift-corelibs-foundation (Windows)
+        /// (https://github.com/swiftlang/swift-corelibs-foundation/issues/5670).
         static var joiningFragments: [Kind] {
             #if os(Windows)
                 allCases.filter { $0 != .urlSession }
@@ -168,7 +167,8 @@ struct TransportConformanceTests {
         let url = server.url("/echo")
         try await server.close()
         // swift-corelibs-foundation only fails a refused connection when the
-        // request times out (60 seconds by default), so give it a short one.
+        // request times out (60 seconds by default), so give it a short one
+        // (https://github.com/swiftlang/swift-corelibs-foundation/issues/5673).
         let transport: any DatabaseTransport = kind.isCorelibsURLSession
             ? URLSessionDatabaseTransport(configuration: {
                 let configuration = URLSessionConfiguration.default
@@ -198,6 +198,7 @@ struct TransportConformanceTests {
             try await connection.send(DatabaseFrame(message))
             return try await Self.first(connection)
         }
+        // https://github.com/swiftlang/swift-corelibs-foundation/issues/5671
         withKnownIssue("swift-corelibs-foundation delivers each 16 KB of a larger frame as a message") {
             #expect(reply == message)
         } when: {
