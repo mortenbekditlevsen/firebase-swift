@@ -1,0 +1,52 @@
+name: corelibs WebSocket repro
+
+# Runs .github/repro/corelibs-websocket on Windows (swift-corelibs-foundation)
+# and macOS (Apple's URLSession) for the issues filed with
+# swift-corelibs-foundation. Runs when the repro changes on a windows/ branch
+# (GitHub only starts workflows by hand from the default branch); remove it
+# once the issues are filed.
+on:
+  push:
+    branches: ['windows/**']
+    paths:
+      - .github/repro/corelibs-websocket/**
+      - .github/workflows/corelibs-websocket-repro.yml
+  workflow_dispatch:
+
+jobs:
+  repro:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: .github/repro/corelibs-websocket
+    steps:
+      - uses: actions/checkout@v5
+      - uses: compnerd/gha-setup-swift@v0.5.1
+        if: runner.os == 'Windows'
+        with:
+          swift-version: swift-6.3-release
+          swift-build: 6.3-RELEASE
+      - run: swift --version
+      - name: Build the client
+        run: swiftc client.swift -o client
+      - name: Run each route
+        # Without -e: a client that crashes is a result, not a failure.
+        run: |
+          set +e
+          python=$(command -v python3 || command -v python)
+          "$python" server.py &
+          server=$!
+          sleep 3
+          for route in /fragments-ascii /fragments /large /missing /refused; do
+            echo "::group::$route"
+            perl -e 'alarm 90; exec @ARGV' ./client "$route"
+            echo "exit code: $?"
+            echo "::endgroup::"
+          done
+          kill "$server"
