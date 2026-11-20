@@ -261,4 +261,18 @@ struct TransportConformanceTests {
         #expect(ContinuousClock.now - start < .seconds(2))
         try await server.close()
     }
+
+    /// A task that's already cancelled doesn't connect.
+    @Test(arguments: Kind.allCases)
+    func aCancelledTaskDoesntConnect(_ kind: Kind) async throws {
+        let server = try await TestWebSocketServer.start()
+        let start = ContinuousClock.now
+        let result = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await connect(kind, to: server.url("/echo")) { _ in "connected" }
+        }.result
+        #expect(throws: (any Error).self) { try result.get() }
+        #expect(ContinuousClock.now - start < .seconds(2))
+        try await server.close()
+    }
 }
