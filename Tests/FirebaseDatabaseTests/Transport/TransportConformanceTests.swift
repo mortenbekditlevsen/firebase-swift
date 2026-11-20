@@ -14,6 +14,9 @@
 
 @testable import FirebaseDatabase
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import Testing
 
 /// The `DatabaseTransport` contract, checked for each transport against a
@@ -46,6 +49,15 @@ struct TransportConformanceTests {
                 allCases.filter { $0 != .urlSession }
             #else
                 allCases
+            #endif
+        }
+
+        /// Whether this is URLSession from swift-corelibs-foundation (Windows).
+        var isCorelibsURLSession: Bool {
+            #if os(Windows)
+                return self == .urlSession
+            #else
+                return false
             #endif
         }
 
@@ -155,8 +167,17 @@ struct TransportConformanceTests {
         let server = try await TestWebSocketServer.start()
         let url = server.url("/echo")
         try await server.close()
+        // swift-corelibs-foundation only fails a refused connection when the
+        // request times out (60 seconds by default), so give it a short one.
+        let transport: any DatabaseTransport = kind.isCorelibsURLSession
+            ? URLSessionDatabaseTransport(configuration: {
+                let configuration = URLSessionConfiguration.default
+                configuration.timeoutIntervalForRequest = 5
+                return configuration
+            })
+            : kind.transport
         await #expect(throws: (any Error).self) {
-            try await connect(kind, to: url) { _ in }
+            try await connect(transport, to: url, headers: [:]) { _ in }
         }
     }
 
@@ -177,7 +198,11 @@ struct TransportConformanceTests {
             try await connection.send(DatabaseFrame(message))
             return try await Self.first(connection)
         }
-        #expect(reply == message)
+        withKnownIssue("swift-corelibs-foundation delivers each 16 KB of a larger frame as a message") {
+            #expect(reply == message)
+        } when: {
+            kind.isCorelibsURLSession
+        }
         try await server.close()
     }
 
