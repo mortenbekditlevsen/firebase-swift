@@ -150,6 +150,29 @@ jobs:
           git -C Packages/swift-nio diff
           swift build --build-tests
 
+      # Each test target on its own, so one that crashes doesn't hide the
+      # others. The rows go into the summary.
+      - name: Unit tests
+        id: unittests
+        if: steps.buildtests.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          failed=0
+          for target in FirebaseCoreTests FirebaseSharedTests FirebaseAuthTests FirebaseAppCheckTests \
+              FirebaseFunctionsTests FirebaseStorageTests FirebaseDatabaseTests FirebaseFirestoreTests; do
+            echo "::group::$target"
+            if swift test --skip-build --filter "^$target\."; then
+              result=success
+            else
+              result=failure
+              failed=1
+            fi
+            echo "::endgroup::"
+            echo "| $target | $result |" >> unit-tests.md
+          done
+          exit $failed
+
       # On Windows the Database connects with URLSessionDatabaseTransport
       # (swift-nio-ssl doesn't build there), over swift-corelibs-foundation's
       # WebSockets.
@@ -182,6 +205,7 @@ jobs:
           DATABASE: ${{ steps.database.outcome }}
           FIRESTORE: ${{ steps.firestore.outcome }}
           BUILDTESTS: ${{ steps.buildtests.outcome }}
+          UNITTESTS: ${{ steps.unittests.outcome }}
           DBTESTS: ${{ steps.dbtests.outcome }}
         run: |
           {
@@ -198,8 +222,15 @@ jobs:
             echo "| Tests | Result |"
             echo "|---|---|"
             echo "| Build (all targets and tests) | ${BUILDTESTS:-not run} |"
+            echo "| Unit tests | ${UNITTESTS:-not run} |"
             echo "| Database integration (emulator) | ${DBTESTS:-not run} |"
+            if [ -f unit-tests.md ]; then
+              echo
+              echo "| Unit test target | Result |"
+              echo "|---|---|"
+              cat unit-tests.md
+            fi
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          for outcome in "$CORE" "$AUTH" "$APPCHECK" "$FUNCTIONS" "$STORAGE" "$DATABASE" "$FIRESTORE" "$BUILDTESTS" "$DBTESTS"; do
+          for outcome in "$CORE" "$AUTH" "$APPCHECK" "$FUNCTIONS" "$STORAGE" "$DATABASE" "$FIRESTORE" "$BUILDTESTS" "$UNITTESTS" "$DBTESTS"; do
             [ "$outcome" = success ] || exit 1
           done
