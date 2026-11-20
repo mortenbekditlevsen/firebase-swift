@@ -1,0 +1,78 @@
+swift-nio on Windows: report WSAEWOULDBLOCK from recv, recvmsg, sendmsg,
+send and writev as would-block instead of an error.
+
+From https://github.com/apple/swift-nio/pull/3708 (for
+https://github.com/apple/swift-nio/issues/3702), unchanged. Without it a
+socket whose buffer fills fails its channel, so the tests' NIO servers cut
+responses short on Windows. windows.yml applies it; remove it once a swift-nio
+release has the fix, and require that release.
+
+diff --git a/Sources/NIOPosix/BSDSocketAPIWindows.swift b/Sources/NIOPosix/BSDSocketAPIWindows.swift
+index 02390bc0ab..f8e44453b0 100644
+--- a/Sources/NIOPosix/BSDSocketAPIWindows.swift
++++ b/Sources/NIOPosix/BSDSocketAPIWindows.swift
+@@ -294,7 +294,11 @@ extension NIOBSDSocket {
+     ) throws -> IOResult<size_t> {
+         let iResult: CInt = CNIOWindows_recv(s, buf, CInt(len), 0)
+         if iResult == SOCKET_ERROR {
+-            throw IOError(winsock: WSAGetLastError(), reason: "recv")
++            let error = WSAGetLastError()
++            if error == WSAEWOULDBLOCK {
++                return .wouldBlock(0)
++            }
++            throw IOError(winsock: error, reason: "recv")
+         }
+         return .processed(size_t(iResult))
+     }
+@@ -335,7 +339,11 @@ extension NIOBSDSocket {
+         var dwNumberOfBytesRecvd: DWORD = 0
+         // FIXME(compnerd) is the socket guaranteed to not be overlapped?
+         if WSARecvMsg(s, lpMsg, &dwNumberOfBytesRecvd, nil, nil) == SOCKET_ERROR {
+-            throw IOError(winsock: WSAGetLastError(), reason: "recvmsg")
++            let error = WSAGetLastError()
++            if error == WSAEWOULDBLOCK {
++                return .wouldBlock(0)
++            }
++            throw IOError(winsock: error, reason: "recvmsg")
+         }
+         return .processed(size_t(dwNumberOfBytesRecvd))
+     }
+@@ -359,7 +367,11 @@ extension NIOBSDSocket {
+             nil,
+             nil
+         ) == SOCKET_ERROR {
+-            throw IOError(winsock: WSAGetLastError(), reason: "sendmsg")
++            let error = WSAGetLastError()
++            if error == WSAEWOULDBLOCK {
++                return .wouldBlock(0)
++            }
++            throw IOError(winsock: error, reason: "sendmsg")
+         }
+         return .processed(size_t(NumberOfBytesSent))
+     }
+@@ -406,7 +418,11 @@ extension NIOBSDSocket {
+     ) throws -> IOResult<size_t> {
+         let iResult: CInt = CNIOWindows_send(s, buf, CInt(len), 0)
+         if iResult == SOCKET_ERROR {
+-            throw IOError(winsock: WSAGetLastError(), reason: "send")
++            let error = WSAGetLastError()
++            if error == WSAEWOULDBLOCK {
++                return .wouldBlock(0)
++            }
++            throw IOError(winsock: error, reason: "send")
+         }
+         return .processed(size_t(iResult))
+     }
+@@ -420,7 +436,11 @@ extension NIOBSDSocket {
+         let ptr = UnsafeMutablePointer(mutating: iovecs.baseAddress)
+         let result = WSASend(s, ptr, UInt32(iovecs.count), &bytesSent, 0, nil, nil)
+         if result == SOCKET_ERROR {
+-            throw IOError(winsock: WSAGetLastError(), reason: "WSASend")
++            let error = WSAGetLastError()
++            if error == WSAEWOULDBLOCK {
++                return .wouldBlock(0)
++            }
++            throw IOError(winsock: error, reason: "WSASend")
+         }
+         return .processed(Int(bytesSent))
+     }
