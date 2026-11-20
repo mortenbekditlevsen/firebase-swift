@@ -68,7 +68,10 @@ public struct URLSessionDatabaseTransport: DatabaseTransport {
                 task.resume()
             }
         } onCancel: {
-            task.cancel(with: .goingAway, reason: nil)
+            // Not cancel(with:reason:): before the socket opens there's no
+            // one to send a close to, and swift-corelibs-foundation only
+            // queues one, leaving a stalled upgrade to run until it times out.
+            task.cancel()
         }
         // swift-corelibs-foundation opens the socket on any response, a 404
         // included, where Apple's URLSession fails the task.
