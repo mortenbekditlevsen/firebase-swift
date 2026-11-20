@@ -6,6 +6,10 @@ name: Windows
 on:
   push:
     branches: ['windows/**']
+    # The corelibs WebSocket repro has its own workflow.
+    paths-ignore:
+      - .github/repro/**
+      - .github/workflows/corelibs-websocket-repro.yml
   workflow_dispatch:
 
 concurrency:
