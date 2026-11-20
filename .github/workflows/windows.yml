@@ -147,6 +147,9 @@ jobs:
             -e 's#return setsockopt(s, level, optname, optval,#return setsockopt(s, level, optname, (const char *)optval,#' \
             -e 's#return sendto(s, buf,#return sendto(s, (const char *)buf,#' \
             Packages/swift-nio/Sources/CNIOWindows/include/CNIOWindows.h
+          # The tests' NIO servers need swift-nio's Windows would-block fix
+          # (see the patch for where it's from).
+          git -C Packages/swift-nio apply ../../.github/patches/swift-nio-windows-wouldblock.patch
           git -C Packages/swift-nio diff
           swift build --build-tests
 
