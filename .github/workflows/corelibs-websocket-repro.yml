@@ -36,6 +36,9 @@ jobs:
       - name: Build the client
         run: swiftc client.swift -o client
       - name: Run each route
+        # Git Bash would turn the routes into Windows paths for client.exe.
+        env:
+          MSYS_NO_PATHCONV: 1
         # Without -e: a client that crashes is a result, not a failure.
         run: |
           set +e
