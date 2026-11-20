@@ -28,8 +28,15 @@ import Synchronization
 /// Off Apple platforms, swift-corelibs-foundation's WebSockets need a libcurl
 /// built with them. The Windows toolchain's curl is. In the swift:6.3 (Ubuntu
 /// 24.04) image connections never open, so use `NIODatabaseTransport` on Linux.
-/// swift-corelibs-foundation also doesn't join a message's WebSocket fragments:
-/// it takes each for a whole message.
+///
+/// swift-corelibs-foundation (Windows) also has these WebSocket bugs:
+/// - A fragmented message crashes the process
+///   (https://github.com/swiftlang/swift-corelibs-foundation/issues/5670).
+/// - A message over 16 KB arrives as several messages
+///   (https://github.com/swiftlang/swift-corelibs-foundation/issues/5671).
+/// - A refused connection fails only when the request times out, after 60
+///   seconds by default
+///   (https://github.com/swiftlang/swift-corelibs-foundation/issues/5673).
 public struct URLSessionDatabaseTransport: DatabaseTransport {
     private let configuration: @Sendable () -> URLSessionConfiguration
 
@@ -74,7 +81,8 @@ public struct URLSessionDatabaseTransport: DatabaseTransport {
             task.cancel()
         }
         // swift-corelibs-foundation opens the socket on any response, a 404
-        // included, where Apple's URLSession fails the task.
+        // included, where Apple's URLSession fails the task
+        // (https://github.com/swiftlang/swift-corelibs-foundation/issues/5672).
         if let response = task.response as? HTTPURLResponse, response.statusCode != 101 {
             throw DatabaseTransportError.upgradeRejected
         }
