@@ -135,12 +135,21 @@ let package = Package(
             exclude: ["LICENSE", "METADATA"]
         ),
 
+        // A WebSocket client over WinHTTP (Windows' HTTP client), for
+        // WinHTTPDatabaseTransport. Empty on other platforms.
+        .target(
+            name: "CWinHTTP",
+            path: "Sources/CWinHTTP",
+            linkerSettings: [.linkedLibrary("winhttp", .when(platforms: [.windows]))]
+        ),
+
         .target(
             name: "FirebaseDatabase",
             dependencies: [
                 "FirebaseCore",
                 "FirebaseShared",
                 "CLevelDB",
+                .target(name: "CWinHTTP", condition: .when(platforms: [.windows])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Atomics", package: "swift-atomics"),
                 .product(name: "SortedCollections", package: "swift-collections"),
@@ -149,7 +158,7 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 // swift-nio-ssl's Swift layer doesn't support Windows; the
-                // Database uses URLSessionDatabaseTransport there.
+                // Database uses WinHTTPDatabaseTransport there.
                 .product(
                     name: "NIOSSL",
                     package: "swift-nio-ssl",

@@ -37,6 +37,9 @@ struct TransportConformanceTests {
         #if canImport(Darwin)
             case networkFramework
         #endif
+        #if os(Windows)
+            case winHTTP
+        #endif
 
         var testDescription: String { rawValue }
 
@@ -70,6 +73,9 @@ struct TransportConformanceTests {
             #endif
             #if canImport(Darwin)
                 case .networkFramework: NIOTSDatabaseTransport()
+            #endif
+            #if os(Windows)
+                case .winHTTP: WinHTTPDatabaseTransport()
             #endif
             }
         }
@@ -214,6 +220,25 @@ struct TransportConformanceTests {
             try await Self.first(connection)
         }
         #expect(reply == "héllo wörld")
+        try await server.close()
+    }
+
+    /// An open connection waits for messages longer than connecting may take.
+    @Test(arguments: Kind.allCases)
+    func anIdleConnectionStaysOpen(_ kind: Kind) async throws {
+        let server = try await TestWebSocketServer.start()
+        // WinHTTP's timeouts bound the upgrade; with a short one, the message
+        // arrives only if they don't apply to the open connection.
+        var transport = kind.transport
+        #if os(Windows)
+            if kind == .winHTTP {
+                transport = WinHTTPDatabaseTransport(timeout: .seconds(1))
+            }
+        #endif
+        let reply = try await connect(transport, to: server.url("/later"), headers: [:]) { connection in
+            try await Self.first(connection)
+        }
+        #expect(reply == "later")
         try await server.close()
     }
 

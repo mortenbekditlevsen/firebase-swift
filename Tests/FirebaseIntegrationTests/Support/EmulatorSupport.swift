@@ -134,7 +134,9 @@ struct EmulatorApp {
     #if canImport(Darwin)
     case "networkFramework": database.transport = NIOTSDatabaseTransport()
     #endif
-    #if !os(Windows)
+    #if os(Windows)
+    case "winHTTP": database.transport = WinHTTPDatabaseTransport()
+    #else
     case "nio": database.transport = NIODatabaseTransport()
     #endif
     default: break
