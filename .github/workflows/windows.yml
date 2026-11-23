@@ -238,6 +238,16 @@ jobs:
             "\"$bash\" scripts/test-by-suite.sh FirebaseFirestoreIntegrationTests \"(Pipeline|QueryToPipeline|Search|RealtimePipeline).*\""
           exit $failed
 
+      # `swift test` hides how a test process ended; this runs the first
+      # test that dies on its own, with its exit code and stacks.
+      - name: Debug a crash
+        if: steps.integrationtests.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          firebase emulators:exec --project demo-firebase-swift --only firestore \
+            "pwsh -NoProfile -File .github/scripts/debug-crash.ps1 FirebaseFirestoreIntegrationTests.AggregationIntegrationTests/testAverageOverflow"
+
       - name: Crash stacks
         if: always() && steps.integrationtests.outcome != 'skipped'
         shell: pwsh
