@@ -190,6 +190,18 @@ jobs:
       # As ci.yml's, with the emulators started for each test target, so one
       # that crashes doesn't hide the others. The Firebase CLI runs the command
       # with cmd.exe: no ^ (its escape character), and | only inside quotes.
+      # The Firestore tests crash without a word on Windows; Windows Error
+      # Reporting keeps a minidump of each crash, for "Crash stacks".
+      - name: Keep crash dumps
+        if: steps.buildtests.outcome == 'success'
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:RUNNER_TEMP\dumps" -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 20 -Force | Out-Null
+
       - name: Integration tests
         id: integrationtests
         if: steps.buildtests.outcome == 'success'
@@ -225,6 +237,20 @@ jobs:
             --config Tests/Emulator/firebase.enterprise.json --only firestore \
             "\"$bash\" scripts/test-by-suite.sh FirebaseFirestoreIntegrationTests \"(Pipeline|QueryToPipeline|Search|RealtimePipeline).*\""
           exit $failed
+
+      - name: Crash stacks
+        if: always() && steps.integrationtests.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          $dumps = Get-ChildItem "$env:RUNNER_TEMP\dumps" -Filter *.dmp -ErrorAction SilentlyContinue
+          if (-not $dumps) { Write-Host "No crash dumps."; exit 0 }
+          $cdb = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe"
+          if (-not (Test-Path $cdb)) { Write-Host "No cdb at $cdb; dumps: $($dumps.Name)"; exit 0 }
+          foreach ($dump in $dumps) {
+            Write-Host "::group::$($dump.Name)"
+            & $cdb -z $dump.FullName -lines -c ".exr -1; .ecxr; kn 60; q"
+            Write-Host "::endgroup::"
+          }
 
       - name: Summary
         if: always()
