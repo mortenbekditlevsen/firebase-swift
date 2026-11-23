@@ -41,6 +41,10 @@ negative `long long` rather than `unsigned long long`, so brace-initializing
 POSIX's obsolete `scalb`, which Windows doesn't have. The exponent is an
 integer, so the result is the same.
 
+`src/util/log_stdio.cc` (the log outside Apple platforms) flushes stdout after
+each message. Piped stdout is fully buffered, so an assertion's message was
+lost when the process aborted right after logging it, as Windows CI showed.
+
 `src/util/filesystem_posix.cc` builds on Android, where upstream has `#error`
 placeholders: the data directory is `$XDG_DATA_HOME` (or
 `$HOME/.local/share`), as on Linux, and the temporary directory `$TMPDIR` (or
