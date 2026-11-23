@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Runs one XCTest test straight from the built test binary, where `swift test`
-# hides how the process ended: prints its exit code (an NTSTATUS for a crash),
-# then runs it again under cdb for the stacks of the C++ exceptions it throws
-# and of the crash or exit.
+# Runs one XCTest test straight from the built test binary under cdb, as
+# `swift test` hides how the process ended: prints the stacks of the C++
+# exceptions it throws and of the crash or exit.
 #
 #   pwsh -File .github/scripts/debug-crash.ps1 <Module.Class/testMethod>
 
@@ -34,11 +33,14 @@ $dirs = Get-ChildItem $swiftRoot -Recurse -Include XCTest.dll, Testing.dll -Erro
 Write-Host "Test libraries: $dirs"
 $env:Path = ((@($dirs) + $bin.DirectoryName) -join ';') + ';' + $env:Path
 
-Write-Host "Running $Test in $($bin.FullName)"
-& $bin.FullName $Test
-Write-Host ("Exit code: 0x{0:X8}" -f $LASTEXITCODE)
+Get-ChildItem $bin.DirectoryName -Filter *.pdb | Sort-Object Length -Descending |
+  Select-Object -First 5 | Format-Table Name, Length | Out-String | Write-Host
 
 $cdb = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe"
 if (-not (Test-Path $cdb)) { Write-Host "No cdb at $cdb"; exit 0 }
-# Logs each C++ throw and goes on; stops at a crash, or at the exit.
-& $cdb -lines -G -c 'sxe -c "kn 40; g" eh; bp ntdll!RtlExitUserProcess; g; .lastevent; .exr -1; kn 80; q' $bin.FullName $Test
+# Logs each C++ throw and goes on; stops at a crash, or at the exit. (The
+# binary's .xctest extension keeps it from running straight from PowerShell,
+# which would hand it to the shell.)
+$commands = 'sxe -c "kn 40; g" eh; bp ntdll!RtlExitUserProcess; g; .lastevent; .exr -1; ' +
+  '!sym noisy; kn 80; lm m firebase*; q'
+& $cdb -lines -G -y "$($bin.DirectoryName);srv*" -c $commands $bin.FullName $Test
