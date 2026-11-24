@@ -201,5 +201,5 @@ private func namedQueryTrampoline(context: UnsafeMutableRawPointer?,
                                   query: UnsafeMutableRawPointer?) {
   guard let context else { return }
   let box = Unmanaged<CallbackBox<NamedQueryHandler>>.fromOpaque(context).takeRetainedValue()
-  box.handler(takeBridge(query, as: CppQueryBridge.self))
+  box.handler(copyBridge(query, as: CppQueryBridge.self))
 }
