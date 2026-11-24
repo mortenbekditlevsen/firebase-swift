@@ -327,6 +327,8 @@ to deploy to your own.
 - [Docs/FirestoreStatus.md](Docs/FirestoreStatus.md) tracks Firestore's
   public API.
 
+Ideas for later work, not yet decided on, are in [Docs/Ideas.md](Docs/Ideas.md).
+
 ## License
 
 Apache 2.0, like the upstream SDK. See [LICENSE](LICENSE).
