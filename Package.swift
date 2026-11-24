@@ -45,22 +45,27 @@ let package = Package(
             traits: ["UnstableSortedCollections"]
         ),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
-        // 2.102.0: NIOPosix builds on Windows.
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
+        // 2.105.2 with two Windows fixes, until a release has them: casts in
+        // CNIOWindows.h, so modules with C++ interop can import NIO
+        // (apple/swift-nio#<casts PR>), and would-block on full socket
+        // buffers (apple/swift-nio#3708). See Docs/UpstreamPatches.md.
+        .package(url: "https://github.com/mortenbekditlevsen/swift-nio.git", branch: "windows-2.105.2"),
         // 2.37.3: builds with recent Windows SDKs (10.0.26100).
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.3"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.21.0"),
         .package(
             url: "https://github.com/mortenbekditlevsen/leveldb.git",
-            branch: "1.22.2-headerfix"
+            branch: "1.22.2-windows"
         ),
-        // The versions firebase-ios-sdk 13.1 pins; abseil with a Linux build fix.
-        // See Docs/UpstreamPatches.md.
+        // The versions firebase-ios-sdk 13.1 pins, with Linux and Windows
+        // build fixes. grpc-ios depends on abseil and BoringSSL itself; these
+        // take the place of its versions. See Docs/UpstreamPatches.md.
         .package(
             url: "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
-            branch: "linux-fixes-0.20250512.1"
+            branch: "windows-fixes-0.20250512.1"
         ),
-        .package(url: "https://github.com/grpc/grpc-ios.git", "1.83.1" ..< "1.84.0"),
+        .package(url: "https://github.com/mortenbekditlevsen/grpc-ios.git", branch: "windows-1.83.1"),
+        .package(url: "https://github.com/mortenbekditlevsen/boringSSL-SwiftPM.git", branch: "windows-0.41.0"),
         .package(
           url: "https://github.com/firebase/nanopb.git",
           "2.30910.0" ..< "2.30911.0"
