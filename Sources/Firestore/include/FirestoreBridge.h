@@ -31,8 +31,8 @@
 // errors as a `firebase::firestore::Error` code (0 means OK) plus a message.
 
 /// Callback for document snapshot results.
-/// snapshot: opaque pointer to a heap-allocated DocumentSnapshotBridge (caller
-/// owns), or null on error.
+/// snapshot: opaque pointer to a DocumentSnapshotBridge, valid during the call
+/// only (copy it), or null on error.
 typedef void (*DocumentSnapshotCallback)(
     void* context,
     void* snapshot,
@@ -47,8 +47,9 @@ typedef void (*QuerySnapshotCallback)(
     const char* error_message);
 
 /// Callback for aggregation results.
-/// results: opaque pointer to a heap-allocated BridgeFieldValueVector (caller
-/// owns) with one value per requested field, in order, or null on error.
+/// results: opaque pointer to a BridgeFieldValueVector, valid during the call
+/// only (copy it), with one value per requested field, in order, or null on
+/// error.
 typedef void (*AggregateCallback)(
     void* context,
     void* results,
@@ -91,8 +92,8 @@ typedef void (*LoadBundleProgressCallback)(
     const char* error_message);
 
 /// Callback for a named query.
-/// query: opaque pointer to a heap-allocated QueryBridge (caller owns), or
-/// null if there's no query by that name.
+/// query: opaque pointer to a QueryBridge, valid during the call only (copy
+/// it), or null if there's no query by that name.
 typedef void (*NamedQueryCallback)(void* context, void* query);
 
 // Forward declarations of internal API types (not exposed to Swift).
@@ -841,7 +842,8 @@ class TransactionBridge {
 };
 
 /// C-style callback for transaction update blocks.
-/// The transaction_ptr is an opaque pointer to a TransactionBridge on the heap.
+/// The transaction_ptr is an opaque pointer to a TransactionBridge, valid
+/// during the call only (copy it).
 /// The update block should call methods on it, then call
 /// completion(completion_context, code, message): code 0 to commit, anything
 /// else to abort the transaction without retrying.

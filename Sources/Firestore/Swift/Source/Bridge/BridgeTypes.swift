@@ -607,7 +607,7 @@ public final class __PipelineBridge: @unchecked Sendable {
   public func execute(completion: @escaping (__PipelineSnapshotBridge?, Error?) -> Void) {
     let db = self.db
     let handler: PipelineSnapshotHandler = { snapshot, error in
-      completion(takeBridge(snapshot, as: CppPipelineSnapshotBridge.self).map {
+      completion(copyBridge(snapshot, as: CppPipelineSnapshotBridge.self).map {
         __PipelineSnapshotBridge(cppBridge: $0, firestore: db)
       }, error)
     }
@@ -651,7 +651,7 @@ public final class __RealtimePipelineBridge: @unchecked Sendable {
   ) -> ListenerRegistration {
     let db = self.db
     let handler: PipelineSnapshotHandler = { snapshot, error in
-      listener(takeBridge(snapshot, as: CppRealtimePipelineSnapshotBridge.self).map {
+      listener(copyBridge(snapshot, as: CppRealtimePipelineSnapshotBridge.self).map {
         __RealtimePipelineSnapshotBridge(cppBridge: $0, firestore: db)
       }, error)
     }

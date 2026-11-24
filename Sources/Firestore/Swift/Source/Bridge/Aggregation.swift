@@ -190,6 +190,6 @@ private func aggregateCallbackTrampoline(
 ) {
   guard let context else { return }
   let box = Unmanaged<CallbackBox<AggregateHandler>>.fromOpaque(context).takeRetainedValue()
-  box.handler(takeBridge(results, as: CppBridgeFieldValueVector.self),
+  box.handler(copyBridge(results, as: CppBridgeFieldValueVector.self),
               firestoreError(code: code, message: message))
 }

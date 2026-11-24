@@ -131,16 +131,16 @@ struct PipelineAccess {
     bridge.firestore_ = std::move(firestore);
     return bridge;
   }
-  static PipelineSnapshotBridge* NewSnapshot(api::PipelineSnapshot snapshot) {
-    auto* bridge = new PipelineSnapshotBridge();
-    bridge->snapshot_ =
+  static PipelineSnapshotBridge MakeSnapshot(api::PipelineSnapshot snapshot) {
+    PipelineSnapshotBridge bridge;
+    bridge.snapshot_ =
         std::make_shared<api::PipelineSnapshot>(std::move(snapshot));
     return bridge;
   }
-  static RealtimePipelineSnapshotBridge* NewSnapshot(
+  static RealtimePipelineSnapshotBridge MakeSnapshot(
       api::RealtimePipelineSnapshot snapshot) {
-    auto* bridge = new RealtimePipelineSnapshotBridge();
-    bridge->snapshot_ =
+    RealtimePipelineSnapshotBridge bridge;
+    bridge.snapshot_ =
         std::make_shared<api::RealtimePipelineSnapshot>(std::move(snapshot));
     return bridge;
   }
@@ -1098,10 +1098,9 @@ void PipelineBridge::Execute(void* context,
           ReportError(callback, context, maybe_snapshot.status());
           return;
         }
-        callback(context,
-                 PipelineAccess::NewSnapshot(
-                     std::move(maybe_snapshot).ValueOrDie()),
-                 0, "");
+        auto snapshot =
+            PipelineAccess::MakeSnapshot(std::move(maybe_snapshot).ValueOrDie());
+        callback(context, &snapshot, 0, "");
       });
 }
 
@@ -1163,10 +1162,9 @@ ListenerRegistrationBridge PipelineBridge::AddRealtimeSnapshotListener(
         core::ViewSnapshot snapshot = std::move(maybe_snapshot).ValueOrDie();
         api::SnapshotMetadata metadata(snapshot.has_pending_writes(),
                                        snapshot.from_cache());
-        callback(owned.get(),
-                 PipelineAccess::NewSnapshot(api::RealtimePipelineSnapshot(
-                     db, std::move(snapshot), metadata)),
-                 0, "");
+        auto bridge = PipelineAccess::MakeSnapshot(api::RealtimePipelineSnapshot(
+            db, std::move(snapshot), metadata));
+        callback(owned.get(), &bridge, 0, "");
       });
 
   // `client()` requires a configured client; getting a batch configures it,
