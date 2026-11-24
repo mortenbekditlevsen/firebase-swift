@@ -45,10 +45,11 @@ let package = Package(
             traits: ["UnstableSortedCollections"]
         ),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
-        // 2.105.2 with two Windows fixes, until a release has them: casts in
+        // 2.105.2 with Windows fixes, until a release has them: casts in
         // CNIOWindows.h, so modules with C++ interop can import NIO
-        // (apple/swift-nio#<casts PR>), and would-block on full socket
-        // buffers (apple/swift-nio#3708). See Docs/UpstreamPatches.md.
+        // (apple/swift-nio#<casts PR>), and would-block from the socket calls
+        // (apple/swift-nio#3708, and the same for reads). See
+        // Docs/UpstreamPatches.md.
         .package(url: "https://github.com/mortenbekditlevsen/swift-nio.git", branch: "windows-2.105.2"),
         // 2.37.3: builds with recent Windows SDKs (10.0.26100).
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.3"),

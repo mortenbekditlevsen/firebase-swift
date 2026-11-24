@@ -218,14 +218,19 @@ exclude. Their forks name those directories without the "/".
   Windows names them differently from C. Offered upstream as
   firebase/boringssl-SwiftPM#<boringssl PR>.
 - **swift-nio:** 2.105.2 from `mortenbekditlevsen/swift-nio`, branch
-  `windows-2.105.2`, with two Windows fixes:
+  `windows-2.105.2`, with three Windows fixes:
   - casts in `CNIOWindows.h`, whose wrappers pass `void *` where WinSock
     takes `char *`. C++ doesn't allow that, so modules with C++ interop (as
     FirebaseDatabase's dependents) couldn't import NIO
     (apple/swift-nio#<nio PR>);
   - apple/swift-nio#3708 (for issue #3702), which reports `WSAEWOULDBLOCK`
     as would-block instead of an error. Without it, a socket whose buffer
-    fills fails its channel, so the tests' NIO servers cut responses short.
+    fills fails its channel, so the tests' NIO servers cut responses short;
+  - the same for `Windows.recv`, which stream sockets read with and which
+    #3708 leaves out. NIO reads again after a read that fills its buffer, so
+    when the data ends exactly at the buffer's end, the next read failed the
+    channel: large messages failed intermittently (`carriesLargeMessages`
+    with the WinHTTP transport). Not offered upstream yet.
 - **C++ standard:** `Package.swift` sets `cxxLanguageStandard: .gnucxx17`,
   as upstream 13.x does, and abseil and grpc-ios build as C++17 too. They
   must agree: abseil defines its own `absl::string_view` below C++17, so a
