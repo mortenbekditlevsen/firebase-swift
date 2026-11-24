@@ -83,16 +83,22 @@ enum ProbeScenario: String, CaseIterable, Identifiable, Codable, Sendable {
 struct ProbeEvent: Codable, Identifiable, Sendable {
     enum Kind: String, Codable, Sendable {
         case started, background, foreground, connected, disconnected
-        case sentNonce, receivedNonce, timedOut, pathChanged, failed
+        case testStarted, sentNonce, receivedNonce, timedOut, pathChanged, failed
     }
 
+    /// The log format. Logs from before versions have none. 2: tests start
+    /// with `testStarted` (and also on network changes), every path update is
+    /// logged, and disconnects after a network change aren't spurious.
+    static let currentVersion = 2
+
+    var version: Int? = currentVersion
     var id = UUID()
     var date = Date()
     var transport: ProbeTransport
     var scenario: ProbeScenario
     var kind: Kind
-    /// Milliseconds since the app came to the foreground, for the events of a
-    /// foreground test.
+    /// Milliseconds since the test started (on returning to the foreground,
+    /// on a network change, or with Test now), for a test's events.
     var sinceForeground: Double?
     var network: String
     var lowPowerMode: Bool
@@ -100,9 +106,10 @@ struct ProbeEvent: Codable, Identifiable, Sendable {
 }
 
 /// Runs the probe: keeps a connection with the chosen transport, and on each
-/// return to the foreground checks how long until the connection delivers a
-/// change written meanwhile over REST (which a dead connection never does,
-/// though `.info/connected` may still say it's connected).
+/// return to the foreground (and network change) checks how long until the
+/// connection delivers a change written meanwhile over REST (which a dead
+/// connection never does, though `.info/connected` may still say it's
+/// connected).
 @MainActor
 @Observable
 final class ProbeModel {
@@ -139,9 +146,13 @@ final class ProbeModel {
     /// The app for each transport and database URL.
     private var appNames: [String: String] = [:]
     private var database: Database?
-    /// The test in progress: its nonce and when the app came to the foreground.
+    /// The test in progress: its nonce and when it started.
     private var pending: (nonce: String, foreground: ContinuousClock.Instant, timeout: Task<Void, Never>)?
     private var inForeground = true
+    /// When the network path last changed (not counting the first path).
+    private var lastPathChange: ContinuousClock.Instant?
+    /// How long after a network change a disconnect is put down to it.
+    private let networkChangeGrace = Duration.seconds(60)
     private let pathMonitor = NWPathMonitor()
     private let signposter = OSSignposter(subsystem: "dev.firebase-swift.BackgroundProbe", category: "Probe")
     private var signpostState: OSSignpostIntervalState?
@@ -241,7 +252,7 @@ final class ProbeModel {
         inForeground = true
         record(.foreground)
         guard isRunning else { return }
-        Task { await sendNonce() }
+        Task { await sendNonce(trigger: "foreground") }
     }
 
     func sceneEnteredBackground() {
@@ -250,11 +261,13 @@ final class ProbeModel {
     }
 
     /// Writes a nonce over REST, and starts waiting for the connection to
-    /// deliver it.
-    func sendNonce() async {
+    /// deliver it. `trigger` says what started the test: "foreground",
+    /// "network change" or "Test now".
+    func sendNonce(trigger: String) async {
         guard let target = Target(databaseURL) else { return }
         let nonce = UUID().uuidString
         let foreground = ContinuousClock.now
+        record(.testStarted, detail: trigger)
         pending?.timeout.cancel()
         let timeout = Task { [weak self, timeout = self.timeout] in
             try? await Task.sleep(for: timeout)
@@ -295,14 +308,29 @@ final class ProbeModel {
         guard connected != isConnected else { return }
         isConnected = connected
         // A disconnect in the foreground, without a network change, is spurious.
-        record(connected ? .connected : .disconnected, since: pending?.foreground,
-               detail: connected || !inForeground ? nil : "while in the foreground")
+        var detail: String?
+        if !connected, inForeground {
+            if let lastPathChange, ContinuousClock.now - lastPathChange < networkChangeGrace {
+                detail = "after a network change"
+            } else {
+                detail = "while in the foreground"
+            }
+        }
+        record(connected ? .connected : .disconnected, since: pending?.foreground, detail: detail)
     }
 
+    /// Logs each path update but the first (the path at launch), and starts a
+    /// test when the app is in the foreground and online. An update can keep
+    /// the interface (Wi-Fi staying on in airplane mode, say).
     private func pathChanged(_ description: String) {
-        guard description != network else { return }
+        let first = network == "unknown"
+        let previous = network
         network = description
-        record(.pathChanged, detail: description)
+        guard !first else { return }
+        lastPathChange = .now
+        record(.pathChanged, detail: description == previous ? "\(description) (same interface)" : description)
+        guard isRunning, inForeground, pending == nil, description != "offline" else { return }
+        Task { await sendNonce(trigger: "network change") }
     }
 
     private func record(_ kind: ProbeEvent.Kind, since start: ContinuousClock.Instant? = nil, detail: String? = nil) {
@@ -350,7 +378,9 @@ final class ProbeModel {
                 transport: first.transport, scenario: first.scenario, tests: times.count + timeouts,
                 medianMilliseconds: times.isEmpty ? nil : times[times.count / 2], worstMilliseconds: times.last,
                 timeouts: timeouts,
-                spuriousDisconnects: events.filter { $0.kind == .disconnected && $0.detail?.contains("foreground") == true }.count
+                spuriousDisconnects: events.filter {
+                    $0.kind == .disconnected && $0.detail?.hasPrefix("while in the foreground") == true
+                }.count
             )
         }
         .sorted { ($0.transport.rawValue, $0.scenario.rawValue) < ($1.transport.rawValue, $1.scenario.rawValue) }
