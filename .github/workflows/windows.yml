@@ -60,70 +60,11 @@ jobs:
       - name: FirebaseDatabase
         id: database
         continue-on-error: true
-        # leveldb lists its sources as "db/", "util/" and so on, which SwiftPM
-        # on Windows ignores, so it compiled nothing. It also needs its Windows
-        # Env there instead of the POSIX one; SwiftPM can't exclude files per
-        # platform, so each guards itself. (Both Envs use the same port, and
-        # the Windows one calls the ANSI functions by name, so no defines.)
-        run: |
-          swift package edit leveldb
-          sed -i \
-            -e '/^ *"util\/env_windows\.cc",$/d' \
-            -e 's#^\( *\)"\(db\|port\|table\|util\|include\)/",$#\1"\2",#' \
-            Packages/leveldb/Package.swift
-          sed -i -e '1i #if !defined(_WIN32)' -e '$a #endif  // !defined(_WIN32)' Packages/leveldb/util/env_posix.cc
-          sed -i -e '1i #if defined(_WIN32)' -e '$a #endif  // defined(_WIN32)' Packages/leveldb/util/env_windows.cc
-          git -C Packages/leveldb diff
-          swift build --disable-default-traits --target FirebaseDatabase
+        run: swift build --disable-default-traits --target FirebaseDatabase
       - name: FirebaseFirestore
         id: firestore
         continue-on-error: true
-        # grpc-ios excludes "src/objective-c/" and "src/cpp/", and SwiftPM on
-        # Windows ignores excludes that end in "/" (so PrivacyInfo.xcprivacy
-        # gets two rules). Until firebase-swift uses a grpc-ios without them,
-        # build against an edited copy. On Windows the copy also
-        # - defines NOMINMAX, as gRPC's CMake build does: windows.h's min and
-        #   max macros break re2's min() and max();
-        # - finds zlib's headers in its bundled copy (gRPC-Core compiles it)
-        #   and doesn't link a system zlib, which Windows doesn't have.
-        run: |
-          # abseil's sources are "absl/", which SwiftPM on Windows ignores
-          # (as leveldb's above), so it compiled nothing. On Windows it also
-          # needs the defines its own build uses there (absl/copts), NOMINMAX
-          # first: windows.h's max() macro breaks numeric_limits<>::max().
-          swift package edit abseil-cpp-swiftpm
-          sed -i \
-            -e 's#^\( *\)"absl/"$#\1"absl"#' \
-            -e 's#\.headerSearchPath("\./"),#&\n        .define("NOMINMAX", .when(platforms: [.windows])),\n        .define("WIN32_LEAN_AND_MEAN", .when(platforms: [.windows])),\n        .define("_CRT_SECURE_NO_WARNINGS", .when(platforms: [.windows])),\n        .define("_SCL_SECURE_NO_WARNINGS", .when(platforms: [.windows])),\n        .define("_ENABLE_EXTENDED_ALIGNED_STORAGE", .when(platforms: [.windows])),#' \
-            Packages/abseil-cpp-SwiftPM/Package.swift
-          git -C Packages/abseil-cpp-SwiftPM diff
-          swift package edit grpc-ios
-          sed -i \
-            -e 's#"src/objective-c/"#"src/objective-c"#g; s#"src/cpp/"#"src/cpp"#g' \
-            -e 's#\.headerSearchPath("src/core/ext/upbdefs-gen/"),#&\n        .define("NOMINMAX", .when(platforms: [.windows])),#' \
-            -e 's#\.headerSearchPath("third_party/re2/"),#&\n        .headerSearchPath("third_party/zlib", .when(platforms: [.windows])),#' \
-            -e 's#\.linkedLibrary("z"),#.linkedLibrary("z", .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .macCatalyst, .linux, .android])),#' \
-            Packages/grpc-ios/Package.swift
-          git -C Packages/grpc-ios diff
-          # gRPC's BoringSSL needs the Windows defines swift-nio-ssl 2.37.3 added
-          # to its copy: windows.h's winsock.h clashes with winsock2.h otherwise.
-          swift package edit boringssl-swiftpm
-          sed -i \
-            -e 's#\.define("OPENSSL_NO_ASM", to: "1"),#&\n        .define("_WINSOCKAPI_", .when(platforms: [.windows])),\n        .define("NOMINMAX", .when(platforms: [.windows])),\n        .define("NOCRYPT", .when(platforms: [.windows])),#' \
-            Packages/boringssl-SwiftPM/Package.swift
-          # Its thread-exit callback has the same unprefixed name as the one in
-          # swift-crypto's BoringSSL (Windows only), so the two don't link
-          # together.
-          sed -i 's/p_thread_callback_boringssl/p_thread_callback_boringssl_grpc/g' \
-            Packages/boringssl-SwiftPM/crypto/thread_win.cc
-          # It compiles its error tables from err_data.c, but err.cc (C++)
-          # declares them without extern "C". Elsewhere a variable's C++ name
-          # is its C name; on Windows it isn't. gen/crypto/err_data.cc is the
-          # same tables in C++.
-          sed -i 's#^\( *\)"err_data\.c",$#\1"gen/crypto/err_data.cc",#' \
-            Packages/boringssl-SwiftPM/Package.swift
-          git -C Packages/boringssl-SwiftPM diff
-          swift build --target FirebaseFirestore
+        run: swift build --target FirebaseFirestore
 
       # Everything, gRPC's C++ included: building a target compiles only what
       # its modules need.
@@ -134,24 +75,7 @@ jobs:
         if: steps.firestore.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 75
-        # CNIOWindows.h's inline wrappers pass void pointers where WinSock
-        # takes char pointers, which C allows and C++ doesn't; so importing
-        # NIO (as FirebaseDatabase does) from a module with C++ interop fails.
-        run: |
-          swift package edit swift-nio
-          sed -i \
-            -e 's#return getsockopt(s, level, optname, optval,#return getsockopt(s, level, optname, (char *)optval,#' \
-            -e 's#return recv(s, buf,#return recv(s, (char *)buf,#' \
-            -e 's#return recvfrom(s, buf,#return recvfrom(s, (char *)buf,#' \
-            -e 's#return send(s, buf,#return send(s, (const char *)buf,#' \
-            -e 's#return setsockopt(s, level, optname, optval,#return setsockopt(s, level, optname, (const char *)optval,#' \
-            -e 's#return sendto(s, buf,#return sendto(s, (const char *)buf,#' \
-            Packages/swift-nio/Sources/CNIOWindows/include/CNIOWindows.h
-          # The tests' NIO servers need swift-nio's Windows would-block fix
-          # (see the patch for where it's from).
-          git -C Packages/swift-nio apply ../../.github/patches/swift-nio-windows-wouldblock.patch
-          git -C Packages/swift-nio diff
-          swift build --build-tests
+        run: swift build --build-tests
 
       # Each test target on its own, so one that crashes doesn't hide the
       # others. The rows go into the summary.
@@ -190,18 +114,6 @@ jobs:
       # As ci.yml's, with the emulators started for each test target, so one
       # that crashes doesn't hide the others. The Firebase CLI runs the command
       # with cmd.exe: no ^ (its escape character), and | only inside quotes.
-      # The Firestore tests crash without a word on Windows; Windows Error
-      # Reporting keeps a minidump of each crash, for "Crash stacks".
-      - name: Keep crash dumps
-        if: steps.buildtests.outcome == 'success'
-        shell: pwsh
-        run: |
-          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps'
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:RUNNER_TEMP\dumps" -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 20 -Force | Out-Null
-
       - name: Integration tests
         id: integrationtests
         if: steps.buildtests.outcome == 'success'
@@ -247,20 +159,6 @@ jobs:
         run: |
           firebase emulators:exec --project demo-firebase-swift --only firestore \
             "pwsh -NoProfile -File .github/scripts/debug-crash.ps1 FirebaseFirestoreIntegrationTests.AggregationIntegrationTests/testAverageOverflow"
-
-      - name: Crash stacks
-        if: always() && steps.integrationtests.outcome != 'skipped'
-        shell: pwsh
-        run: |
-          $dumps = Get-ChildItem "$env:RUNNER_TEMP\dumps" -Filter *.dmp -ErrorAction SilentlyContinue
-          if (-not $dumps) { Write-Host "No crash dumps."; exit 0 }
-          $cdb = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe"
-          if (-not (Test-Path $cdb)) { Write-Host "No cdb at $cdb; dumps: $($dumps.Name)"; exit 0 }
-          foreach ($dump in $dumps) {
-            Write-Host "::group::$($dump.Name)"
-            & $cdb -z $dump.FullName -lines -c ".exr -1; .ecxr; kn 60; q"
-            Write-Host "::endgroup::"
-          }
 
       - name: Summary
         if: always()
