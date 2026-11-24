@@ -97,7 +97,7 @@
       "location" : "https://github.com/mortenbekditlevsen/swift-nio.git",
       "state" : {
         "branch" : "windows-2.105.2",
-        "revision" : "42578bb4c3824303f40a0d3e7618adf91347235d"
+        "revision" : "7704c739c8fc8b2cc77b8c2dfdf666af5178fe6b"
       }
     },
     {
