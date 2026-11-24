@@ -1,7 +1,7 @@
 # firebase-swift
 
 A Swift port of the [Firebase Apple SDK](https://github.com/firebase/firebase-ios-sdk)
-(release 13.1.1) that runs on Apple platforms, Linux and Android. There is no
+(release 13.1.1) that runs on Apple platforms, Linux, Android and Windows. There is no
 Objective-C: Auth, Database, Functions, Storage and App Check are written in
 Swift, and Firestore wraps upstream's C++ core through Swift's C++
 interoperability.
@@ -32,8 +32,9 @@ Analytics, Messaging, Remote Config and the other SDKs aren't ported.
 | tvOS, Mac Catalyst, watchOS | 18, 18, 11 | build |
 | Linux | Swift 6.2 | build, unit and emulator tests |
 | Android | Swift 6.3 SDK for Android, API 28 | build, unit tests on an emulator |
+| Windows | Swift 6.3, Visual Studio 2022 | build, unit and emulator tests ([notes](#windows)) |
 
-Windows hasn't been tried. The Apple minimums are the first releases with
+The Apple minimums are the first releases with
 the Synchronization module's `Mutex`, which the SDKs use for their state.
 
 ## Installation
@@ -244,11 +245,14 @@ Realtime Database talks to its server over a WebSocket, opened by a
 `DatabaseTransport`. There are three:
 
 - `NIODatabaseTransport`: SwiftNIO on POSIX sockets, with swift-nio-ssl. The
-  default, except on watchOS.
+  default, except on watchOS and Windows.
 - `NIOTSDatabaseTransport` (Apple platforms): SwiftNIO on Network.framework,
   with the system's TLS. When the system finds a better network path (Wi-Fi
   after cellular), it reconnects on it.
-- `URLSessionDatabaseTransport` (Apple platforms): the default on watchOS.
+- `URLSessionDatabaseTransport` (Apple platforms and Windows): the default on
+  watchOS.
+- `WinHTTPDatabaseTransport` (Windows): WinHTTP, Windows' own HTTP client,
+  with its TLS and the system's proxy settings. The default on Windows.
 
 Whichever it is, the client reconnects with a backoff when a connection
 fails, at once when the network changes or the app returns to the
@@ -301,6 +305,39 @@ look up an app's storage directories, so set these before using Firebase:
 `google-services.json` is compiled into Android resources and can't be read as
 a file at run time. Pass its contents in `FIREBASE_OPTIONS`, or copy it to the
 files directory and use `FirebaseOptions(contentsOfFile:)`.
+
+## Windows
+
+Build with Swift 6.3 and the C++ library of Visual Studio 2022 (MSVC 14.4x).
+Later Visual Studio releases' C++ library requires a newer Clang than Swift
+6.3 has, and Swift 6.2's Clang is too old for Visual Studio 2022's.
+
+gRPC and Abseil have paths longer than Windows' default limit, so turn on
+long paths for Git before SwiftPM fetches them:
+
+```sh
+git config --global core.longpaths true
+```
+
+- **Realtime Database** connects with `WinHTTPDatabaseTransport`. swift-nio-ssl
+  doesn't build on Windows, so `NIODatabaseTransport` isn't available.
+  `URLSessionDatabaseTransport` works, but swift-corelibs-foundation's
+  WebSocket client splits messages over 16 KB
+  ([#5671](https://github.com/swiftlang/swift-corelibs-foundation/issues/5671))
+  and crashes on fragmented ones
+  ([#5670](https://github.com/swiftlang/swift-corelibs-foundation/issues/5670)).
+- **Caches:** the Realtime Database keeps its cache in a `firebase` folder in
+  the user's Documents folder. Firestore keeps its cache in the local
+  application data folder (`%LOCALAPPDATA%`), as upstream's C++ core does.
+- **Dependencies:** leveldb, Abseil, gRPC, gRPC's BoringSSL and SwiftNIO come
+  from forks with Windows build fixes, until the fixes are released upstream
+  (see [Docs/UpstreamPatches.md](Docs/UpstreamPatches.md#dependencies)).
+- **Debugging:** the toolchain writes DWARF debug info, which WinDbg and the
+  Visual Studio debugger can't read. `llvm-symbolizer` from the toolchain
+  can; `.github/scripts/debug-crash.ps1` runs a test under `cdb` and names its
+  frames that way.
+
+The sample app hasn't been tried on Windows yet.
 
 ## Sample app
 
