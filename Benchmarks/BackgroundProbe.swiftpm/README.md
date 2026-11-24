@@ -32,15 +32,16 @@ transport had that problem in #14188, #13877 and #13855.
    Signing & Capabilities set your team. Then run it on the phone.
 3. Enter the URL, pick a transport and tap **Start**.
 4. Pick a scenario, do what it says, and come back. Each return to the
-   foreground is one test. Repeat each scenario a few times for each transport,
+   foreground is one test, and so is each network change while the app is
+   open. Repeat each scenario a few times for each transport,
    and switch scenarios and transports in the app as you go.
 
 | Scenario | What to do |
 |---|---|
 | Background 30 s, 5 min, 30 min | Leave the app for that long, then open it again |
 | Screen off 10 min | Lock the phone with the app open, unlock it after 10 minutes |
-| Wi-Fi → cellular, cellular → Wi-Fi | Turn Wi-Fi off or on in Control Center with the app open, then tap **Test now** |
-| Airplane mode | On for a minute, then off, with the app open; then **Test now** |
+| Wi-Fi → cellular, cellular → Wi-Fi | Turn Wi-Fi off or on in Control Center with the app open |
+| Airplane mode | On for a minute, then off, with the app open |
 | Low Power Mode | Turn it on, then repeat a background scenario |
 
 ## Results
@@ -50,14 +51,21 @@ The **Results** section shows, for each transport and scenario:
 - the median and worst time until the change arrived;
 - how many tests got nothing within 60 seconds ("never recovered");
 - spurious disconnects: `.info/connected` going false while the app was in the
-  foreground.
+  foreground, other than within a minute of a network change.
+
+**Test now** starts a test by hand.
 
 **Share the log** exports every event as JSON Lines (`probe-log.jsonl`). Each
 line carries:
 - the transport and scenario;
 - the network (Wi-Fi, cellular, offline);
 - whether Low Power Mode was on;
-- the milliseconds since the app came to the foreground.
+- for a test's events, the milliseconds since the test started;
+- the log format's `version` (none before version 2, which added the
+  `testStarted` events, tests on network changes, and every path update).
+
+A test starts with a `testStarted` event, whose detail says what started it:
+`foreground`, `network change` or `Test now`.
 
 The events are also signposts (subsystem `dev.firebase-swift.BackgroundProbe`),
 so you can watch them in Instruments.
