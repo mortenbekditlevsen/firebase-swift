@@ -125,6 +125,7 @@ jobs:
           # emulators:exec hands its command to cmd.exe, so the script
           # needs Git Bash named; it runs one suite at a time (see there).
           bash=$(cygpath -w "$BASH")
+          export TEST_EVENTS=test-events
           failed=0
           run() {
             local name=$1
@@ -149,6 +150,29 @@ jobs:
             --config Tests/Emulator/firebase.enterprise.json --only firestore \
             "\"$bash\" scripts/test-by-suite.sh FirebaseFirestoreIntegrationTests \"(Pipeline|QueryToPipeline|Search|RealtimePipeline).*\""
           exit $failed
+
+      # The step's output appears only when a batch ends, so a batch that
+      # hangs until the timeout shows nothing; its events show where it was.
+      - name: Unfinished tests
+        if: steps.integrationtests.outcome == 'failure'
+        continue-on-error: true
+        shell: python
+        run: |
+          import glob, json
+          for path in sorted(glob.glob("test-events/*.jsonl")):
+              running = set()
+              with open(path, encoding="utf-8") as file:
+                  for line in file:
+                      record = json.loads(line)
+                      payload = record["payload"]
+                      if record["kind"] != "event" or "testID" not in payload:
+                          continue
+                      if payload["kind"] == "testStarted":
+                          running.add(payload["testID"])
+                      elif payload["kind"] == "testEnded":
+                          running.discard(payload["testID"])
+              for test in running:
+                  print(f"{path}: {test} started and never ended")
 
       # `swift test` hides how a test process ended; this runs the first
       # test that dies on its own, with its exit code and stacks.

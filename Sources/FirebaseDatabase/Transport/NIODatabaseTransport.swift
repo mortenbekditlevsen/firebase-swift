@@ -186,7 +186,9 @@
             throw DatabaseTransportError.upgradeRejected
         case .upgraded(let channel):
             return try await channel.executeThenClose { inbound, outbound in
-                try await body(NIODatabaseTransport.Connection(messages: inbound, outbound: outbound,
+                // The upgrade can finish before the close above takes effect.
+                try Task.checkCancellation()
+                return try await body(NIODatabaseTransport.Connection(messages: inbound, outbound: outbound,
                                                                channel: channel.channel))
             }
         }

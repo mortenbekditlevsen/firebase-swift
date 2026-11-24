@@ -20,7 +20,9 @@
 #
 # The pattern is an extended regex the suite names must match in full
 # (default: all of them). With SUITE_RESULTS set, appends "| suites | result |"
-# for each batch to that file.
+# for each batch to that file. With TEST_EVENTS set to a directory, each batch
+# writes Swift Testing's events there as they happen (one JSON object per
+# line), which shows the tests a hung batch was running.
 #
 # Why not one `swift test --filter <module>\.`: outside Apple platforms,
 # SwiftPM passes the matching XCTest tests to the test process as one
@@ -57,9 +59,16 @@ batches=$(echo "$sizes" | awk -F'\t' -v limit=$limit '{
   } END { if (batch != "") print batch }')
 
 failed=0
+number=0
 while read -r batch; do
   echo "Running $module: $batch"
-  if swift test --skip-build --filter "^$module\.(${batch// /|})/" < /dev/null; then
+  number=$((number + 1))
+  events=()
+  if [ -n "${TEST_EVENTS:-}" ]; then
+    mkdir -p "$TEST_EVENTS"
+    events=(--event-stream-output-path "$TEST_EVENTS/$module-$$-$number.jsonl" --event-stream-version 0)
+  fi
+  if swift test --skip-build --filter "^$module\.(${batch// /|})/" ${events[@]+"${events[@]}"} < /dev/null; then
     result=success
   else
     result=failure
