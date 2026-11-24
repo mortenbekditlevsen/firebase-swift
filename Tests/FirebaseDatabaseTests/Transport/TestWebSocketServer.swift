@@ -168,6 +168,13 @@ private final class ServerHandler: ChannelInboundHandler {
         }
     }
 
+    /// Prints why the server ended a connection, which the client only sees
+    /// as a reset.
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
+        print("TestWebSocketServer \(path): \(error)")
+        context.fireErrorCaught(error)
+    }
+
     private func send(text: String, context: ChannelHandlerContext) {
         context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .text,
                                                              data: ByteBuffer(string: text))),
