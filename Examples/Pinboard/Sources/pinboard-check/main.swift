@@ -17,6 +17,7 @@
 // Storage, the Storage trigger), download it again, delete it, sign out.
 // Exits with 1 if any step fails.
 
+import FirebaseAuth
 import Foundation
 import PinboardKit
 
@@ -42,6 +43,9 @@ func waitFor(_ what: String, in board: Board, _ condition: () -> Bool) async thr
 @MainActor
 func check() async throws {
     FirebaseSetup.configure()
+    // A user saved by an earlier run belongs to emulators that have since
+    // stopped, and its token no longer refreshes.
+    try Auth.auth().signOut()
     let board = Board()
     let running = Task { await board.run() }
     defer { running.cancel() }
