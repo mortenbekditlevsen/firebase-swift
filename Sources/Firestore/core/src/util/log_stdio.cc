@@ -65,6 +65,9 @@ void LogMessage(LogLevel log_level, const std::string& message) {
   }
 
   printf("%s: %s\n", level_word, message.c_str());
+  // firebase-swift: flush, so a message survives an abort that follows it
+  // (an assertion's, say) when stdout is a pipe and so fully buffered.
+  fflush(stdout);
 }
 
 }  // namespace util

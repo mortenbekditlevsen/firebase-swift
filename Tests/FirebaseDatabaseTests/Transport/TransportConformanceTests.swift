@@ -14,6 +14,9 @@
 
 @testable import FirebaseDatabase
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import Testing
 
 /// The `DatabaseTransport` contract, checked for each transport against a
@@ -21,20 +24,58 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct TransportConformanceTests {
     enum Kind: String, CaseIterable, CustomTestStringConvertible {
-        case nio
-        #if canImport(Darwin)
+        // swift-nio-ssl, which NIODatabaseTransport needs, doesn't build on
+        // Windows.
+        #if !os(Windows)
+            case nio
+        #endif
+        // Off Apple platforms, only the Windows toolchain's libcurl has
+        // WebSockets (see URLSessionDatabaseTransport).
+        #if canImport(Darwin) || os(Windows)
             case urlSession
+        #endif
+        #if canImport(Darwin)
             case networkFramework
+        #endif
+        #if os(Windows)
+            case winHTTP
         #endif
 
         var testDescription: String { rawValue }
 
+        /// The kinds that join a message's fragments. A fragmented message
+        /// crashes swift-corelibs-foundation (Windows)
+        /// (https://github.com/swiftlang/swift-corelibs-foundation/issues/5670).
+        static var joiningFragments: [Kind] {
+            #if os(Windows)
+                allCases.filter { $0 != .urlSession }
+            #else
+                allCases
+            #endif
+        }
+
+        /// Whether this is URLSession from swift-corelibs-foundation (Windows).
+        var isCorelibsURLSession: Bool {
+            #if os(Windows)
+                return self == .urlSession
+            #else
+                return false
+            #endif
+        }
+
         var transport: any DatabaseTransport {
             switch self {
-            case .nio: NIODatabaseTransport()
-            #if canImport(Darwin)
+            #if !os(Windows)
+                case .nio: NIODatabaseTransport()
+            #endif
+            #if canImport(Darwin) || os(Windows)
                 case .urlSession: URLSessionDatabaseTransport()
+            #endif
+            #if canImport(Darwin)
                 case .networkFramework: NIOTSDatabaseTransport()
+            #endif
+            #if os(Windows)
+                case .winHTTP: WinHTTPDatabaseTransport()
             #endif
             }
         }
@@ -131,8 +172,18 @@ struct TransportConformanceTests {
         let server = try await TestWebSocketServer.start()
         let url = server.url("/echo")
         try await server.close()
+        // swift-corelibs-foundation only fails a refused connection when the
+        // request times out (60 seconds by default), so give it a short one
+        // (https://github.com/swiftlang/swift-corelibs-foundation/issues/5673).
+        let transport: any DatabaseTransport = kind.isCorelibsURLSession
+            ? URLSessionDatabaseTransport(configuration: {
+                let configuration = URLSessionConfiguration.default
+                configuration.timeoutIntervalForRequest = 5
+                return configuration
+            })
+            : kind.transport
         await #expect(throws: (any Error).self) {
-            try await connect(kind, to: url) { _ in }
+            try await connect(transport, to: url, headers: [:]) { _ in }
         }
     }
 
@@ -153,17 +204,41 @@ struct TransportConformanceTests {
             try await connection.send(DatabaseFrame(message))
             return try await Self.first(connection)
         }
-        #expect(reply == message)
+        // https://github.com/swiftlang/swift-corelibs-foundation/issues/5671
+        withKnownIssue("swift-corelibs-foundation delivers each 16 KB of a larger frame as a message") {
+            #expect(reply == message)
+        } when: {
+            kind.isCorelibsURLSession
+        }
         try await server.close()
     }
 
-    @Test(arguments: Kind.allCases)
+    @Test(arguments: Kind.joiningFragments)
     func joinsFragmentsSplitInsideACharacter(_ kind: Kind) async throws {
         let server = try await TestWebSocketServer.start()
         let reply = try await connect(kind, to: server.url("/fragments")) { connection in
             try await Self.first(connection)
         }
         #expect(reply == "héllo wörld")
+        try await server.close()
+    }
+
+    /// An open connection waits for messages longer than connecting may take.
+    @Test(arguments: Kind.allCases)
+    func anIdleConnectionStaysOpen(_ kind: Kind) async throws {
+        let server = try await TestWebSocketServer.start()
+        // WinHTTP's timeouts bound the upgrade; with a short one, the message
+        // arrives only if they don't apply to the open connection.
+        var transport = kind.transport
+        #if os(Windows)
+            if kind == .winHTTP {
+                transport = WinHTTPDatabaseTransport(timeout: .seconds(1))
+            }
+        #endif
+        let reply = try await connect(transport, to: server.url("/later"), headers: [:]) { connection in
+            try await Self.first(connection)
+        }
+        #expect(reply == "later")
         try await server.close()
     }
 
@@ -208,6 +283,20 @@ struct TransportConformanceTests {
         let start = ContinuousClock.now
         task.cancel()
         _ = await task.result
+        #expect(ContinuousClock.now - start < .seconds(2))
+        try await server.close()
+    }
+
+    /// A task that's already cancelled doesn't connect.
+    @Test(arguments: Kind.allCases)
+    func aCancelledTaskDoesntConnect(_ kind: Kind) async throws {
+        let server = try await TestWebSocketServer.start()
+        let start = ContinuousClock.now
+        let result = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await connect(kind, to: server.url("/echo")) { _ in "connected" }
+        }.result
+        #expect(throws: (any Error).self) { try result.get() }
         #expect(ContinuousClock.now - start < .seconds(2))
         try await server.close()
     }

@@ -363,15 +363,11 @@ func releaseCallbackBox(context: UnsafeMutableRawPointer?) {
   Unmanaged<AnyObject>.fromOpaque(context).release()
 }
 
-/// Takes ownership of a heap-allocated bridge object that C++ passed to Swift.
-func takeBridge<Bridge>(_ pointer: UnsafeMutableRawPointer?, as _: Bridge.Type) -> Bridge? {
-  guard let pointer else { return nil }
-  let bridge = pointer.assumingMemoryBound(to: Bridge.self)
-  defer {
-    bridge.deinitialize(count: 1)
-    bridge.deallocate()
-  }
-  return bridge.pointee
+/// Copies a bridge object that C++ passed to a callback. C++ owns it, and
+/// frees it after the call. (Freeing it in Swift would pair C++'s `new` with
+/// Swift's `deallocate()`, which on Windows corrupts the heap.)
+func copyBridge<Bridge>(_ pointer: UnsafeMutableRawPointer?, as _: Bridge.Type) -> Bridge? {
+  pointer?.assumingMemoryBound(to: Bridge.self).pointee
 }
 
 /// One-shot document snapshot callback.
@@ -384,7 +380,7 @@ private func documentSnapshotCallbackTrampoline(
   guard let context else { return }
   let box = Unmanaged<CallbackBox<DocumentSnapshotHandler>>.fromOpaque(context)
     .takeRetainedValue()
-  box.handler(takeBridge(snapshot, as: CppDocumentSnapshotBridge.self),
+  box.handler(copyBridge(snapshot, as: CppDocumentSnapshotBridge.self),
               firestoreError(code: code, message: message))
 }
 
@@ -398,7 +394,7 @@ private func querySnapshotCallbackTrampoline(
   guard let context else { return }
   let box = Unmanaged<CallbackBox<QuerySnapshotHandler>>.fromOpaque(context)
     .takeRetainedValue()
-  box.handler(takeBridge(snapshot, as: CppQuerySnapshotBridge.self),
+  box.handler(copyBridge(snapshot, as: CppQuerySnapshotBridge.self),
               firestoreError(code: code, message: message))
 }
 
@@ -423,7 +419,7 @@ private func documentSnapshotListenerTrampoline(
   guard let context else { return }
   let box = Unmanaged<CallbackBox<DocumentSnapshotHandler>>.fromOpaque(context)
     .takeUnretainedValue()
-  box.handler(takeBridge(snapshot, as: CppDocumentSnapshotBridge.self),
+  box.handler(copyBridge(snapshot, as: CppDocumentSnapshotBridge.self),
               firestoreError(code: code, message: message))
 }
 
@@ -437,7 +433,7 @@ private func querySnapshotListenerTrampoline(
   guard let context else { return }
   let box = Unmanaged<CallbackBox<QuerySnapshotHandler>>.fromOpaque(context)
     .takeUnretainedValue()
-  box.handler(takeBridge(snapshot, as: CppQuerySnapshotBridge.self),
+  box.handler(copyBridge(snapshot, as: CppQuerySnapshotBridge.self),
               firestoreError(code: code, message: message))
 }
 
@@ -859,7 +855,7 @@ public final class Firestore: @unchecked Sendable {
         ErrorCallback?,               // completion callback
         UnsafeMutableRawPointer?      // completion context
       ) -> Void = { context, transactionPtr, completionCB, completionCtx in
-      guard let context, let cppTransaction = takeBridge(transactionPtr,
+      guard let context, let cppTransaction = copyBridge(transactionPtr,
                                                           as: CppTransactionBridge.self)
       else { return }
       let txCtx = Unmanaged<TransactionContext>.fromOpaque(context).takeUnretainedValue()

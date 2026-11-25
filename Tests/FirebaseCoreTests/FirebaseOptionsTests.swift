@@ -117,17 +117,31 @@ struct FirebaseOptionsTests {
 
   @Test func defaultOptionsComeFromTheEnvironment() throws {
     let json = #"{"appId": "1:1:web:env", "apiKey": "key", "projectId": "from-env"}"#
-    defer { unsetenv(FirebaseOptions.environmentVariable) }
+    defer { setEnvironment(nil) }
 
-    setenv(FirebaseOptions.environmentVariable, json, 1)
+    setEnvironment(json)
     #expect(FirebaseOptions.defaultOptions()?.projectID == "from-env")
 
     // Or from a file it names.
-    setenv(FirebaseOptions.environmentVariable, try write(Data(json.utf8)), 1)
+    setEnvironment(try write(Data(json.utf8)))
     #expect(FirebaseOptions.defaultOptions()?.googleAppID == "1:1:web:env")
 
-    setenv(FirebaseOptions.environmentVariable, "{ not json", 1)
+    setEnvironment("{ not json")
     #expect(FirebaseOptions.defaultOptions() == nil)
+  }
+
+  private func setEnvironment(_ value: String?) {
+    let name = FirebaseOptions.environmentVariable
+    #if os(Windows)
+      // Windows has no setenv; an empty value removes the variable.
+      _putenv_s(name, value ?? "")
+    #else
+      if let value {
+        setenv(name, value, 1)
+      } else {
+        unsetenv(name)
+      }
+    #endif
   }
 
   private func write(_ data: Data) throws -> String {

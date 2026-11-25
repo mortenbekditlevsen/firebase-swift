@@ -29,9 +29,9 @@
 #include "FirestoreBridge.h"
 
 /// Callback for pipeline results.
-/// snapshot: opaque pointer to a heap-allocated PipelineSnapshotBridge (or,
-/// for realtime pipelines, RealtimePipelineSnapshotBridge) that the caller
-/// owns, or null on error.
+/// snapshot: opaque pointer to a PipelineSnapshotBridge (or, for realtime
+/// pipelines, RealtimePipelineSnapshotBridge), valid during the call only
+/// (copy it), or null on error.
 typedef void (*PipelineSnapshotCallback)(
     void* context,
     void* snapshot,
