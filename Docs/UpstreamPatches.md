@@ -206,16 +206,16 @@ exclude. Their forks name those directories without the "/".
   `NOMINMAX` on Windows (as gRPC's CMake build: windows.h's macros break
   re2), and on Windows the bundled zlib's headers instead of a system `libz`,
   which Windows doesn't have. (It builds on Linux unchanged.) Offered
-  upstream as grpc/grpc-ios#397. Two more changes, not offered upstream yet:
+  upstream as grpc/grpc-ios#397. Two more changes:
   - The bundled zlib, on every platform, with its symbols prefixed
     (`Z_PREFIX`, and `z_errmsg` renamed, which `Z_PREFIX` leaves out), and no
     system `libz`. Without the prefix, an app that also links another zlib
     (Pinboard, through SwiftCrossUI's image support) failed to link with
-    duplicate symbols.
+    duplicate symbols. Offered upstream as grpc/grpc-ios#398.
   - It depends on the abseil and BoringSSL forks below. firebase-swift lists
     them too, but that only overrides grpc-ios's URLs when firebase-swift is
     the root package: SwiftPM keeps the first URL it meets for a package, so
-    Pinboard got upstream BoringSSL.
+    Pinboard got upstream BoringSSL. This one is for the fork only.
 - **boringssl-SwiftPM** (gRPC's BoringSSL): 0.41.0, from
   `mortenbekditlevsen/boringSSL-SwiftPM`, branch `windows-0.41.0`.
   firebase-swift lists it only to replace grpc-ios's. On Windows it defines
