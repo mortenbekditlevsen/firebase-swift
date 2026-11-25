@@ -47,8 +47,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
         // 2.105.2 with Windows fixes, until a release has them: casts in
         // CNIOWindows.h, so modules with C++ interop can import NIO
-        // (apple/swift-nio#<casts PR>), and would-block from the socket calls
-        // (apple/swift-nio#3708, and the same for reads). See
+        // (apple/swift-nio#3801), and would-block from the socket calls
+        // (apple/swift-nio#3708, and #3800 for reads). See
         // Docs/UpstreamPatches.md.
         .package(url: "https://github.com/mortenbekditlevsen/swift-nio.git", branch: "windows-2.105.2"),
         // 2.37.3: builds with recent Windows SDKs (10.0.26100).
