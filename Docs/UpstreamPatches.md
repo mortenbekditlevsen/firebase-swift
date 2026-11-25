@@ -206,7 +206,7 @@ exclude. Their forks name those directories without the "/".
   `NOMINMAX` on Windows (as gRPC's CMake build: windows.h's macros break
   re2), and on Windows the bundled zlib's headers instead of a system `libz`,
   which Windows doesn't have. (It builds on Linux unchanged.) Offered
-  upstream as grpc/grpc-ios#<grpc PR>.
+  upstream as grpc/grpc-ios#397.
 - **boringssl-SwiftPM** (gRPC's BoringSSL): 0.41.0, from
   `mortenbekditlevsen/boringSSL-SwiftPM`, branch `windows-0.41.0`.
   firebase-swift lists it only to replace grpc-ios's. On Windows it defines
@@ -216,13 +216,13 @@ exclude. Their forks name those directories without the "/".
   tables from `gen/crypto/err_data.cc` rather than `err_data.c`:
   `crypto/err/err.cc` declares them in C++ without `extern "C"`, which on
   Windows names them differently from C. Offered upstream as
-  firebase/boringssl-SwiftPM#<boringssl PR>.
+  firebase/boringSSL-SwiftPM#36.
 - **swift-nio:** 2.105.2 from `mortenbekditlevsen/swift-nio`, branch
   `windows-2.105.2`, with three Windows fixes:
   - casts in `CNIOWindows.h`, whose wrappers pass `void *` where WinSock
     takes `char *`. C++ doesn't allow that, so modules with C++ interop (as
     FirebaseDatabase's dependents) couldn't import NIO
-    (apple/swift-nio#<nio PR>);
+    (apple/swift-nio#3801);
   - apple/swift-nio#3708 (for issue #3702), which reports `WSAEWOULDBLOCK`
     as would-block instead of an error. Without it, a socket whose buffer
     fills fails its channel, so the tests' NIO servers cut responses short;
@@ -230,7 +230,7 @@ exclude. Their forks name those directories without the "/".
     #3708 leaves out. NIO reads again after a read that fills its buffer, so
     when the data ends exactly at the buffer's end, the next read failed the
     channel: large messages failed intermittently (`carriesLargeMessages`
-    with the WinHTTP transport). Not offered upstream yet.
+    with the WinHTTP transport). Offered upstream as apple/swift-nio#3800.
 - **C++ standard:** `Package.swift` sets `cxxLanguageStandard: .gnucxx17`,
   as upstream 13.x does, and abseil and grpc-ios build as C++17 too. They
   must agree: abseil defines its own `absl::string_view` below C++17, so a
