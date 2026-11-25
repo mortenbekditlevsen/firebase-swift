@@ -54,7 +54,10 @@ let package = Package(
         // Pinboard's flow without a window, as a check (README.md).
         .executableTarget(
             name: "pinboard-check",
-            dependencies: ["PinboardKit"],
+            dependencies: [
+                "PinboardKit",
+                .product(name: "FirebaseAuth", package: "firebase-swift"),
+            ],
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
     ]
