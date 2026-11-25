@@ -28,12 +28,31 @@ if [[ -z "${IOS_DESTINATION:-}" ]]; then
 fi
 export IOS_DESTINATION
 export XCODEBUILD_ARGS="$*"
+export ONLY_TESTING="-only-testing:FirebaseIntegrationTests/PhoneAuthIntegrationTests
+  -only-testing:FirebaseAuthTests/ProtectedDataTests"
+
+# On CI, the phone auth tests sometimes waited together for 30 seconds or more before their
+# first request reached the emulator, and timed out. So the build, which takes many minutes
+# there, happens before the emulator starts, and the Simulator has booted before the tests run.
+# ($ONLY_TESTING and $XCODEBUILD_ARGS are split into arguments on purpose.)
+# shellcheck disable=SC2086
+xcodebuild build-for-testing -scheme firebase-swift-Package -destination "$IOS_DESTINATION" \
+  $ONLY_TESTING $XCODEBUILD_ARGS
+if [[ -n "${device:-}" ]]; then
+  xcrun simctl bootstatus "$device" -b
+fi
 
 # xcodebuild passes TEST_RUNNER_-prefixed variables on to the tests, without the prefix.
 # The Simulator shares the Mac's network, so the emulator's 127.0.0.1 address works.
+# The first request also warms up the emulator, and its time shows whether the emulator was the
+# slow part.
 firebase emulators:exec --project demo-firebase-swift --only auth '
+  start=$(date +%s)
+  curl -sS -o /dev/null -X POST -H "Content-Type: application/json" \
+    -d "{\"phoneNumber\": \"+15550000000\"}" \
+    "http://$FIREBASE_AUTH_EMULATOR_HOST/identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=warm-up"
+  echo "The emulator answered the first phone verification request in $(( $(date +%s) - start )) s."
   TEST_RUNNER_FIREBASE_AUTH_EMULATOR_HOST="$FIREBASE_AUTH_EMULATOR_HOST" \
-  xcodebuild test -scheme firebase-swift-Package -destination "$IOS_DESTINATION" \
-    -only-testing:FirebaseIntegrationTests/PhoneAuthIntegrationTests \
-    -only-testing:FirebaseAuthTests/ProtectedDataTests $XCODEBUILD_ARGS
+  xcodebuild test-without-building -scheme firebase-swift-Package \
+    -destination "$IOS_DESTINATION" $ONLY_TESTING $XCODEBUILD_ARGS
 '

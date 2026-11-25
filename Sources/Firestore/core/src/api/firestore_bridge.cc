@@ -144,13 +144,14 @@ std::function<void(Status)> Reporter(void* context, ErrorCallback callback) {
   };
 }
 
-/// Hands a snapshot (or the error) to a snapshot callback, which owns the
-/// heap-allocated bridge.
+/// Hands a snapshot (or the error) to a snapshot callback, which copies the
+/// bridge during the call.
 template <typename Bridge, typename Snapshot, typename Callback>
 void ReportSnapshot(Callback callback, void* context, StatusOr<Snapshot> result,
-                    std::function<Bridge*(Snapshot)> make_bridge) {
+                    std::function<Bridge(Snapshot)> make_bridge) {
   if (result.ok()) {
-    callback(context, make_bridge(std::move(result).ValueOrDie()), 0, "");
+    Bridge bridge = make_bridge(std::move(result).ValueOrDie());
+    callback(context, &bridge, 0, "");
   } else {
     callback(context, nullptr, ErrorCode(result.status()),
              result.status().error_message().c_str());
@@ -367,8 +368,8 @@ void DocumentReferenceBridge::GetDocument(
         ReportSnapshot<DocumentSnapshotBridge, DocumentSnapshot>(
             callback, context, std::move(maybe_snapshot),
             [](DocumentSnapshot snapshot) {
-              auto* bridge = new DocumentSnapshotBridge();
-              bridge->impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
+              DocumentSnapshotBridge bridge;
+              bridge.impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
                   std::move(snapshot));
               return bridge;
             });
@@ -390,8 +391,8 @@ ListenerRegistrationBridge DocumentReferenceBridge::AddSnapshotListener(
         ReportSnapshot<DocumentSnapshotBridge, DocumentSnapshot>(
             callback, owned.get(), std::move(maybe_snapshot),
             [](DocumentSnapshot snapshot) {
-              auto* bridge = new DocumentSnapshotBridge();
-              bridge->impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
+              DocumentSnapshotBridge bridge;
+              bridge.impl_ = std::make_shared<DocumentSnapshotBridge::Impl>(
                   std::move(snapshot));
               return bridge;
             });
@@ -469,8 +470,8 @@ void QueryBridge::GetDocuments(
         ReportSnapshot<QuerySnapshotBridge, QuerySnapshot>(
             callback, context, std::move(maybe_snapshot),
             [](QuerySnapshot snapshot) {
-              auto* bridge = new QuerySnapshotBridge();
-              bridge->impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
+              QuerySnapshotBridge bridge;
+              bridge.impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
                   std::move(snapshot));
               return bridge;
             });
@@ -493,8 +494,8 @@ ListenerRegistrationBridge QueryBridge::AddSnapshotListener(
         ReportSnapshot<QuerySnapshotBridge, QuerySnapshot>(
             callback, owned.get(), std::move(maybe_snapshot),
             [](QuerySnapshot snapshot) {
-              auto* bridge = new QuerySnapshotBridge();
-              bridge->impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
+              QuerySnapshotBridge bridge;
+              bridge.impl_ = std::make_shared<QuerySnapshotBridge::Impl>(
                   std::move(snapshot));
               return bridge;
             });
@@ -2524,9 +2525,9 @@ void FirestoreBridge::RunTransaction(
   auto update_fn = [context, update_callback, firestore = impl_->firestore_](
       std::shared_ptr<core::Transaction> txn,
       core::TransactionResultCallback done) {
-    // Create a TransactionBridge on the heap for Swift to use.
-    auto* bridge = new TransactionBridge();
-    bridge->impl_ = std::make_shared<TransactionBridge::Impl>(txn, firestore);
+    // The TransactionBridge for Swift, which copies it.
+    TransactionBridge bridge;
+    bridge.impl_ = std::make_shared<TransactionBridge::Impl>(txn, firestore);
 
     // What Swift calls when the update block has finished.
     using Completion = std::function<void(int32_t, const char*)>;
@@ -2551,8 +2552,8 @@ void FirestoreBridge::RunTransaction(
     // on that same queue. Run the block elsewhere, as FIRFirestore does with
     // a global dispatch queue upstream.
     TransactionUserExecutor().Execute(
-        [context, update_callback, bridge, c_completion, completion] {
-          update_callback(context, static_cast<void*>(bridge), c_completion,
+        [context, update_callback, bridge, c_completion, completion]() mutable {
+          update_callback(context, static_cast<void*>(&bridge), c_completion,
                           static_cast<void*>(completion.get()));
         });
   };
@@ -2616,13 +2617,13 @@ void QueryBridge::GetAggregate(const BridgeAggregateFields& fields,
                    result.status().error_message().c_str());
           return;
         }
-        auto* values = new BridgeFieldValueVector();
+        BridgeFieldValueVector values;
         for (const auto& alias : aliases) {
           auto value = result.ValueOrDie().Get(alias);
-          values->push_back(value ? ConvertProtoValue(*value, firestore, 0)
-                                  : BridgeFieldValue::Null());
+          values.push_back(value ? ConvertProtoValue(*value, firestore, 0)
+                                 : BridgeFieldValue::Null());
         }
-        callback(context, values, 0, "");
+        callback(context, &values, 0, "");
       });
 }
 
@@ -2835,10 +2836,10 @@ void FirestoreBridge::GetNamedQuery(const std::string& name,
           callback(context, nullptr);
           return;
         }
-        auto* bridge = new QueryBridge();
-        bridge->impl_ = std::make_shared<QueryBridge::Impl>(
+        QueryBridge bridge;
+        bridge.impl_ = std::make_shared<QueryBridge::Impl>(
             Query(std::move(query), firestore));
-        callback(context, bridge);
+        callback(context, &bridge);
       });
 }
 

@@ -55,6 +55,9 @@ the note and signs out. It exits with 1 if a step fails:
 firebase emulators:exec "PINBOARD_EMULATORS=1 swift run pinboard-check"
 ```
 
+CI (`.github/workflows/pinboard.yml`) builds the app and runs the check on
+macOS and Linux.
+
 ## Run it on your own Firebase project
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com)
@@ -122,5 +125,3 @@ pressed. Pinboard's buttons are borderless instead (`ActionButton`).
 
 - Windows: SwiftCrossUI has a WinUI backend; the app and firebase-swift
   haven't been built there yet.
-- CI: build the app on macOS and Linux, and run `pinboard-check` on the
-  emulators.

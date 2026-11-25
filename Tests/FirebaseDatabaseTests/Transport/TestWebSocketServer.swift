@@ -27,6 +27,7 @@ import NIOWebSocket
 /// - `/fragments`: sends one message in three fragments, split inside a
 ///   multibyte character.
 /// - `/ping`: pings, then sends "pong:<data>" when the pong arrives.
+/// - `/later`: sends "later" after 3 seconds.
 /// - `/missing`: refuses the upgrade with 404.
 final class TestWebSocketServer: Sendable {
     private let channel: any Channel
@@ -131,6 +132,10 @@ private final class ServerHandler: ChannelInboundHandler {
                 context.write(wrapOutboundOut(frame), promise: nil)
             }
             context.flush()
+        case "/later":
+            context.eventLoop.assumeIsolated().scheduleTask(in: .seconds(3)) {
+                self.send(text: "later", context: context)
+            }
         case "/ping":
             context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .ping,
                                                                  data: ByteBuffer(string: "probe"))),
@@ -161,6 +166,13 @@ private final class ServerHandler: ChannelInboundHandler {
         default:
             break
         }
+    }
+
+    /// Prints why the server ended a connection, which the client only sees
+    /// as a reset.
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
+        print("TestWebSocketServer \(path): \(error)")
+        context.fireErrorCaught(error)
     }
 
     private func send(text: String, context: ChannelHandlerContext) {

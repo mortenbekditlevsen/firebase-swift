@@ -1,0 +1,232 @@
+name: Windows
+
+# Windows support is being worked on: this builds each module on its own, so
+# one module that doesn't build yet doesn't hide the others, and lists the
+# outcome. It runs for branches named windows/… and on demand, not on main.
+on:
+  push:
+    branches: ['windows/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Not windows-latest: its Visual Studio's C++ library moves ahead of the
+    # Clang in Swift's toolchain (MSVC 14.52 wants Clang 22, Swift 6.3 has
+    # an older one). Visual Studio 2022's no longer changes.
+    runs-on: windows-2022
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # gRPC and abseil have paths longer than Windows' default limit.
+      - run: git config --global core.longpaths true
+      - uses: actions/checkout@v5
+      # 6.3: the runner's MSVC standard library needs Clang 20 or newer,
+      # which 6.2's isn't.
+      - uses: compnerd/gha-setup-swift@v0.5.1
+        with:
+          swift-version: swift-6.3-release
+          swift-build: 6.3-RELEASE
+      - run: swift --version
+
+      # Targets rather than products: on Windows and Linux, building a product
+      # builds every target in the package, the Firestore core among them.
+      # Without the Firestore trait, so gRPC isn't fetched for the other modules.
+      - name: FirebaseCore
+        id: core
+        continue-on-error: true
+        run: swift build --disable-default-traits --target FirebaseCore
+      - name: FirebaseAuth
+        id: auth
+        continue-on-error: true
+        run: swift build --disable-default-traits --target FirebaseAuth
+      - name: FirebaseAppCheck
+        id: appcheck
+        continue-on-error: true
+        run: swift build --disable-default-traits --target FirebaseAppCheck
+      - name: FirebaseFunctions
+        id: functions
+        continue-on-error: true
+        run: swift build --disable-default-traits --target FirebaseFunctions
+      - name: FirebaseStorage
+        id: storage
+        continue-on-error: true
+        run: swift build --disable-default-traits --target FirebaseStorage
+      - name: FirebaseDatabase
+        id: database
+        continue-on-error: true
+        run: swift build --disable-default-traits --target FirebaseDatabase
+      - name: FirebaseFirestore
+        id: firestore
+        continue-on-error: true
+        run: swift build --target FirebaseFirestore
+
+      # Everything, gRPC's C++ included: building a target compiles only what
+      # its modules need.
+      # Once, after a compile error, the build sat waiting for an hour; the
+      # step's own limit keeps that from using up the job.
+      - name: Build tests
+        id: buildtests
+        if: steps.firestore.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 75
+        run: swift build --build-tests
+
+      # Each test target on its own, so one that crashes doesn't hide the
+      # others. The rows go into the summary.
+      - name: Unit tests
+        id: unittests
+        if: steps.buildtests.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          failed=0
+          for target in FirebaseCoreTests FirebaseSharedTests FirebaseAuthTests FirebaseAppCheckTests \
+              FirebaseFunctionsTests FirebaseStorageTests FirebaseDatabaseTests FirebaseFirestoreTests; do
+            echo "::group::$target"
+            if swift test --skip-build --filter "^$target\."; then
+              result=success
+            else
+              result=failure
+              failed=1
+            fi
+            echo "::endgroup::"
+            echo "| $target | $result |" >> unit-tests.md
+          done
+          exit $failed
+
+      # On Windows the Database connects with WinHTTPDatabaseTransport
+      # (swift-nio-ssl doesn't build there).
+      - uses: actions/setup-java@v4
+        if: steps.buildtests.outcome == 'success'
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-node@v4
+        if: steps.buildtests.outcome == 'success'
+        with:
+          node-version: 22
+      # As ci.yml's, with the emulators started for each test target, so one
+      # that crashes doesn't hide the others. The Firebase CLI runs the command
+      # with cmd.exe: no ^ (its escape character), and | only inside quotes.
+      - name: Integration tests
+        id: integrationtests
+        if: steps.buildtests.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          npm install -g firebase-tools
+          npm ci --prefix Tests/Emulator/functions
+          # emulators:exec hands its command to cmd.exe, so the script
+          # needs Git Bash named; it runs one suite at a time (see there).
+          bash=$(cygpath -w "$BASH")
+          export TEST_EVENTS=test-events
+          failed=0
+          run() {
+            local name=$1
+            shift
+            echo "::group::$name"
+            echo "| **$name** | |" >> integration-tests.md
+            if SUITE_RESULTS=integration-tests.md firebase emulators:exec --project demo-firebase-swift "$@"; then
+              result=success
+            else
+              result=failure
+              failed=1
+            fi
+            echo "::endgroup::"
+            echo "| $name, all | $result |" >> integration-tests.md
+          }
+          run FirebaseIntegrationTests --only auth,database,firestore,functions,storage \
+            "\"$bash\" scripts/test-by-suite.sh FirebaseIntegrationTests"
+          run FirebaseFirestoreIntegrationTests --only auth,database,firestore,functions,storage \
+            "\"$bash\" scripts/test-by-suite.sh FirebaseFirestoreIntegrationTests"
+          # Pipelines need the Firestore emulator's Enterprise edition.
+          BACKEND_EDITION=enterprise run "Pipelines (Enterprise edition)" \
+            --config Tests/Emulator/firebase.enterprise.json --only firestore \
+            "\"$bash\" scripts/test-by-suite.sh FirebaseFirestoreIntegrationTests \"(Pipeline|QueryToPipeline|Search|RealtimePipeline).*\""
+          exit $failed
+
+      # The step's output appears only when a batch ends, so a batch that
+      # hangs until the timeout shows nothing; its events show where it was.
+      - name: Unfinished tests
+        if: steps.integrationtests.outcome == 'failure'
+        continue-on-error: true
+        shell: python
+        run: |
+          import glob, json
+          for path in sorted(glob.glob("test-events/*.jsonl")):
+              running = set()
+              with open(path, encoding="utf-8") as file:
+                  for line in file:
+                      record = json.loads(line)
+                      payload = record["payload"]
+                      if record["kind"] != "event" or "testID" not in payload:
+                          continue
+                      if payload["kind"] == "testStarted":
+                          running.add(payload["testID"])
+                      elif payload["kind"] == "testEnded":
+                          running.discard(payload["testID"])
+              for test in running:
+                  print(f"{path}: {test} started and never ended")
+
+      # `swift test` hides how a test process ended; this runs the first
+      # test that dies on its own, with its exit code and stacks.
+      - name: Debug a crash
+        if: steps.integrationtests.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          firebase emulators:exec --project demo-firebase-swift --only firestore \
+            "pwsh -NoProfile -File .github/scripts/debug-crash.ps1 FirebaseFirestoreIntegrationTests.AggregationIntegrationTests/testAverageOverflow"
+
+      - name: Summary
+        if: always()
+        env:
+          CORE: ${{ steps.core.outcome }}
+          AUTH: ${{ steps.auth.outcome }}
+          APPCHECK: ${{ steps.appcheck.outcome }}
+          FUNCTIONS: ${{ steps.functions.outcome }}
+          STORAGE: ${{ steps.storage.outcome }}
+          DATABASE: ${{ steps.database.outcome }}
+          FIRESTORE: ${{ steps.firestore.outcome }}
+          BUILDTESTS: ${{ steps.buildtests.outcome }}
+          UNITTESTS: ${{ steps.unittests.outcome }}
+          INTEGRATIONTESTS: ${{ steps.integrationtests.outcome }}
+        run: |
+          {
+            echo "| Module | Build |"
+            echo "|---|---|"
+            echo "| FirebaseCore | $CORE |"
+            echo "| FirebaseAuth | $AUTH |"
+            echo "| FirebaseAppCheck | $APPCHECK |"
+            echo "| FirebaseFunctions | $FUNCTIONS |"
+            echo "| FirebaseStorage | $STORAGE |"
+            echo "| FirebaseDatabase | $DATABASE |"
+            echo "| FirebaseFirestore | $FIRESTORE |"
+            echo
+            echo "| Tests | Result |"
+            echo "|---|---|"
+            echo "| Build (all targets and tests) | ${BUILDTESTS:-not run} |"
+            echo "| Unit tests | ${UNITTESTS:-not run} |"
+            echo "| Integration tests (emulators) | ${INTEGRATIONTESTS:-not run} |"
+            if [ -f unit-tests.md ]; then
+              echo
+              echo "| Unit test target | Result |"
+              echo "|---|---|"
+              cat unit-tests.md
+            fi
+            if [ -f integration-tests.md ]; then
+              echo
+              echo "| Integration tests | Result |"
+              echo "|---|---|"
+              cat integration-tests.md
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          for outcome in "$CORE" "$AUTH" "$APPCHECK" "$FUNCTIONS" "$STORAGE" "$DATABASE" "$FIRESTORE" "$BUILDTESTS" "$UNITTESTS" "$INTEGRATIONTESTS"; do
+            [ "$outcome" = success ] || exit 1
+          done

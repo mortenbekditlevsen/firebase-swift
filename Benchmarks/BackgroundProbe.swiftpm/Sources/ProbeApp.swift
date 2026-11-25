@@ -56,7 +56,7 @@ struct ContentView: View {
                     LabeledContent("Connected", value: model.isRunning ? (model.isConnected ? "Yes" : "No") : "–")
                     LabeledContent("Network", value: model.network)
                     Button("Test now") {
-                        Task { await model.sendNonce() }
+                        Task { await model.sendNonce(trigger: "Test now") }
                     }
                     .disabled(!model.isRunning)
                 }
@@ -72,12 +72,12 @@ struct ContentView: View {
                 } header: {
                     Text("Scenario")
                 } footer: {
-                    Text("Each return to the foreground writes a value over REST and times how long until the connection delivers it. No delivery within \(Int(model.timeout.components.seconds)) s counts as a connection that never recovered.")
+                    Text("Each return to the foreground, and each network change while the app is open, writes a value over REST and times how long until the connection delivers it. No delivery within \(Int(model.timeout.components.seconds)) s counts as a connection that never recovered.")
                 }
 
                 Section("Results") {
                     if model.summaries.isEmpty {
-                        Text("No foreground tests yet.").foregroundStyle(.secondary)
+                        Text("No tests yet.").foregroundStyle(.secondary)
                     }
                     ForEach(model.summaries) { summary in
                         VStack(alignment: .leading, spacing: 4) {
@@ -109,7 +109,7 @@ struct ContentView: View {
             guard ProcessInfo.processInfo.arguments.contains("-autostart") else { return }
             model.start()
             try? await Task.sleep(for: .seconds(3))
-            await model.sendNonce()
+            await model.sendNonce(trigger: "Test now")
         }
     }
 

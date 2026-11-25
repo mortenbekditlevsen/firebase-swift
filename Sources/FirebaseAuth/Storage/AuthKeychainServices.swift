@@ -27,7 +27,7 @@ private let kAccountPrefix = "firebase_auth_1_"
  */
 @available(iOS 13, tvOS 13, macOS 15.0, macCatalyst 13, watchOS 7, *)
 final class AuthKeychainServices: AuthStorage {
-  #if !os(Linux) && !os(Android)
+  #if canImport(Security)
     /// Whether this process can use the data protection keychain. Signed apps can; unsigned
     /// binaries, such as command line tools and `swift test` runners, get
     /// `errSecMissingEntitlement`. Checked once per process, with a write: lookups of missing
@@ -107,7 +107,7 @@ final class AuthKeychainServices: AuthStorage {
   }
 
   func setData(_ data: Data, forKey key: String) throws {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return
       #else
 
@@ -135,7 +135,7 @@ final class AuthKeychainServices: AuthStorage {
   // MARK: - Private methods for non-sharing keychain operations
 
   private func item(query: [String: Any]) throws -> Data? {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return nil
       #else
     var returningQuery = query
@@ -193,7 +193,7 @@ final class AuthKeychainServices: AuthStorage {
   }
 
   private func setItem(query: [String: Any], attributes: [String: Any]) throws {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
 return
 #else
 
@@ -215,7 +215,7 @@ return
   }
 
   private func deleteItem(query: [String: Any]) throws {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
 return
 #else
 
@@ -232,7 +232,7 @@ return
       @param key The key for the item.
    */
   private func deleteLegacyItem(key: String) {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
 return
 #else
 
@@ -250,7 +250,7 @@ return
       @param key The key for the value being manipulated, used as the account field in the query.
    */
   private func genericPasswordQuery(key: String) -> [String: Any] {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return [:]
       #else
     var query: [String: Any] = [
@@ -269,7 +269,7 @@ return
       @param key The key for the value being manipulated, used as the account field in the query.
    */
   private func legacyGenericPasswordQuery(key: String) -> [String: Any] {
-#if os(Linux) || os(Android)
+#if !canImport(Security)
       return [:]
       #else
 

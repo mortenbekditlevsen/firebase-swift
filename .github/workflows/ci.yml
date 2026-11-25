@@ -76,6 +76,9 @@ jobs:
           path: .build-ios-packages
           key: ios-spm-${{ hashFiles('Package.resolved') }}
           restore-keys: ios-spm-
+      # Without -quiet, which hides why resolving failed.
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -clonedSourcePackagesDirPath .build-ios-packages
       # Builds every library; the iOS-only tests run below, the rest on macOS and Linux.
       - name: Build for the iOS Simulator
         run: >-
@@ -109,6 +112,9 @@ jobs:
           path: .build-ios-packages
           key: ios-spm-${{ hashFiles('Package.resolved') }}
           restore-keys: ios-spm-
+      # Without -quiet, which hides why resolving failed.
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -clonedSourcePackagesDirPath .build-ios-packages
       - name: Build for Mac Catalyst and the tvOS Simulator
         run: |
           for destination in 'generic/platform=macOS,variant=Mac Catalyst' 'generic/platform=tvOS Simulator'; do

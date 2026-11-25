@@ -45,20 +45,28 @@ let package = Package(
             traits: ["UnstableSortedCollections"]
         ),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.0.0"),
+        // 2.105.2 with Windows fixes, until a release has them: casts in
+        // CNIOWindows.h, so modules with C++ interop can import NIO
+        // (apple/swift-nio#3801), and would-block from the socket calls
+        // (apple/swift-nio#3708, and #3800 for reads). See
+        // Docs/UpstreamPatches.md.
+        .package(url: "https://github.com/mortenbekditlevsen/swift-nio.git", branch: "windows-2.105.2"),
+        // 2.37.3: builds with recent Windows SDKs (10.0.26100).
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.3"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.21.0"),
         .package(
             url: "https://github.com/mortenbekditlevsen/leveldb.git",
-            branch: "1.22.2-headerfix"
+            branch: "1.22.2-windows"
         ),
-        // The versions firebase-ios-sdk 13.1 pins; abseil with a Linux build fix.
-        // See Docs/UpstreamPatches.md.
+        // The versions firebase-ios-sdk 13.1 pins, with Linux and Windows
+        // build fixes. grpc-ios depends on abseil and BoringSSL itself; these
+        // take the place of its versions. See Docs/UpstreamPatches.md.
         .package(
             url: "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
-            branch: "linux-fixes-0.20250512.1"
+            branch: "windows-fixes-0.20250512.1"
         ),
-        .package(url: "https://github.com/grpc/grpc-ios.git", "1.83.1" ..< "1.84.0"),
+        .package(url: "https://github.com/mortenbekditlevsen/grpc-ios.git", branch: "windows-1.83.1"),
+        .package(url: "https://github.com/mortenbekditlevsen/boringSSL-SwiftPM.git", branch: "windows-0.41.0"),
         .package(
           url: "https://github.com/firebase/nanopb.git",
           "2.30910.0" ..< "2.30911.0"
@@ -133,12 +141,21 @@ let package = Package(
             exclude: ["LICENSE", "METADATA"]
         ),
 
+        // A WebSocket client over WinHTTP (Windows' HTTP client), for
+        // WinHTTPDatabaseTransport. Empty on other platforms.
+        .target(
+            name: "CWinHTTP",
+            path: "Sources/CWinHTTP",
+            linkerSettings: [.linkedLibrary("winhttp", .when(platforms: [.windows]))]
+        ),
+
         .target(
             name: "FirebaseDatabase",
             dependencies: [
                 "FirebaseCore",
                 "FirebaseShared",
                 "CLevelDB",
+                .target(name: "CWinHTTP", condition: .when(platforms: [.windows])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Atomics", package: "swift-atomics"),
                 .product(name: "SortedCollections", package: "swift-collections"),
@@ -146,7 +163,13 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                // swift-nio-ssl's Swift layer doesn't support Windows; the
+                // Database uses WinHTTPDatabaseTransport there.
+                .product(
+                    name: "NIOSSL",
+                    package: "swift-nio-ssl",
+                    condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .macCatalyst, .linux, .android])
+                ),
                 .product(
                     name: "NIOTransportServices",
                     package: "swift-nio-transport-services",
@@ -186,35 +209,35 @@ let package = Package(
           exclude: [ // ObjC removed
             "CHANGELOG.md",
             "CMakeLists.txt",
-            "Example/",
+            "Example",
             "LICENSE",
             "Protos/CMakeLists.txt",
             "Protos/Podfile",
             "Protos/README.md",
             "Protos/build_protos.py",
-            "Protos/cpp/",
-            "Protos/lib/",
+            "Protos/cpp",
+            "Protos/lib",
             "Protos/nanopb_cpp_generator.py",
-            "Protos/protos/",
+            "Protos/protos",
             "README.md",
             "Source/CMakeLists.txt",
-            "Source/Resources/",
-            "Swift/",
+            "Source/Resources",
+            "Swift",
             "core/CMakeLists.txt",
             "core/src/util/config_detected.h.in",
-            "core/test/",
-            "fuzzing/",
+            "core/test",
+            "fuzzing",
             "test.sh",
             "Source/API",
             "Source/Public",
             // Swift PM doesn't recognize hpp files, so we're relying on search paths
             // to find third_party/nlohmann_json/json.hpp.
-            "third_party/",
+            "third_party",
 
             // Exclude alternate implementations for other platforms
             // connectivity_monitor_noop.cc is used on every platform for now.
             "core/src/remote/connectivity_monitor_apple.mm",
-            "core/src/util/filesystem_win.cc",
+            // filesystem_win.cc and filesystem_posix.cc guard themselves.
             // Use log_stdio.cc instead of log_apple.mm to avoid ObjC FirebaseCore dependency
             "core/src/util/log_apple.mm",
             // Exclude ObjC++ files that depend on ObjC FirebaseCore
@@ -223,9 +246,9 @@ let package = Package(
             "core/src/remote/firebase_metadata_provider_apple.mm",
           ],
           sources: [
-            "Source/",
-            "Protos/nanopb/",
-            "core/include/",
+            "Source",
+            "Protos/nanopb",
+            "core/include",
             "core/src",
           ],
           publicHeadersPath: "include",
@@ -238,6 +261,10 @@ let package = Package(
             .define("PB_NO_PACKED_STRUCTS", to: "1"),
             .define("PB_ENABLE_MALLOC", to: "1"),
             .define("FIRFirestore_VERSION", to: firebaseVersion),
+            // As upstream's CMake build (cmake/compiler_setup.cmake): no min and
+            // max macros from windows.h, which break std::min and std::max.
+            .define("WIN32_LEAN_AND_MEAN", to: "1", .when(platforms: [.windows])),
+            .define("NOMINMAX", to: "1", .when(platforms: [.windows])),
           ],
           cxxSettings: [
             .headerSearchPath("../")
@@ -262,22 +289,22 @@ let package = Package(
           exclude: [
             "CHANGELOG.md",
             "CMakeLists.txt",
-            "Example/",
+            "Example",
             "LICENSE",
-            "Protos/",
+            "Protos",
             "README.md",
-            "Source/",
-            "Swift/Source/Resources/",
-            "core/",
-            "fuzzing/",
-            "include/",
+            "Source",
+            "Swift/Source/Resources",
+            "core",
+            "fuzzing",
+            "include",
             "test.sh",
             "Swift/CHANGELOG.md",
-            "Swift/Tests/",
+            "Swift/Tests",
             "third_party/nlohmann_json",
           ],
           sources: [
-            "Swift/Source/",
+            "Swift/Source",
           ],
           resources: [.process("Source/Resources/PrivacyInfo.xcprivacy")],
           swiftSettings: [

@@ -47,7 +47,9 @@
 #define HAVE_ARC4RANDOM 1
 #define HAVE_LIBDISPATCH 1
 
-#elif __linux__ && SWIFT_PACKAGE
+#elif (__linux__ || _WIN32) && SWIFT_PACKAGE
+// firebase-swift: Windows too, where gRPC's BoringSSL provides RAND_bytes, as
+// it does on Linux.
 #define HAVE_OPENSSL_RAND_H 1
 
 #else

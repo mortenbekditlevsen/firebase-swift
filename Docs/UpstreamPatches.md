@@ -8,7 +8,7 @@ Re-apply these after pulling in a new upstream version.
 
 ## Firestore C++ core (`Sources/Firestore/core`)
 
-SwiftPM can't exclude files per platform, so Apple-only `.mm` files guard
+SwiftPM can't exclude files per platform, so platform-specific files guard
 their own contents, as upstream already does for `filesystem_apple.mm` and
 `status_apple.mm`:
 
@@ -18,13 +18,32 @@ their own contents, as upstream already does for `filesystem_apple.mm` and
 | `src/util/byte_stream_apple.mm` | `#if __APPLE__` |
 | `src/util/error_apple.mm` | `#if __APPLE__` |
 | `src/util/exception_apple.mm` | `#if __APPLE__` |
+| `src/util/filesystem_posix.cc` | `#if !_WIN32` (upstream guards only parts; `filesystem_win.cc` is used on Windows) |
 
 `Package.swift` exclusions that differ from upstream:
 
 - `connectivity_monitor_noop.cc` is compiled on every platform;
   `connectivity_monitor_apple.mm` is excluded.
 - `secure_random_openssl.cc` is compiled (it guards itself with
-  `HAVE_OPENSSL_RAND_H`, which `config.h` sets only on Linux).
+  `HAVE_OPENSSL_RAND_H`, which `config.h` sets on Linux and Windows).
+- `filesystem_win.cc` is compiled (it guards itself with `_WIN32`).
+
+`src/util/config.h` also sets `HAVE_OPENSSL_RAND_H` for Windows under SwiftPM;
+upstream only knows Apple and Linux there, and builds Windows with CMake.
+
+`src/util/quadruple_builder.cc`: the 64-bit hex constants in
+`POS_POWERS_OF_2` and `NEG_POWERS_OF_2` end in `ULL` rather than `LL`. Clang on
+Windows follows MSVC and types a hex literal that doesn't fit `long long` as a
+negative `long long` rather than `unsigned long long`, so brace-initializing
+`uint64_t` with it is a narrowing error. The values are the same everywhere.
+
+`src/util/quadruple.cc`: converting to `double` uses `std::scalbn` rather than
+POSIX's obsolete `scalb`, which Windows doesn't have. The exponent is an
+integer, so the result is the same.
+
+`src/util/log_stdio.cc` (the log outside Apple platforms) flushes stdout after
+each message. Piped stdout is fully buffered, so an assertion's message was
+lost when the process aborted right after logging it, as Windows CI showed.
 
 `src/util/filesystem_posix.cc` builds on Android, where upstream has `#error`
 placeholders: the data directory is `$XDG_DATA_HOME` (or
@@ -148,29 +167,73 @@ Linux and Android while it wasn't.
 
 ## Dependencies
 
+Five dependencies come from forks under `mortenbekditlevsen`, on branches
+with Linux and Windows build fixes. The root package's URL takes the place of
+the one a dependency asks for, so grpc-ios also gets the forked abseil and
+BoringSSL. Move back to upstream as the fixes are released there.
+
+On Windows, SwiftPM ignores source and exclude paths that end in "/", so
+leveldb, abseil and grpc-ios compiled nothing, or compiled what they meant to
+exclude. Their forks name those directories without the "/".
+
+- **leveldb:** `mortenbekditlevsen/leveldb`, branch `1.22.2-windows`. On top
+  of `1.22.2-headerfix` (the `F_FULLFSYNC` fix needed on Linux): source paths
+  without "/", and `util/env_posix.cc` and `util/env_windows.cc` each guard
+  themselves with `_WIN32`, as SwiftPM can't exclude a file per platform.
 - **abseil-cpp-SwiftPM:** 0.20250512.1, the version firebase-ios-sdk 13.1
-  pins. Linux needs one fix on top, which the fork
-  `mortenbekditlevsen/abseil-cpp-SwiftPM` carries (branch
-  `linux-fixes-0.20250512.1`): `absl/numeric/int128.h` includes
-  `int128_*_intrinsic.inc` inside `namespace absl`. On Linux, SwiftPM passes
-  abseil's generated umbrella module map to every dependent C++ compile, so
-  Clang treats those includes as nested module imports
-  (`-Wmodules-import-nested-redundant`, an error by default). The includes
-  are wrapped in a `#pragma clang diagnostic`. (The fork's older
-  `linux-fixes-0.20240722.2` branch also excluded `.inc` files from the
-  target; upstream does that itself since 0.20250512.) For Android, the fork
-  also excludes `absl/random/internal/nanobenchmark.cc`, which only abseil's
-  own tests and benchmarks use: its static initializer runs a timing benchmark
-  (`rdtsc` on x86-64) when the binary loads, which crashes in Android's
-  x86-64 emulator. And it links `liblog`, which abseil's Android log sink
-  needs.
-- **grpc-ios:** 1.83.1, as firebase-ios-sdk 13.1; it builds on Linux
-  unchanged.
+  pins, from `mortenbekditlevsen/abseil-cpp-SwiftPM`, branch
+  `windows-fixes-0.20250512.1`. On top of `linux-fixes-0.20250512.1`, which
+  has:
+  - `absl/numeric/int128.h` includes `int128_*_intrinsic.inc` inside
+    `namespace absl`. On Linux, SwiftPM passes abseil's generated umbrella
+    module map to every dependent C++ compile, so Clang treats those includes
+    as nested module imports (`-Wmodules-import-nested-redundant`, an error
+    by default). The includes are wrapped in a `#pragma clang diagnostic`.
+    (The fork's older `linux-fixes-0.20240722.2` branch also excluded `.inc`
+    files from the target; upstream does that itself since 0.20250512.)
+  - For Android, it excludes `absl/random/internal/nanobenchmark.cc`, which
+    only abseil's own tests and benchmarks use: its static initializer runs a
+    timing benchmark (`rdtsc` on x86-64) when the binary loads, which crashes
+    in Android's x86-64 emulator. And it links `liblog`, which abseil's
+    Android log sink needs.
+
+  The Windows branch adds the `"absl"` path without "/", and the defines
+  abseil's own build uses on Windows (`absl/copts`): `NOMINMAX` (windows.h's
+  `max()` macro breaks `numeric_limits<>::max()`), `WIN32_LEAN_AND_MEAN` and
+  others.
+- **grpc-ios:** 1.83.1, as firebase-ios-sdk 13.1, from
+  `mortenbekditlevsen/grpc-ios`, branch `windows-1.83.1`: paths without "/",
+  `NOMINMAX` on Windows (as gRPC's CMake build: windows.h's macros break
+  re2), and on Windows the bundled zlib's headers instead of a system `libz`,
+  which Windows doesn't have. (It builds on Linux unchanged.) Offered
+  upstream as grpc/grpc-ios#397.
+- **boringssl-SwiftPM** (gRPC's BoringSSL): 0.41.0, from
+  `mortenbekditlevsen/boringSSL-SwiftPM`, branch `windows-0.41.0`.
+  firebase-swift lists it only to replace grpc-ios's. On Windows it defines
+  `_WINSOCKAPI_`, `NOMINMAX` and `NOCRYPT`, as swift-nio-ssl's copy does, and
+  renames the thread-exit callback with a define, which otherwise clashes
+  with the one in swift-crypto's BoringSSL. Everywhere, it compiles its error
+  tables from `gen/crypto/err_data.cc` rather than `err_data.c`:
+  `crypto/err/err.cc` declares them in C++ without `extern "C"`, which on
+  Windows names them differently from C. Offered upstream as
+  firebase/boringSSL-SwiftPM#36.
+- **swift-nio:** 2.105.2 from `mortenbekditlevsen/swift-nio`, branch
+  `windows-2.105.2`, with three Windows fixes:
+  - casts in `CNIOWindows.h`, whose wrappers pass `void *` where WinSock
+    takes `char *`. C++ doesn't allow that, so modules with C++ interop (as
+    FirebaseDatabase's dependents) couldn't import NIO
+    (apple/swift-nio#3801);
+  - apple/swift-nio#3708 (for issue #3702), which reports `WSAEWOULDBLOCK`
+    as would-block instead of an error. Without it, a socket whose buffer
+    fills fails its channel, so the tests' NIO servers cut responses short;
+  - the same for `Windows.recv`, which stream sockets read with and which
+    #3708 leaves out. NIO reads again after a read that fills its buffer, so
+    when the data ends exactly at the buffer's end, the next read failed the
+    channel: large messages failed intermittently (`carriesLargeMessages`
+    with the WinHTTP transport). Offered upstream as apple/swift-nio#3800.
 - **C++ standard:** `Package.swift` sets `cxxLanguageStandard: .gnucxx17`,
   as upstream 13.x does, and abseil and grpc-ios build as C++17 too. They
   must agree: abseil defines its own `absl::string_view` below C++17, so a
   mismatch fails at link time with undefined
   `absl::…(std::basic_string_view…)` symbols.
 - **libc++** is linked on Apple platforms only. Linux uses libstdc++.
-- **leveldb:** `mortenbekditlevsen/leveldb`, branch `1.22.2-headerfix`
-  (includes the `F_FULLFSYNC` fix needed on Linux).

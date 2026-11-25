@@ -22,6 +22,8 @@ import Testing
   import Glibc
 #elseif canImport(Android)
   import Android
+#elseif os(Windows)
+  import WinSDK
 #endif
 
 private func rootReference() -> StorageReference {
@@ -165,35 +167,74 @@ struct StorageTaskTests {
 /// Accepts connections and never answers them: a listening socket whose
 /// backlog the kernel fills, as for a server that hangs.
 private final class SilentServer: Sendable {
-  private let descriptor: Int32
+  #if os(Windows)
+    private typealias Descriptor = SOCKET
+    private typealias SocketAddressIn = SOCKADDR_IN
+    private typealias SocketAddress = SOCKADDR
+  #else
+    private typealias Descriptor = Int32
+    private typealias SocketAddressIn = sockaddr_in
+    private typealias SocketAddress = sockaddr
+  #endif
+
+  // Not POSIXError: Windows's POSIX error codes lack EADDRNOTAVAIL.
+  enum Failure: Error {
+    case socket, bind
+  }
+
+  private let descriptor: Descriptor
   let port: Int
 
   init() throws {
-    #if canImport(Glibc)
+    #if os(Windows)
+      var data = WSADATA()
+      guard WSAStartup(0x0202, &data) == 0 else { throw Failure.socket }
+      let fd = socket(AF_INET, SOCK_STREAM, 0)
+      guard fd != INVALID_SOCKET else { throw Failure.socket }
+    #elseif canImport(Glibc)
       let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+      guard fd >= 0 else { throw Failure.socket }
     #else
       let fd = socket(AF_INET, SOCK_STREAM, 0)
+      guard fd >= 0 else { throw Failure.socket }
     #endif
-    guard fd >= 0 else { throw POSIXError(.EIO) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    var address = SocketAddressIn()
+    let loopback = UInt32(0x7F00_0001).bigEndian
+    #if os(Windows)
+      address.sin_family = ADDRESS_FAMILY(AF_INET)
+      address.sin_addr.S_un.S_addr = loopback
+    #else
+      address.sin_family = sa_family_t(AF_INET)
+      address.sin_addr.s_addr = loopback
+    #endif
     address.sin_port = 0
-    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    var length = socklen_t(MemoryLayout<SocketAddressIn>.size)
     let bound = withUnsafeMutablePointer(to: &address) {
-      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+      $0.withMemoryRebound(to: SocketAddress.self, capacity: 1) {
         bind(fd, $0, length) == 0 && listen(fd, 16) == 0 && getsockname(fd, $0, &length) == 0
       }
     }
     guard bound else {
-      close(fd)
-      throw POSIXError(.EADDRNOTAVAIL)
+      Self.close(fd)
+      throw Failure.bind
     }
     descriptor = fd
     port = Int(UInt16(bigEndian: address.sin_port))
   }
 
   func stop() {
-    close(descriptor)
+    Self.close(descriptor)
+  }
+
+  private static func close(_ descriptor: Descriptor) {
+    #if os(Windows)
+      closesocket(descriptor)
+    #elseif canImport(Darwin)
+      Darwin.close(descriptor)
+    #elseif canImport(Glibc)
+      Glibc.close(descriptor)
+    #else
+      Android.close(descriptor)
+    #endif
   }
 }
