@@ -337,7 +337,8 @@ git config --global core.longpaths true
   can; `.github/scripts/debug-crash.ps1` runs a test under `cdb` and names its
   frames that way.
 
-The sample app hasn't been tried on Windows yet.
+CI builds the sample app on Windows and runs its check, which goes through
+the app's flow without a window. The app's window hasn't been tried there.
 
 ## Sample app
 

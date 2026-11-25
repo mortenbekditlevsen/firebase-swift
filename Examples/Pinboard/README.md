@@ -56,7 +56,12 @@ firebase emulators:exec "PINBOARD_EMULATORS=1 swift run pinboard-check"
 ```
 
 CI (`.github/workflows/pinboard.yml`) builds the app and runs the check on
-macOS and Linux.
+macOS, Linux and Windows.
+
+The check signs out a user saved by an earlier run first: emulators forget
+their users when they stop, so the saved user's token no longer refreshes.
+The app itself keeps that user; sign out in it after restarting the
+emulators.
 
 ## Run it on your own Firebase project
 
@@ -100,28 +105,9 @@ macOS and Linux.
 `FirebaseFirestore` wraps upstream's C++ core, so the targets that import it
 (here all of them) need `.interoperabilityMode(.Cxx)`.
 
-## Known issue: gRPC's copy of zlib
-
-grpc-ios compiles its own copy of zlib into `gRPC-Core`, and SwiftCrossUI's
-image support links the `zlib` package, so the app fails to link with
-duplicate zlib symbols (on macOS and Linux). gRPC doesn't need its copy: it
-includes `<zlib.h>` and links the system's `libz`. Until firebase-swift
-depends on a grpc-ios without it, point this package at one:
-
-```sh
-git clone https://github.com/grpc/grpc-ios.git /tmp/grpc-ios
-# In /tmp/grpc-ios/Package.swift, add "third_party/zlib" to gRPC-Core's exclude list,
-# and check out the revision in Package.resolved first.
-swift package edit grpc-ios --path /tmp/grpc-ios
-```
-
 ## Known issue: bordered buttons on macOS 26 and later
 
 SwiftCrossUI 0.10's AppKit backend adds a bordered button's bezel after its
 label, so on macOS 26 and later the bezel hides the title until the button is
 pressed. Pinboard's buttons are borderless instead (`ActionButton`).
 
-## To do
-
-- Windows: SwiftCrossUI has a WinUI backend; the app and firebase-swift
-  haven't been built there yet.

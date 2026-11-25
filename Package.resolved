@@ -1,5 +1,5 @@
 {
-  "originHash" : "fe11a02491e16f1fe9b53a7bf31041bb3b11a0cd1bb75bdeb00b90672079a174",
+  "originHash" : "cc511032dbc9a3f433784d0ea9d76afa322d8cd5c4091f2d2835dda0d6e6a7c1",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
@@ -25,7 +25,7 @@
       "location" : "https://github.com/mortenbekditlevsen/grpc-ios.git",
       "state" : {
         "branch" : "windows-1.83.1",
-        "revision" : "79d79bcc5701dd3f59fd0d3af99dbac7a956ba8e"
+        "revision" : "65b7b070aa62b8ec0f2d1a79abc4d8572a39780d"
       }
     },
     {
