@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
       "state" : {
-        "branch" : "linux-fixes-0.20250512.1",
-        "revision" : "781d2d732b8259599e6dc89898fe23accb7ef873"
+        "branch" : "windows-fixes-0.20250512.1",
+        "revision" : "e7162430e859b6978fd9407dac6282111068044a"
       }
     },
     {
@@ -22,10 +22,19 @@
     {
       "identity" : "boringssl-swiftpm",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/firebase/boringssl-SwiftPM.git",
+      "location" : "https://github.com/mortenbekditlevsen/boringSSL-SwiftPM.git",
       "state" : {
-        "revision" : "f6aa17e03360e76c58eb16c43a97f4c9113177b2",
-        "version" : "0.41.0"
+        "branch" : "windows-0.41.0",
+        "revision" : "cd579628d8d49b668902591fa04491254603ff09"
+      }
+    },
+    {
+      "identity" : "grpc-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mortenbekditlevsen/grpc-ios.git",
+      "state" : {
+        "branch" : "windows-1.83.1",
+        "revision" : "65b7b070aa62b8ec0f2d1a79abc4d8572a39780d"
       }
     },
     {
@@ -42,8 +51,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mortenbekditlevsen/leveldb.git",
       "state" : {
-        "branch" : "1.22.2-headerfix",
-        "revision" : "7d2458cb9cca40f2158f6a62b4a4de03c8b10ebf"
+        "branch" : "1.22.2-windows",
+        "revision" : "5a6c4c5eb2f2158b0bfea51b36c9b3dcb3255dd9"
       }
     },
     {
@@ -202,10 +211,10 @@
     {
       "identity" : "swift-nio",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-nio.git",
+      "location" : "https://github.com/mortenbekditlevsen/swift-nio.git",
       "state" : {
-        "revision" : "2f58d8ef84438d6517fc78bcea2f8527e3c72936",
-        "version" : "2.105.0"
+        "branch" : "windows-2.105.2",
+        "revision" : "7704c739c8fc8b2cc77b8c2dfdf666af5178fe6b"
       }
     },
     {
