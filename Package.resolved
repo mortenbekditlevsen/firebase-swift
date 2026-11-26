@@ -7,7 +7,7 @@
       "location" : "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
       "state" : {
         "branch" : "windows-fixes-0.20250512.1",
-        "revision" : "e7162430e859b6978fd9407dac6282111068044a"
+        "revision" : "45b5bacda754eaa2b431a90995b3d8febb766f66"
       }
     },
     {
@@ -25,7 +25,7 @@
       "location" : "https://github.com/mortenbekditlevsen/grpc-ios.git",
       "state" : {
         "branch" : "windows-1.83.1",
-        "revision" : "65b7b070aa62b8ec0f2d1a79abc4d8572a39780d"
+        "revision" : "fe3f612baa60640133642f78ccf961c9d42c9022"
       }
     },
     {
@@ -125,6 +125,15 @@
       "state" : {
         "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
         "version" : "1.6.4"
+      }
+    },
+    {
+      "identity" : "zlib",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/the-swift-collective/zlib.git",
+      "state" : {
+        "revision" : "d3a28ff8123e88d936333eef6d4d1ea2a05092d2",
+        "version" : "1.3.3"
       }
     }
   ],
