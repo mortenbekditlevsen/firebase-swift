@@ -44,9 +44,14 @@ jobs:
       - name: Install GTK 4
         if: runner.os == 'Linux'
         run: apt-get update && apt-get install -y libgtk-4-dev
+      # Not the checkouts, which SwiftPM recreates from .build/repositories:
+      # on Windows, restoring them broke a symbolic link in
+      # xctest-dynamic-overlay, which then didn't compile.
       - uses: actions/cache@v4
         with:
-          path: Examples/Pinboard/.build
+          path: |
+            Examples/Pinboard/.build
+            !Examples/Pinboard/.build/checkouts
           key: pinboard-${{ runner.os }}-spm-${{ hashFiles('Examples/Pinboard/Package.resolved', 'Package.resolved') }}
           restore-keys: pinboard-${{ runner.os }}-spm-
       # The products rather than everything: on Linux, a plain `swift build`
