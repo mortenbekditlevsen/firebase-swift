@@ -213,7 +213,7 @@ exclude. Their forks name those directories without the "/".
     and elsewhere the system `libz`, as upstream links. Upstream also
     compiles the bundled copy, which clashed with other copies in an app
     (Pinboard, through SwiftCrossUI's image support). Prefixing it
-    (`Z_PREFIX`), as offered in grpc/grpc-ios#398, isn't enough:
+    (`Z_PREFIX`), as offered in grpc/grpc-ios#398 (since closed), isn't enough:
     libjpeg-turbo's package, which SwiftCrossUI 0.11 brings in, compiles
     zlib with `Z_PREFIX` too, and the same `z_` symbols clashed. The zlib
     package is shared instead: libpng uses it too, and SwiftPM builds a
