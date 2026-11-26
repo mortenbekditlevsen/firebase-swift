@@ -58,6 +58,8 @@ package final class Board {
     }
 
     @ObservationIgnored private var sessionTasks: [Task<Void, Never>] = []
+    /// Whether this client's `presence` entry has been written.
+    @ObservationIgnored private var isPresent = false
 
     package init() {}
 
@@ -197,6 +199,7 @@ package final class Board {
     private func endSession() {
         sessionTasks.forEach { $0.cancel() }
         sessionTasks = []
+        isPresent = false
         notes = []
         people = []
         previews = [:]
@@ -218,9 +221,14 @@ package final class Board {
     private func listenToPeople() async {
         let presence = Database.database().reference(withPath: "presence")
         do {
-            for try await everyone in presence.values(as: [String: Presence]?.self) {
-                people = (everyone ?? [:])
-                    .map { Person(id: $0.key, name: $0.value.name, typing: $0.value.typing) }
+            // Entry by entry, so that one the rules will reject (shown until
+            // the server says so) doesn't stop the listener.
+            for try await everyone in presence.values() {
+                people = everyone.children
+                    .compactMap { entry in
+                        guard let key = entry.key, let presence = try? entry.data(as: Presence.self) else { return nil }
+                        return Person(id: key, name: presence.name, typing: presence.typing)
+                    }
                     .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             }
         } catch {
@@ -235,17 +243,22 @@ package final class Board {
         let entry = presence(of: user)
         do {
             for try await connected in database.reference(withPath: ".info/connected").values() {
+                // The server removes the entry when the connection drops.
+                isPresent = false
                 guard connected.value as? Bool == true else { continue }
                 try await entry.onDisconnect.removeValueAndWait()
                 entry.setValue(["name": userName, "typing": !draft.isEmpty])
+                isPresent = true
             }
         } catch {
             report(error)
         }
     }
 
+    /// Until the entry is written, there's nothing to update: the rules reject
+    /// an entry without a name, and the entry gets the draft's state anyway.
     private func setTyping(_ typing: Bool) {
-        guard let user else { return }
+        guard let user, isPresent else { return }
         presence(of: user).child("typing").setValue(typing)
     }
 

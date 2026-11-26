@@ -53,11 +53,11 @@ func check() async throws {
     let name = "Pinboard check \(Int.random(in: 1000 ..< 10000))"
     await board.signInAnonymously(name: name)
     try await waitFor("signed in (Auth)", in: board) { board.user != nil }
+    // Typing before the presence entry exists, as someone quick can.
+    board.draft = "x"
     try await waitFor("present (Realtime Database)", in: board) {
         board.people.contains { $0.name == name }
     }
-
-    board.draft = "x"
     try await waitFor("typing shown (Realtime Database)", in: board) {
         board.people.contains { $0.name == name && $0.typing }
     }
