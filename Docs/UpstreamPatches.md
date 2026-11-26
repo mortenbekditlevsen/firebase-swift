@@ -207,12 +207,18 @@ exclude. Their forks name those directories without the "/".
   `NOMINMAX` on Windows (as gRPC's CMake build: windows.h's macros break
   re2), and on Windows the bundled zlib's headers instead of a system `libz`,
   which Windows doesn't have. (It builds on Linux unchanged.) Offered
-  upstream as grpc/grpc-ios#397. More changes:
-  - The bundled zlib, on every platform, with its symbols prefixed
-    (`Z_PREFIX`, and `z_errmsg` renamed, which `Z_PREFIX` leaves out), and no
-    system `libz`. Without the prefix, an app that also links another zlib
-    (Pinboard, through SwiftCrossUI's image support) failed to link with
-    duplicate symbols. Offered upstream as grpc/grpc-ios#398.
+  upstream as grpc/grpc-ios#397; the fork has since replaced the zlib part
+  (below). More changes:
+  - Not the bundled zlib at all: on Windows, the-swift-collective/zlib,
+    and elsewhere the system `libz`, as upstream links. Upstream also
+    compiles the bundled copy, which clashed with other copies in an app
+    (Pinboard, through SwiftCrossUI's image support). Prefixing it
+    (`Z_PREFIX`), as offered in grpc/grpc-ios#398, isn't enough:
+    libjpeg-turbo's package, which SwiftCrossUI 0.11 brings in, compiles
+    zlib with `Z_PREFIX` too, and the same `z_` symbols clashed. The zlib
+    package is shared instead: libpng uses it too, and SwiftPM builds a
+    package once. Upstream may well not accept a dependency on another
+    package, so this one may stay in the fork.
   - It depends on the abseil and BoringSSL forks below. firebase-swift lists
     them too, but that only overrides grpc-ios's URLs when firebase-swift is
     the root package: SwiftPM keeps the first URL it meets for a package, so

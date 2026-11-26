@@ -23,7 +23,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(name: "firebase-swift", path: "../.."),
-        .package(url: "https://github.com/moreSwift/swift-cross-ui", .upToNextMinor(from: "0.10.0")),
+        .package(url: "https://github.com/moreSwift/swift-cross-ui", .upToNextMinor(from: "0.11.0")),
     ],
     targets: [
         // The model: everything Pinboard does with Firebase, without UI.

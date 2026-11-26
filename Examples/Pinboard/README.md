@@ -107,7 +107,7 @@ emulators.
 
 ## Known issue: bordered buttons on macOS 26 and later
 
-SwiftCrossUI 0.10's AppKit backend adds a bordered button's bezel after its
+SwiftCrossUI's AppKit backend (still in 0.11) adds a bordered button's bezel after its
 label, so on macOS 26 and later the bezel hides the title until the button is
 pressed. Pinboard's buttons are borderless instead (`ActionButton`).
 
