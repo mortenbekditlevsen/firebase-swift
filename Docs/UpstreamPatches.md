@@ -201,12 +201,13 @@ exclude. Their forks name those directories without the "/".
   abseil's own build uses on Windows (`absl/copts`): `NOMINMAX` (windows.h's
   `max()` macro breaks `numeric_limits<>::max()`), `WIN32_LEAN_AND_MEAN` and
   others.
+  It also links CoreFoundation only on Apple platforms, as grpc-ios below.
 - **grpc-ios:** 1.83.1, as firebase-ios-sdk 13.1, from
   `mortenbekditlevsen/grpc-ios`, branch `windows-1.83.1`: paths without "/",
   `NOMINMAX` on Windows (as gRPC's CMake build: windows.h's macros break
   re2), and on Windows the bundled zlib's headers instead of a system `libz`,
   which Windows doesn't have. (It builds on Linux unchanged.) Offered
-  upstream as grpc/grpc-ios#397. Two more changes:
+  upstream as grpc/grpc-ios#397. More changes:
   - The bundled zlib, on every platform, with its symbols prefixed
     (`Z_PREFIX`, and `z_errmsg` renamed, which `Z_PREFIX` leaves out), and no
     system `libz`. Without the prefix, an app that also links another zlib
@@ -216,6 +217,16 @@ exclude. Their forks name those directories without the "/".
     them too, but that only overrides grpc-ios's URLs when firebase-swift is
     the root package: SwiftPM keeps the first URL it meets for a package, so
     Pinboard got upstream BoringSSL. This one is for the fork only.
+  - On ARM64 Windows, upb's `encode_longvarint` leaves out the alignment
+    directive in its inline assembly, which crashes LLVM while it writes the
+    unwind info (llvm/llvm-project#47432). upb already leaves it out under
+    `__SEH__`, but clang defines that only for MinGW, not for the MSVC target.
+    upb is protocolbuffers/protobuf's, which grpc-ios copies.
+  - CoreFoundation is linked only on Apple platforms (tools version 5.9, to
+    name visionOS). PackageDescription documents `linkedFramework` as ignored
+    elsewhere, but swift-build, Swift 6.4's default build system, passes it
+    to the Linux linker, which fails. So that's a swift-build bug, and the
+    condition works around it.
 - **boringssl-SwiftPM** (gRPC's BoringSSL): 0.41.0, from
   `mortenbekditlevsen/boringSSL-SwiftPM`, branch `windows-0.41.0`.
   firebase-swift lists it only to replace grpc-ios's. On Windows it defines

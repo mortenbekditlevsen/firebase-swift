@@ -1,5 +1,5 @@
 {
-  "originHash" : "77847bae8d0f2f4764746627fba29658e8a2eb215e0782d5a8bf9e5281fc9426",
+  "originHash" : "75a6a9670ff01bb9bbf14f7b08572cc9d36d1b22d7f1482db58c480cf080cc43",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
       "state" : {
         "branch" : "windows-fixes-0.20250512.1",
-        "revision" : "e7162430e859b6978fd9407dac6282111068044a"
+        "revision" : "45b5bacda754eaa2b431a90995b3d8febb766f66"
       }
     },
     {
@@ -34,7 +34,7 @@
       "location" : "https://github.com/mortenbekditlevsen/grpc-ios.git",
       "state" : {
         "branch" : "windows-1.83.1",
-        "revision" : "65b7b070aa62b8ec0f2d1a79abc4d8572a39780d"
+        "revision" : "145a54573f4fe84ed9e9a5a6039a76724abb2a8c"
       }
     },
     {
