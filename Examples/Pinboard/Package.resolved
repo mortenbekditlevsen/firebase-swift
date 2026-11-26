@@ -1,5 +1,5 @@
 {
-  "originHash" : "77847bae8d0f2f4764746627fba29658e8a2eb215e0782d5a8bf9e5281fc9426",
+  "originHash" : "5584ba9c2c91c1e002bb8c4bf8825fdf3428e705415bbeaf7b8e455c90c77970",
   "pins" : [
     {
       "identity" : "abseil-cpp-swiftpm",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/mortenbekditlevsen/abseil-cpp-SwiftPM.git",
       "state" : {
         "branch" : "windows-fixes-0.20250512.1",
-        "revision" : "e7162430e859b6978fd9407dac6282111068044a"
+        "revision" : "45b5bacda754eaa2b431a90995b3d8febb766f66"
       }
     },
     {
@@ -34,16 +34,7 @@
       "location" : "https://github.com/mortenbekditlevsen/grpc-ios.git",
       "state" : {
         "branch" : "windows-1.83.1",
-        "revision" : "65b7b070aa62b8ec0f2d1a79abc4d8572a39780d"
-      }
-    },
-    {
-      "identity" : "jpeg",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stackotter/jpeg",
-      "state" : {
-        "revision" : "a27e47f49479993b2541bc5f5c95d9354ed567a0",
-        "version" : "1.0.2"
+        "revision" : "fe3f612baa60640133642f78ccf961c9d42c9022"
       }
     },
     {
@@ -53,6 +44,15 @@
       "state" : {
         "branch" : "1.22.2-windows",
         "revision" : "5a6c4c5eb2f2158b0bfea51b36c9b3dcb3255dd9"
+      }
+    },
+    {
+      "identity" : "libjpegturbo",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stackotter/libjpegturbo",
+      "state" : {
+        "revision" : "cb9b2a6a7758b6bcc228a71fdbad1c9c80beb09d",
+        "version" : "0.1.4"
       }
     },
     {
@@ -132,8 +132,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/moreSwift/swift-cross-ui",
       "state" : {
-        "revision" : "0f3ec3958b79cdc39a1a3e604516b71ab33a9043",
-        "version" : "0.10.0"
+        "revision" : "f673fcd5201ae8f94bd0a6bf8c3aaa6882084740",
+        "version" : "0.11.0"
       }
     },
     {
@@ -150,8 +150,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stackotter/swift-image-formats",
       "state" : {
-        "revision" : "d735e0ed3d4a4aed50f4042494e7c769b5b70229",
-        "version" : "0.5.0"
+        "revision" : "c361fe1d8d7731d5e25991b50be8f964731794ab",
+        "version" : "0.6.1"
       }
     },
     {
