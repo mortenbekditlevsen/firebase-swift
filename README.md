@@ -1,7 +1,7 @@
 # firebase-swift
 
 A Swift port of the [Firebase Apple SDK](https://github.com/firebase/firebase-ios-sdk)
-(release 13.1.1) that runs on Apple platforms, Linux, Android and Windows. There is no
+(release 13.2.0) that runs on Apple platforms, Linux, Android and Windows. There is no
 Objective-C: Auth, Database, Functions, Storage and App Check are written in
 Swift, and Firestore wraps upstream's C++ core through Swift's C++
 interoperability.
