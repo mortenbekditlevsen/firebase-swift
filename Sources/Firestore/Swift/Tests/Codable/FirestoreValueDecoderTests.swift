@@ -322,8 +322,13 @@ private enum Outcome<T: Equatable>: Equatable, CustomStringConvertible {
   static func == (lhs: Outcome, rhs: Outcome) -> Bool {
     switch (lhs, rhs) {
     case let (.value(a), .value(b)):
-      // NaNs are equal here.
-      return a == b || String(reflecting: a) == String(reflecting: b)
+      // NaNs are equal here. Not by how dates print: on Linux and Android,
+      // `Date.description` traps for a NaN date.
+      if a == b { return true }
+      if let a = a as? Date, let b = b as? Date {
+        return a.timeIntervalSinceReferenceDate.isNaN && b.timeIntervalSinceReferenceDate.isNaN
+      }
+      return String(reflecting: a) == String(reflecting: b)
     case let (.decodingError(a), .decodingError(b)), let (.otherError(a), .otherError(b)):
       return a == b
     default:
@@ -357,6 +362,8 @@ private enum Outcome<T: Equatable>: Equatable, CustomStringConvertible {
 
   var description: String {
     switch self {
+    case let .value(value as Date):
+      return "value Date(timeIntervalSinceReferenceDate: \(value.timeIntervalSinceReferenceDate))"
     case let .value(value): return "value \(String(reflecting: value))"
     case let .decodingError(error): return error
     case let .otherError(error): return error
