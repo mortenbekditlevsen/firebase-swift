@@ -264,6 +264,9 @@ class AppCheckCoreTests: XCTestCase {
     // second task resumes once the store has started. If the store hadn't
     // started within the timeout (or started twice), nothing ever resumed it
     // and the test hung. The gate always opens, so the test fails instead.
+    // It opens once the other calls have joined the operation: opening it
+    // when the store started let the operation finish before the last calls
+    // arrived, and they started a second one (seen on CI).
     let storeStartedExpectation = expectation(description: "store started")
     storeStartedExpectation.assertForOverFulfill = false
     let storeGate = AsyncGate()
@@ -278,6 +281,7 @@ class AppCheckCoreTests: XCTestCase {
     // Request token several times concurrently
     Task {
       await fulfillment(of: [storeStartedExpectation], timeout: 5.0)
+      await waitForJoinedCalls(getTokenCallsCount - 1)
       await storeGate.open()
     }
 
@@ -307,7 +311,8 @@ class AppCheckCoreTests: XCTestCase {
     let expectedToken = validToken()
     fakeAppCheckProvider.tokenToReturn = expectedToken
 
-    // Port note: a gate instead of upstream's continuation, as above.
+    // Port note: a gate instead of upstream's continuation, opened once the
+    // other calls have joined, as above.
     let storageError = NSError(domain: name, code: 0, userInfo: nil)
     let storeStartedExpectation = expectation(description: "store started")
     storeStartedExpectation.assertForOverFulfill = false
@@ -322,6 +327,7 @@ class AppCheckCoreTests: XCTestCase {
 
     Task {
       await fulfillment(of: [storeStartedExpectation], timeout: 5.0)
+      await waitForJoinedCalls(getTokenCallsCount - 1)
       await storeGate.open()
     }
 
@@ -347,6 +353,14 @@ class AppCheckCoreTests: XCTestCase {
   }
 
   // MARK: - Helpers
+
+  /// Waits until `count` calls have joined the ongoing operation, or 5 s.
+  private func waitForJoinedCalls(_ count: Int) async {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while appCheck.joinedCallCount < count, ContinuousClock.now < deadline {
+      try? await Task.sleep(for: .milliseconds(1))
+    }
+  }
 
   private func internalError() -> NSError {
     return NSError(domain: "com.internal.error", code: -1, userInfo: nil)
