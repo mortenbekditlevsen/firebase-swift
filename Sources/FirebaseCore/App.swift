@@ -19,7 +19,7 @@ import Synchronization
 /// backends in version headers. Keep it in sync with `firebaseVersion` in
 /// Package.swift; UPSTREAM.md has each module's actual baseline.
 public func FirebaseVersion() -> String {
-  "13.1.1"
+  "13.2.0"
 }
 
 /// Stands in for upstream's heartbeat logger, which isn't ported: nothing

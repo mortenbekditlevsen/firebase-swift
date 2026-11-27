@@ -66,12 +66,15 @@ def upstream_tree(repo, ref, path):
 
 
 def port_files(module):
+    """The module's files as git sees them: tracked or new, but not ignored
+    (such as __pycache__ or .DS_Store)."""
     root = REPO_ROOT / module.port
+    out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."],
+                         cwd=root, capture_output=True, check=True).stdout.decode()
     files = {}
-    for file in sorted(root.rglob("*")):
-        relative = file.relative_to(root).as_posix()
-        if file.is_file() and file.name != ".DS_Store" \
-                and not any(relative.startswith(prefix) for prefix in module.exclude):
+    for relative in sorted(set(filter(None, out.split("\0")))):
+        file = root / relative
+        if file.is_file() and not any(relative.startswith(prefix) for prefix in module.exclude):
             files[relative] = file
     return files
 

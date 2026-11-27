@@ -21,3 +21,6 @@ Benchmarks/results/*.log
 # Reference material, kept locally: an older upstream Firestore, and a stub.
 Sources/old/
 Sources/FirebaseFirestoreWrap/
+
+# Editor swap files
+*.swp
