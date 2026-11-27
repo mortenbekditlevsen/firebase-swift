@@ -22,7 +22,11 @@ import FirebaseCore
 import Foundation
 import Testing
 
-@Suite("FirestoreValueDecoder")
+/// Serialized, and yielding between fields: each case decodes for a while
+/// without suspending, and in parallel they held every thread of the
+/// concurrency pool for seconds, so other suites' timeouts expired (on CI's
+/// Linux and Android runners).
+@Suite("FirestoreValueDecoder", .serialized)
 struct FirestoreValueDecoderTests {
   /// One value of every kind Firestore stores, by field name.
   static let values: [String: Any] = [
@@ -83,6 +87,7 @@ struct FirestoreValueDecoderTests {
     let fields = Array(Self.values.keys) + Array(Self.serverTimestamps.keys) + ["missing"]
     var checked = 0
     for field in fields {
+      await Task.yield()
       checked += compare(Bool.self, field, snapshot, behavior)
       checked += compare(Int.self, field, snapshot, behavior)
       checked += compare(Int8.self, field, snapshot, behavior)
@@ -142,6 +147,7 @@ struct FirestoreValueDecoderTests {
   func optionalPropertiesDecodeAsFromData(behavior: ServerTimestampBehavior) async throws {
     let snapshot = try await Self.snapshot()
     for field in Array(Self.values.keys) + Array(Self.serverTimestamps.keys) + ["missing"] {
+      await Task.yield()
       compare(Int.self, field, snapshot, behavior, ifPresent: true)
       compare(Double.self, field, snapshot, behavior, ifPresent: true)
       compare(Bool.self, field, snapshot, behavior, ifPresent: true)
@@ -163,6 +169,7 @@ struct FirestoreValueDecoderTests {
     let snapshot = try await Self.snapshot()
     let decoder = strategy.decoder
     for field in Self.values.keys {
+      await Task.yield()
       _ = compare(Date.self, field, snapshot, .none, decoder: decoder)
       _ = compare(Data.self, field, snapshot, .none, decoder: decoder)
       _ = compare(Double.self, field, snapshot, .none, decoder: decoder)
