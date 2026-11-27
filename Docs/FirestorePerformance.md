@@ -7,10 +7,10 @@ documents of `BenchItem` (ten fields: strings, numbers, a bool and an array,
 as the Database's S3 decodes), written with the network disabled and read
 back from the in-memory cache, so neither a server nor the disk is involved.
 
-## Reading 10k documents
+## Where the time went
 
-`Benchmarks/results/e7f8fd85-firestore-20261127-104214.jsonl`, medians of
-20, port and upstream in turns:
+Before the decoder below, `Benchmarks/results/e7f8fd85-firestore-20261127-104214.jsonl`,
+medians of 20, port and upstream in turns:
 
 | Step | Port | Upstream | Port vs upstream |
 |---|---:|---:|---:|
@@ -35,33 +35,60 @@ it's the steps in between that differ:
   value. That's the Database's picture before `FNodeDecoder` (P5), which
   decodes from its nodes directly and is about 4× faster than decoding
   Foundation values.
-- **The port already decodes twice as fast as upstream**, because its
+- **The port already decoded twice as fast as upstream**, because its
   `[String: Any]` holds Swift values, which the decoder casts more cheaply
   than upstream's bridged `NSDictionary` and `NSNumber`.
 - **`data()` is slower than upstream's**: the port converts twice (the core's
   values to the bridge's C++ map, then to Swift), where upstream's
   Objective-C writes Foundation values from the core's values at once.
 
-## Next: decoding from the core's values
+## Decoding from the core's values
 
 The core keeps a document's fields as nanopb structs
 (`google_firestore_v1_Value`: a type tag and a union; strings, bytes and map
-keys as length-prefixed bytes), already in memory while the snapshot lives. A
-decoder can read them in place, as `FNodeDecoder` reads the Database's nodes:
-numbers straight from the union, keys compared as bytes, and strings copied
-only into the fields that store them. That replaces all three steps after the
-query, `F1-bridge` included. The structs have plain C layout, so this needs
-no `std::span` or non-escapable types in Swift's C++ interop; the bridge lends
-the root value to Swift for the duration of a closure.
+keys as length-prefixed bytes), in memory while the snapshot lives.
+`data(as:)` now reads them in place (`FirestoreValueDecoder`), as the
+Database's `FNodeDecoder` reads its nodes: numbers straight from the union,
+keys compared as bytes, strings copied only into the fields that store them.
+The bridge hands Swift the document's fields as opaque references, with
+accessors for each kind (`include/FirestoreBridge.h`); the structs have plain
+C layout, so this needs no `std::span` or non-escapable types.
 
-F1 measures it as a new step beside `F1-data-as`. If it ends up near the
-Database's ratio, reading 10k documents would go from about 160 ms (query and
-decode) to about 80 ms. `data()` could take the same route to Foundation
-values, skipping the C++ copy.
+It reads nulls, booleans, numbers, strings, maps and arrays in place. Every
+other value (timestamps, references, geo points, blobs, vectors, the BSON
+types, server timestamps not set yet), and every combination whose result
+could depend on how `FirebaseDataDecoder` treats Foundation values (an
+integer as a `Bool`, a double as an `Int`, a `Date`, `Data`, `URL`, `Decimal`,
+`Float`), goes through `FirebaseDataDecoder` as before, one value at a time.
+So it decodes as before on every platform, errors included:
+`FirestoreValueDecoderTests` decodes every kind of value against 45 types,
+with each server timestamp behavior and the decoder's strategies, both ways,
+and expects the same values and errors.
 
-To find out along the way:
+`Benchmarks/results/55afe079-dirty-firestore-20261127-110647.jsonl`, 10k
+documents, medians of 20:
 
-- Server timestamps that aren't set yet, which the core keeps as special maps
-  and `serverTimestampBehavior` resolves, and references, which need the
-  database ID, as `data()` handles them now.
-- Windows, where Swift's C++ interop has had the most trouble.
+| | Port before | **Port now** | Upstream |
+|---|---:|---:|---:|
+| `data(as: BenchItem.self)` | 99.5 ms | **17.4 ms** | 179 ms |
+| Query and `data(as:)` | 159 ms | **77 ms** | 240 ms |
+
+With four Firestore types per document as well (a `Timestamp`, a `Date`
+stored as one, a `GeoPoint` and a `DocumentReference`), `data(as:)` takes
+38 ms instead of 105 ms: each of those values costs about 0.5 µs through
+`FirebaseDataDecoder`.
+
+## Open
+
+- **Firestore's own types** go through `FirebaseDataDecoder` one by one
+  (above). Reading `Timestamp`, `Date` (with the default `.timestamp`
+  strategy), `GeoPoint` and `DocumentReference` in place too would take
+  documents like that most of the rest of the way.
+- **`data()` is 1.4× slower than upstream's**: it converts twice (to the
+  bridge's C++ map, then to Swift). It could make Foundation values from the
+  core's values directly, as the decoder reads them.
+- **Decoding a non-finite number as `Decimal` stops the process**, on both
+  paths (and probably upstream, whose `FirebaseDataDecoder` has the same
+  code): it makes a `Decimal` of the `Double`, and Foundation traps on
+  infinity and NaN. It should throw `dataCorrupted`.
+- **Writing** (`setData(from:)`) still encodes to `[String: Any]` first.

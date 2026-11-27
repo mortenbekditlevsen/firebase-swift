@@ -54,6 +54,10 @@ do {
       .init("F1-bridge") { _ = FirestoreBenchmarking.copyFields(of: $0) },
       .init("F1-data") { _ = $0.data() },
       .init("F1-data-as") { _ = try $0.data(as: BenchItem.self) },
+      // How data(as:) decoded before FirestoreValueDecoder: from data().
+      .init("F1-data-as-foundation") {
+        _ = try Firestore.Decoder().decode(BenchItem.self, from: $0.data(), in: $0.reference)
+      },
     ]
   )
 } catch {

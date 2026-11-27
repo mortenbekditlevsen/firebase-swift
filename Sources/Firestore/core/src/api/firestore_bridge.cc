@@ -2015,6 +2015,95 @@ BridgeFieldValue ConvertProtoValue(
 
 }  // anonymous namespace
 
+// ---------------------------------------------------------------------------
+// Field values in place
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const google_firestore_v1_Value& ProtoValue(FieldValueRef value) {
+  return *static_cast<const google_firestore_v1_Value*>(value.value);
+}
+
+FieldBytes BytesOf(const pb_bytes_array_t* bytes) {
+  // nanopb keeps empty strings and bytes as null.
+  if (!bytes) return FieldBytes{nullptr, 0};
+  return FieldBytes{bytes->bytes, bytes->size};
+}
+
+}  // namespace
+
+FieldValueKind KindOf(FieldValueRef value) noexcept {
+  const auto& proto = ProtoValue(value);
+  // As ConvertProtoValue sorts them: special maps (server timestamps, vectors,
+  // the BSON types) and the BSON numbers are Other.
+  switch (model::GetTypeOrder(proto)) {
+    case model::TypeOrder::kNull:
+      return FieldValueKind::Null;
+    case model::TypeOrder::kBoolean:
+      return FieldValueKind::Boolean;
+    case model::TypeOrder::kNumber:
+      if (proto.which_value_type == google_firestore_v1_Value_integer_value_tag) {
+        return FieldValueKind::Integer;
+      } else if (proto.which_value_type ==
+                 google_firestore_v1_Value_double_value_tag) {
+        return FieldValueKind::Double;
+      }
+      return FieldValueKind::Other;
+    case model::TypeOrder::kString:
+      return FieldValueKind::String;
+    case model::TypeOrder::kMap:
+      return FieldValueKind::Map;
+    case model::TypeOrder::kArray:
+      return FieldValueKind::Array;
+    default:
+      return FieldValueKind::Other;
+  }
+}
+
+bool BooleanOf(FieldValueRef value) noexcept {
+  return ProtoValue(value).boolean_value;
+}
+
+int64_t IntegerOf(FieldValueRef value) noexcept {
+  return ProtoValue(value).integer_value;
+}
+
+double DoubleOf(FieldValueRef value) noexcept {
+  return ProtoValue(value).double_value;
+}
+
+FieldBytes StringOf(FieldValueRef value) noexcept {
+  return BytesOf(ProtoValue(value).string_value);
+}
+
+FieldMapRef MapOf(FieldValueRef value) noexcept {
+  const auto& map = ProtoValue(value).map_value;
+  return FieldMapRef{map.fields, map.fields_count};
+}
+
+FieldBytes KeyAt(FieldMapRef map, size_t index) noexcept {
+  const auto* fields =
+      static_cast<const google_firestore_v1_MapValue_FieldsEntry*>(map.fields);
+  return BytesOf(fields[index].key);
+}
+
+FieldValueRef ValueAt(FieldMapRef map, size_t index) noexcept {
+  const auto* fields =
+      static_cast<const google_firestore_v1_MapValue_FieldsEntry*>(map.fields);
+  return FieldValueRef{&fields[index].value};
+}
+
+FieldArrayRef ArrayOf(FieldValueRef value) noexcept {
+  const auto& array = ProtoValue(value).array_value;
+  return FieldArrayRef{array.values, array.values_count};
+}
+
+FieldValueRef ElementAt(FieldArrayRef array, size_t index) noexcept {
+  const auto* values = static_cast<const google_firestore_v1_Value*>(array.values);
+  return FieldValueRef{&values[index]};
+}
+
 BridgeFieldValueMap DocumentSnapshotBridge::data(
     int32_t server_timestamp_behavior) const noexcept {
   if (!impl_) return BridgeFieldValueMap{};
@@ -2027,6 +2116,26 @@ BridgeFieldValueMap DocumentSnapshotBridge::data(
   }
   return ConvertProtoMap(value.map_value, impl_->snapshot_.firestore(),
                          server_timestamp_behavior);
+}
+
+FieldMapRef DocumentSnapshotBridge::GetFields() const noexcept {
+  if (!impl_) return FieldMapRef{nullptr, 0};
+  const auto& doc = impl_->snapshot_.internal_document();
+  if (!doc.has_value()) return FieldMapRef{nullptr, 0};
+  // value() copies the root struct only; its fields stay the document's.
+  const auto value = doc->get().value();
+  if (value.which_value_type != google_firestore_v1_Value_map_value_tag) {
+    return FieldMapRef{nullptr, 0};
+  }
+  return FieldMapRef{value.map_value.fields, value.map_value.fields_count};
+}
+
+BridgeFieldValue DocumentSnapshotBridge::ConvertValue(
+    FieldValueRef value, int32_t server_timestamp_behavior) const noexcept {
+  if (!impl_ || !value.value) return BridgeFieldValue::Null();
+  return ConvertProtoValue(
+      *static_cast<const google_firestore_v1_Value*>(value.value),
+      impl_->snapshot_.firestore(), server_timestamp_behavior);
 }
 
 bool DocumentSnapshotBridge::GetField(const FieldPathSegments& field_path,

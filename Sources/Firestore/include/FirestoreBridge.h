@@ -362,6 +362,63 @@ class BridgeFieldValue {
 };
 
 // ---------------------------------------------------------------------------
+// Field values in place
+// ---------------------------------------------------------------------------
+// Swift's FirestoreValueDecoder reads a document's values where the core keeps
+// them, instead of converting them to BridgeFieldValues first. The references
+// point into a DocumentSnapshotBridge's document, so they're valid while that
+// snapshot lives, and Swift sees them as opaque.
+
+/// A field value (a google_firestore_v1_Value).
+struct FieldValueRef {
+  const void* value;
+};
+
+/// A map's fields (google_firestore_v1_MapValue_FieldsEntry), in the order the
+/// core keeps them.
+struct FieldMapRef {
+  const void* fields;
+  size_t count;
+};
+
+/// An array's elements (google_firestore_v1_Value).
+struct FieldArrayRef {
+  const void* values;
+  size_t count;
+};
+
+/// A string's UTF-8 bytes, or a map key's, in place.
+struct FieldBytes {
+  const uint8_t* data;
+  size_t count;
+};
+
+/// The kinds the decoder reads in place. Other is everything else (timestamps,
+/// references, geo points, blobs, vectors, the BSON types, server timestamps),
+/// which it converts with DocumentSnapshotBridge::ConvertValue.
+enum class FieldValueKind : int32_t {
+  Null,
+  Boolean,
+  Integer,
+  Double,
+  String,
+  Map,
+  Array,
+  Other,
+};
+
+FieldValueKind KindOf(FieldValueRef value) noexcept;
+bool BooleanOf(FieldValueRef value) noexcept;
+int64_t IntegerOf(FieldValueRef value) noexcept;
+double DoubleOf(FieldValueRef value) noexcept;
+FieldBytes StringOf(FieldValueRef value) noexcept;
+FieldMapRef MapOf(FieldValueRef value) noexcept;
+FieldBytes KeyAt(FieldMapRef map, size_t index) noexcept;
+FieldValueRef ValueAt(FieldMapRef map, size_t index) noexcept;
+FieldArrayRef ArrayOf(FieldValueRef value) noexcept;
+FieldValueRef ElementAt(FieldArrayRef array, size_t index) noexcept;
+
+// ---------------------------------------------------------------------------
 // DocumentSnapshotBridge
 // ---------------------------------------------------------------------------
 /// Wraps api::DocumentSnapshot. Exposes simple accessors to Swift.
@@ -398,6 +455,14 @@ class DocumentSnapshotBridge {
   bool GetField(const FieldPathSegments& field_path,
                 int32_t server_timestamp_behavior,
                 BridgeFieldValue& value) const noexcept;
+
+  /// The document's fields in place, for FieldValueRef's functions. Empty if
+  /// the document doesn't exist.
+  FieldMapRef GetFields() const noexcept;
+
+  /// One of this document's values, converted as data() converts it.
+  BridgeFieldValue ConvertValue(FieldValueRef value,
+                                int32_t server_timestamp_behavior) const noexcept;
 
   bool IsEqual(const DocumentSnapshotBridge& other) const noexcept;
   size_t Hash() const noexcept;
