@@ -111,6 +111,10 @@ class AppCheckCore: NSObject, AppCheckCoreProtocol {
   static let deliveryQueue = DispatchQueue(label: "com.google.app_check_core.delivery")
 
   private var ongoingTask: Task<AppCheckCoreToken, Error>?
+  /// firebase-swift: the calls that joined an ongoing operation instead of
+  /// starting one, so tests can wait until concurrent calls have all joined
+  /// before letting the operation finish.
+  private var joinedCalls = 0
   private let lock = NSLock()
   private let kTokenExpirationThreshold: TimeInterval = 5 * 60 // 5 minutes
 
@@ -119,10 +123,16 @@ class AppCheckCore: NSObject, AppCheckCoreProtocol {
     case run(Task<AppCheckCoreToken, Error>)
   }
 
+  /// The calls that have joined an ongoing operation so far (for tests).
+  var joinedCallCount: Int {
+    lock.execute { joinedCalls }
+  }
+
   func token(forcingRefresh: Bool) async throws -> AppCheckCoreToken {
     let action: GetTokenAction = lock.execute {
       // If not forcing refresh and there is an ongoing task, return it
       if !forcingRefresh, let ongoing = ongoingTask {
+        joinedCalls += 1
         return .wait(ongoing)
       }
 
