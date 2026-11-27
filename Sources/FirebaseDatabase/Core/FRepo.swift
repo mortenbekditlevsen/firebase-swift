@@ -288,12 +288,14 @@ class FRepo: FPersistentConnectionDelegate {
     func set(_ path: FPath, withNode node: FNode, onComplete: ((Error?) -> Void)? = nil) {
         FFLog("I-RDB038003", "Setting: \(path) with \(node.val(forExport: true)) pri: \(node.getPriority().val())")
 
-        // TODO: Optimize this behavior to either (a) store flag to skip resolving
-        // where possible and / or (b) store unresolved paths on JSON parse
+        // The existing data only when a server value needs it (upstream always
+        // computes it, which layers every pending write).
         let serverValues = FServerValues.generateServerValues(serverClock)
-        let existing = serverSyncTree.calcCompleteEventCacheAtPath(path, excludeWriteIds: [])
+        let existing = LazyExistingValueProvider { [serverSyncTree] in
+            serverSyncTree.calcCompleteEventCacheAtPath(path, excludeWriteIds: [])
+        }
         let newNode = FServerValues.resolveDeferredValueSnapshot(node,
-                                                                 withExisting: existing,
+                                                                 withValueProvider: existing,
                                                                  serverValues: serverValues)
         let writeId = nextWriteId()
         persistenceManager?.saveUserOverwrite(node, atPath: path, writeId: writeId)

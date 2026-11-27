@@ -64,7 +64,7 @@ Micro-benchmarks for 10k items (p50):
 |---|---:|---:|
 | A listen's compound hash of cached data | 853 ms | 28 ms |
 | A listen's simple hash (`dataHash`) | 305 ms | 57 ms |
-| Write tree: 5k sibling writes, acknowledged oldest first | 463 ms | 120 ms |
+| Write tree: 5k sibling writes, acknowledged oldest first | 463 ms | 45 ms |
 | Node from Swift values (writes) | 120 ms | 77 ms |
 | Node from Foundation values | 213 ms | 192 ms |
 
@@ -83,10 +83,45 @@ Micro-benchmarks for 10k items (p50):
   other bridged types, whose conformance lookups were S4b's largest cost. It
   now recognizes `String`, `Int`, `Int64`, `Double` and `Bool` by their
   exact type first, and skips validating a priority there isn't.
-- **Acknowledging writes.** Removing a write checks every other pending
-  write for overlap, as upstream: quadratic in pending writes. Each check
-  now reads the record in place, and path containment compares from the
-  last piece, where siblings differ.
+- **Acknowledging writes.** Removing a write checked every other pending
+  write for overlap, as upstream: quadratic in pending writes. Reading the
+  records in place brought 5k writes to 120 ms; see the next section for
+  the rest.
+
+## Pending writes
+
+Two parts of a write cost O(pending writes), so a burst of writes was
+quadratic, as upstream's are:
+
+- **Acknowledging a write** compared it with every other pending one, to
+  find whether a newer write shadows it or it overlaps others.
+  `FWriteIndex` keeps the visible writes in a tree of paths, where each node
+  counts the writes at or below it and lists the writes covering it (an
+  overwrite there, or a merge's child), so both questions walk only the
+  write's path. Acknowledged writes leave a gap in the list until enough
+  gather to compact it, so removing the oldest doesn't move the rest.
+  `FWriteTreeIndexTests` runs upstream's loop beside it on random writes,
+  merges and acknowledgements.
+- **Every `set`** computed the existing data at its path, layering every
+  pending write, to resolve server values; only an increment needs it.
+  `LazyExistingValueProvider` computes it when one does, with the same
+  result.
+
+The micro-benchmark (5k sibling writes, acknowledged oldest first) went from
+118 to 45 ms, and grows linearly: 98 ms for 10k, 203 ms for 20k.
+`Benchmarks/results/e7f8fd85-pending-writes-ab-*.jsonl`, measured A/B as
+above (medians of 10):
+
+| Scenario | Before (wall / CPU ms) | After (wall / CPU ms) |
+|---|---:|---:|
+| S4a | 287 / 124 | 277 / 122 |
+| S4b | 293 / 510 | **252 / 458** |
+
+A profile of S4b no longer shows the write tree; the rest is the
+connection and the emulator. The first try kept the write list as a
+computed property, which copied every pending write on each `set`: S4b
+then took 417 ms. The micro-benchmark doesn't call `set`, so only the
+scenario showed it.
 
 ## Cached data hashes
 
@@ -239,9 +274,6 @@ Micro-benchmarks for 10k items, without a network (p50; before → now):
 - **The compound hash isn't cached.** A listen on more than 1 kB of cached
   data computes it every time: 29 ms for 10k items, on the Database actor.
   Its ranges depend on the whole tree's size, so it can't be kept per node.
-- **Pending writes are quadratic.** Acknowledging a write still checks every
-  other pending one (upstream's algorithm): 120 ms for 5k at once. An index
-  of the writes by path would make it linear.
 - **S4b on Linux** uses about twice the Mac's CPU time; not profiled yet.
 - **The encoder still makes as many allocations as the old path.** It's 4×
   faster, but its containers are reference boxes.

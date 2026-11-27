@@ -28,13 +28,30 @@ class FWriteTree {
    * transactions) or changes with certain writes excluded (also used by
    * transactions). Contains FWriteRecords.
    */
-  var allWrites: [FWriteRecord]
+  var allWrites: [FWriteRecord] {
+    Array(pendingWrites)
+  }
+
+  /// The pending writes in place, oldest first, without copying them.
+  private var pendingWrites: some Sequence<FWriteRecord> {
+    slots.lazy.compactMap { $0 }
+  }
+
+  /// The pending writes, oldest first. A removed write leaves nil until enough
+  /// of them gather to compact, so acknowledging the oldest write (the usual
+  /// order) doesn't move the others. Writes ids only grow, so `slotIds` is
+  /// sorted and finds a write by binary search.
+  private var slots: [FWriteRecord?] = []
+  private var slotIds: [Int] = []
+  private var pendingCount = 0
+
+  /// The visible writes by path, for removeWriteId.
+  private var index = FWriteIndex()
 
   var lastWriteId: Int
 
   init() {
     visibleWrites = .emptyWrite
-    allWrites = []
     lastWriteId = -1
   }
 
@@ -55,7 +72,7 @@ class FWriteTree {
     assert(writeId > self.lastWriteId,
              "Stacking an older write on top of a newer one")
     let record = FWriteRecord(path: path, overwrite: newData, writeId: writeId, visible: isVisible)
-    allWrites.append(record)
+    append(record)
 
     if isVisible {
       self.visibleWrites = visibleWrites.addWrite(newData, atPath: path)
@@ -72,7 +89,7 @@ class FWriteTree {
     assert(writeId > self.lastWriteId,
              "Stacking an older merge on top of newer one")
     let record = FWriteRecord(path: path, merge: changedChildren, writeId: writeId)
-    allWrites.append(record)
+    append(record)
 
     self.visibleWrites = visibleWrites.addCompoundWrite(changedChildren, atPath: path)
 
@@ -89,36 +106,28 @@ class FWriteTree {
    * reevaluate / raise events as a result).
    */
     func removeWriteId(_ writeId: Int) -> Bool {
-        guard let index = allWrites.firstIndex(where: { $0.writeId == writeId }) else {
+        guard let slot = slot(of: writeId), let writeToRemove = slots[slot] else {
             assert(false,
                    "[FWriteTree removeWriteId:] called with nonexistent writeId.")
             return false
         }
-        let writeToRemove = allWrites[index]
-        allWrites.remove(at: index)
-        
-        var removedWriteWasVisible = writeToRemove.visible
-        var removedWriteOverlapsWithOtherWrites = false
-        var i = allWrites.count - 1
-        
-        // Reads the writes in place: copying each one retains its path and
-        // data, and this runs for every pending write on every acknowledgement.
-        while (removedWriteWasVisible && i >= 0) {
-            if allWrites[i].visible {
-                if i >= index && self.record(allWrites[i],
-                                             containsPath:writeToRemove.path) {
-                    // The removed write was completely shadowed by a subsequent
-                    // write.
-                    removedWriteWasVisible = false
-                } else if writeToRemove.path.contains(allWrites[i].path) {
-                    // Either we're covering some writes or they're covering part of
-                    // us (depending on which came first).
-                    removedWriteOverlapsWithOtherWrites = true
-                }
-            }
-            i -= 1
+        slots[slot] = nil
+        pendingCount -= 1
+        compactIfSparse()
+        guard writeToRemove.visible else {
+            return false
         }
-        
+        index.remove(writeToRemove)
+
+        // Upstream compares the write with every other visible one here. The
+        // index answers the same two questions from the write's path: whether
+        // a subsequent write completely shadowed it, and whether it overlaps
+        // others (it covers some writes, or they cover part of it, depending
+        // on which came first).
+        let removedWriteWasVisible = !index.isCovered(writeToRemove.path,
+                                                      byWriteNewerThan: writeId)
+        let removedWriteOverlapsWithOtherWrites = index.hasWrite(atOrBelow: writeToRemove.path)
+
         if !removedWriteWasVisible {
             return false
         } else if removedWriteOverlapsWithOtherWrites {
@@ -144,12 +153,57 @@ class FWriteTree {
     func removeAllWrites() -> [FWriteRecord] {
     let writes = allWrites
     visibleWrites = .emptyWrite
-    allWrites = []
+    slots = []
+    slotIds = []
+    pendingCount = 0
+    index.removeAll()
     return writes
   }
 
     func writeForId(_ writeId: Int) -> FWriteRecord? {
-    allWrites.first { $0.writeId == writeId }
+    slot(of: writeId).flatMap { slots[$0] }
+  }
+
+  private func append(_ record: FWriteRecord) {
+    slots.append(record)
+    slotIds.append(record.writeId)
+    pendingCount += 1
+    if record.visible {
+      index.add(record)
+    }
+  }
+
+  private func slot(of writeId: Int) -> Int? {
+    var low = 0
+    var high = slotIds.count
+    while low < high {
+      let mid = (low + high) / 2
+      if slotIds[mid] < writeId {
+        low = mid + 1
+      } else {
+        high = mid
+      }
+    }
+    return low < slotIds.count && slotIds[low] == writeId ? low : nil
+  }
+
+  /// Drops the removed writes' slots once they outnumber the pending writes,
+  /// so compacting costs O(1) per removal on average.
+  private func compactIfSparse() {
+    let removed = slots.count - pendingCount
+    guard removed > 32, removed > pendingCount else { return }
+    var ids: [Int] = []
+    ids.reserveCapacity(pendingCount)
+    var writes: [FWriteRecord?] = []
+    writes.reserveCapacity(pendingCount)
+    for write in slots {
+      if let write {
+        writes.append(write)
+        ids.append(write.writeId)
+      }
+    }
+    slots = writes
+    slotIds = ids
   }
 
   /**
@@ -204,7 +258,7 @@ class FWriteTree {
                         !(excludeWriteIds?.contains(record.writeId) ?? false) &&
                         (record.path.contains(treePath) || treePath.contains(record.path))
                     }
-                    let mergeAtPath = FWriteTree.layerTreeFromWrites(allWrites, filter: filter, treeRoot: treePath)
+                    let mergeAtPath = FWriteTree.layerTreeFromWrites(pendingWrites, filter: filter, treeRoot: treePath)
                     let layeredCache = completeServerCache ?? .empty
                     return mergeAtPath.applyToNode(layeredCache)
                 }
@@ -238,7 +292,7 @@ class FWriteTree {
                     !(excludeWriteIds?.contains(record.writeId) ?? false) &&
                     (record.path.contains(treePath) || treePath.contains(record.path))
                 }
-                let mergeAtPath = FWriteTree.layerTreeFromWrites(allWrites, filter: filter, treeRoot: treePath)
+                let mergeAtPath = FWriteTree.layerTreeFromWrites(pendingWrites, filter: filter, treeRoot: treePath)
                 return mergeAtPath.applyToNode(completeServerCache)
             }
         }
@@ -389,29 +443,15 @@ class FWriteTree {
   // MARK: -
   // MARK: Private Methods
 
-  private func record(_ record: FWriteRecord, containsPath path: FPath) -> Bool {
-      if case let .merge(merge) = record.record {
-      var contains = false
-      merge.enumerateWrites { childPath, node, stop in
-        contains = record.path.child(childPath).contains(path)
-        stop = contains
-      }
-      return contains
-    } else {
-      // Record is an overwrite
-      return record.path.contains(path)
-    }
-  }
-
   /**
    * Re-layer the writes and merges into a tree so we can efficiently calculate
    * event snapshots
    */
   private func resetTree() {
-    self.visibleWrites = FWriteTree.layerTreeFromWrites(self.allWrites,
+    self.visibleWrites = FWriteTree.layerTreeFromWrites(pendingWrites,
                                                         filter: FWriteTree.defaultFilter,
                                                         treeRoot: .empty)
-    self.lastWriteId = allWrites.last?.writeId ?? -1
+    self.lastWriteId = slots.last { $0 != nil }??.writeId ?? -1
   }
 
   /**
@@ -428,7 +468,7 @@ class FWriteTree {
    * @return An FImmutableTree of id<FNode>s.
    */
   private static func layerTreeFromWrites(
-  _ writes: [FWriteRecord],
+  _ writes: some Sequence<FWriteRecord>,
   filter: (FWriteRecord) -> Bool,
   treeRoot: FPath) -> FCompoundWrite {
     var compoundWrite = FCompoundWrite.emptyWrite
