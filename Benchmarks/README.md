@@ -1,17 +1,19 @@
-# Database benchmarks
+# Benchmarks
 
-Measurements of firebase-swift's Realtime Database against upstream's
-(firebase-ios-sdk, at the release the port is synced to), on the same
-scenarios and the same emulator.
+Measurements of firebase-swift's Realtime Database and Firestore against
+upstream's (firebase-ios-sdk), on the same scenarios. The Firestore ones are
+in [their own section](#firestore).
 
 The port and upstream both define `FirebaseCore` and `FirebaseDatabase`, so
-they can't be linked into one binary. There are three packages instead:
+they can't be linked into one binary. There are separate packages instead:
 
 | Package | What |
 |---|---|
 | `Scenarios` | The scenarios, fixtures (seeded, so every run sees the same bytes), REST seeding of the emulator, the JSON-lines result format and `bench-compare`. No Firebase dependency. |
 | `Port` | `bench-port`: the scenarios against this repository's Database. `DatabaseMicro`: micro-benchmarks of the value paths, without a network ([benchmark](https://github.com/ordo-one/benchmark)). |
 | `Upstream` | `bench-upstream`: the scenarios against upstream's Database (macOS). |
+| `FirestorePort` | `bench-firestore-port`: the Firestore scenarios against this repository's Firestore. Apart from `Port`, so that the Database benchmarks don't build Firestore's C++ dependencies. |
+| `FirestoreUpstream` | `bench-firestore-upstream`: the Firestore scenarios against upstream's Firestore, built from source (macOS). |
 | `BackgroundProbe.swiftpm` | An iOS app for a device: how each transport copes with backgrounding and network changes ([README](BackgroundProbe.swiftpm/README.md)). |
 
 ## Running
@@ -90,3 +92,28 @@ a device.
 
 - `@_spi(Benchmarking) import FirebaseDatabase` exposes the internal steps the
   micro-benchmarks call (`DatabaseBenchmarking`). It isn't API.
+
+## Firestore
+
+```sh
+Benchmarks/run-firestore.sh                     # 4 rounds of 5 iterations, 10k documents
+Benchmarks/run-firestore.sh --documents 1000 --targets port
+```
+
+`run-firestore.sh` builds both executables (release), runs them in turns so
+both see the same machine load, and prints the comparison. It needs no
+emulator: the scenario writes documents with the network disabled and reads
+them back from the in-memory cache, so the numbers are the SDK's own work.
+Results go to `Benchmarks/results/<revision>-firestore-<date>.jsonl`.
+
+Upstream links a prebuilt Firestore unless `FIREBASE_SOURCE_FIRESTORE` is
+set. The script sets it, and `FirestoreUpstream`'s manifest refuses to load
+without it, so upstream is built from source like the port.
+
+| ID | Scenario | Measured |
+|---|---|---|
+| F1 | 10k documents of `BenchItem` (as S3 decodes), read from the cache | `F1-query`: the query until its snapshot is there. Then over every document: `F1-bridge` (port only: the core's values copied into the bridge's C++ map), `F1-data` (`data()`, to `[String: Any]`) and `F1-data-as` (`data(as: BenchItem.self)`). |
+
+The steps are cumulative: `F1-data` includes the bridge copy, and
+`F1-data-as` includes `data()`. [Docs/FirestorePerformance.md](../Docs/FirestorePerformance.md)
+has the results.

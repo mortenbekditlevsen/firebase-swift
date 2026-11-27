@@ -33,7 +33,8 @@ Swift 6.2: strings and blobs could be viewed as `Span<UInt8>` (or `UTF8Span`)
 and copied into a `String` or `Data` only where the user's type stores one,
 and keys could be matched without allocating.
 
-To find out first: how much of reading a document the conversions cost
-(measure, as for the Database), and how far Swift's C++ interop gets with
-lifetime-annotated views (`std::span`, `__lifetimebound`) on all platforms,
-Windows included.
+Measured (F1, [Docs/FirestorePerformance.md](FirestorePerformance.md)):
+the conversions and decoding take 100 ms for 10k documents, more than the
+core's query (59 ms). The core keeps the values as nanopb structs of plain C
+layout, so a decoder can read them in place without lifetime-annotated views;
+that document has the plan.
