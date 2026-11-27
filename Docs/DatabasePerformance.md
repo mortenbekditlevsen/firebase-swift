@@ -26,7 +26,7 @@ and with background-queue callbacks; the table shows the faster of the two.
 
 ## Where it ended up
 
-`Benchmarks/results/d00c08c7-p8-final.jsonl`:
+`Benchmarks/results/12ed91a4-p8-final.jsonl`:
 
 | Scenario | Port before | **Port now** | Upstream | Now vs upstream | Peak MB: before → now (upstream) |
 |---|---:|---:|---:|---:|---:|
@@ -39,7 +39,7 @@ and with background-queue callbacks; the table shows the faster of the two.
 | S5 | 409 ms | **44 ms** | 405 ms | 9.2× faster | 254 → **49** (68) |
 | S6 | 5.7 ms | **2.3 ms** | 4.3 ms | 1.9× faster | 18 → 20 (19) |
 
-"Before" is the baseline (`796e15b0-baseline.jsonl`). On the scenarios
+"Before" is the baseline (`27d7dc8b-baseline.jsonl`). On the scenarios
 measured with it, the port also uses less CPU than upstream: S1 38 ms
 against 175, S2 227 against 484, S4a 141 against 245.
 
@@ -48,7 +48,7 @@ Memory is now about level with upstream. S1 and S3 peak at 5 MB more, S4b at
 
 ## Since P8: hashes and writes
 
-`Benchmarks/results/5e56f510-hashes-writes-ab-*.jsonl`, measured A/B: the
+`Benchmarks/results/816d2dd3-hashes-writes-ab-*.jsonl`, measured A/B: the
 builds before and after took turns in one emulator session, so both saw the
 same machine load (Spotlight indexing made back-to-back runs incomparable).
 
@@ -123,8 +123,8 @@ bytes per node and +23% for the same tree, for the same speed.
 ## Linux
 
 `Benchmarks/run-linux.sh` (a `swift:6.2` container with 8 cores, the emulator
-inside it); `Benchmarks/results/5e56f510-linux.jsonl` before the changes
-above, `5e56f510-hashes-writes-linux.jsonl` after:
+inside it); `Benchmarks/results/816d2dd3-linux.jsonl` before the changes
+above, `816d2dd3-hashes-writes-linux.jsonl` after:
 
 | Scenario | Before (wall / CPU ms) | After (wall / CPU ms) | Peak MB |
 |---|---:|---:|---:|

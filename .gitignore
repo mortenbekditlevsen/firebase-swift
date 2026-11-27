@@ -17,3 +17,7 @@ __pycache__/
 .build-android-x86/
 Benchmarks/*/.build/
 Benchmarks/results/*.log
+
+# Reference material, kept locally: an older upstream Firestore, and a stub.
+Sources/old/
+Sources/FirebaseFirestoreWrap/

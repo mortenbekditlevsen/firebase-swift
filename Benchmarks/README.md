@@ -80,7 +80,7 @@ targets, so absolute times include it; compare targets, not absolute numbers.
 ## Choosing the transport
 
 On a Mac's loopback all three transports load and stream about equally
-fast (`results/f25d2487-p7-transports.jsonl`): Network.framework and
+fast (`results/360802cd-p7-transports.jsonl`): Network.framework and
 URLSession use more CPU per message (S4a: about 280–310 ms against NIO's
 190). Loopback says nothing about backgrounding or network changes, which
 is what decides the default on iOS; the background probe measures those on
