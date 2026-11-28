@@ -20,10 +20,10 @@ private typealias Bridge = firebase.firestore.swift_bridge
 /// C++ core keeps, as `FirestoreValueDecoder` reads them, rather than from a
 /// `BridgeFieldValueMap` copy of them (Docs/FirestorePerformance.md).
 ///
-/// Nulls, booleans, numbers, strings, maps and arrays are made in place.
-/// Every other value (timestamps, references, server timestamps, the BSON
-/// types, …) is converted as before, one value at a time, so the result is
-/// the same.
+/// Nulls, booleans, numbers, strings, maps, arrays, timestamps, geo points
+/// and references are made in place. Every other value (blobs, vectors,
+/// server timestamps, the BSON types, …) is converted as before, one value at
+/// a time, so the result is the same.
 struct DocumentFields {
   let snapshot: DocumentSnapshot
   let serverTimestampBehavior: ServerTimestampBehavior
@@ -58,6 +58,14 @@ struct DocumentFields {
         result.append(value(Bridge.ElementAt(array, index)))
       }
       return result
+    case .Timestamp:
+      let timestamp = Bridge.TimestampOf(ref)
+      return Timestamp(seconds: timestamp.seconds, nanoseconds: timestamp.nanos)
+    case .GeoPoint:
+      let geoPoint = Bridge.GeoPointOf(ref)
+      return GeoPoint(latitude: geoPoint.latitude, longitude: geoPoint.longitude)
+    case .Reference:
+      return referencedDocument(ref, firestore: snapshot.firestore)
     default:
       return fromBridgeFieldValue(
         snapshot.cppBridge.ConvertValue(ref, Int32(serverTimestampBehavior.rawValue)),

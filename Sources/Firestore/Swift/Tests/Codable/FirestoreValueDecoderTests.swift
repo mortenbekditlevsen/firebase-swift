@@ -163,7 +163,7 @@ struct FirestoreValueDecoderTests {
   /// to FirebaseDataDecoder.
   @Test(arguments: [
     Strategy.snakeCaseKeys, .customKeys, .secondsSince1970, .millisecondsSince1970, .iso8601,
-    .base64Data, .floatsFromStrings,
+    .customDates, .base64Data, .floatsFromStrings,
   ])
   func strategiesDecodeAsFromData(strategy: Strategy) async throws {
     let snapshot = try await Self.snapshot()
@@ -329,9 +329,12 @@ private enum Outcome<T: Equatable>: Equatable, CustomStringConvertible {
   static func == (lhs: Outcome, rhs: Outcome) -> Bool {
     switch (lhs, rhs) {
     case let (.value(a), .value(b)):
-      // NaNs are equal here. Not by how dates print: on Linux and Android,
-      // `Date.description` traps for a NaN date.
+      // NaNs are equal here: values that aren't equal to themselves compare
+      // by how they print. Only those: a DocumentReference prints its type
+      // alone. And not dates: on Linux and Android, `Date.description` traps
+      // for a NaN date.
       if a == b { return true }
+      guard a != a, b != b else { return false }
       if let a = a as? Date, let b = b as? Date {
         return a.timeIntervalSinceReferenceDate.isNaN && b.timeIntervalSinceReferenceDate.isNaN
       }
@@ -420,8 +423,8 @@ private struct Model: Codable, Equatable {
 }
 
 enum Strategy: CaseIterable, Sendable {
-  case snakeCaseKeys, customKeys, secondsSince1970, millisecondsSince1970, iso8601, base64Data,
-       floatsFromStrings
+  case snakeCaseKeys, customKeys, secondsSince1970, millisecondsSince1970, iso8601, customDates,
+       base64Data, floatsFromStrings
 
   var decoder: Firestore.Decoder {
     let decoder = Firestore.Decoder()
@@ -434,6 +437,20 @@ enum Strategy: CaseIterable, Sendable {
     case .secondsSince1970: decoder.dateDecodingStrategy = .secondsSince1970
     case .millisecondsSince1970: decoder.dateDecodingStrategy = .millisecondsSince1970
     case .iso8601: decoder.dateDecodingStrategy = .iso8601
+    // Reads several kinds, and fails for the rest: a custom strategy decodes
+    // in place, as .timestamp does.
+    case .customDates:
+      decoder.dateDecodingStrategy = .custom { decoder in
+        let container = try decoder.singleValueContainer()
+        if let seconds = try? container.decode(Double.self) {
+          return Date(timeIntervalSince1970: seconds)
+        } else if let timestamp = try? container.decode(Timestamp.self) {
+          return timestamp.dateValue()
+        } else if let parts = try? container.decode([Int].self) {
+          return Date(timeIntervalSince1970: Double(parts.reduce(0, +)))
+        }
+        return Date(timeIntervalSince1970: Double(try container.decode(String.self).count))
+      }
     case .base64Data: decoder.dataDecodingStrategy = .base64
     case .floatsFromStrings:
       decoder.nonConformingFloatDecodingStrategy = .convertFromString(

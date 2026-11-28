@@ -2056,6 +2056,12 @@ FieldValueKind KindOf(FieldValueRef value) noexcept {
       return FieldValueKind::Map;
     case model::TypeOrder::kArray:
       return FieldValueKind::Array;
+    case model::TypeOrder::kTimestamp:
+      return FieldValueKind::Timestamp;
+    case model::TypeOrder::kGeoPoint:
+      return FieldValueKind::GeoPoint;
+    case model::TypeOrder::kReference:
+      return FieldValueKind::Reference;
     default:
       return FieldValueKind::Other;
   }
@@ -2102,6 +2108,23 @@ FieldArrayRef ArrayOf(FieldValueRef value) noexcept {
 FieldValueRef ElementAt(FieldArrayRef array, size_t index) noexcept {
   const auto* values = static_cast<const google_firestore_v1_Value*>(array.values);
   return FieldValueRef{&values[index]};
+}
+
+FieldTimestamp TimestampOf(FieldValueRef value) noexcept {
+  const auto& timestamp = ProtoValue(value).timestamp_value;
+  return FieldTimestamp{timestamp.seconds, timestamp.nanos};
+}
+
+FieldGeoPoint GeoPointOf(FieldValueRef value) noexcept {
+  const auto& geo_point = ProtoValue(value).geo_point_value;
+  return FieldGeoPoint{geo_point.latitude, geo_point.longitude};
+}
+
+std::string ReferencePathOf(FieldValueRef value) noexcept {
+  // As ConvertProtoValue converts a reference.
+  return DocumentKey::FromName(
+             nanopb::MakeString(ProtoValue(value).reference_value))
+      .ToString();
 }
 
 BridgeFieldValueMap DocumentSnapshotBridge::data(

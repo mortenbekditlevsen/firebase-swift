@@ -305,6 +305,11 @@ func fromBridgeFieldValue(_ value: CppBridgeFieldValue, firestore: Firestore) ->
   }
 }
 
+/// The document a reference value in place refers to, as data() makes it.
+func referencedDocument(_ value: CppFieldValueRef, firestore: Firestore) -> DocumentReference {
+  firestore.document(Swift.String(firebase.firestore.swift_bridge.ReferencePathOf(value)))
+}
+
 private func blobData(_ value: CppBridgeFieldValue) -> Data {
   let bytes = value.blob_bytes()
   var data = Data(count: bytes.size())
