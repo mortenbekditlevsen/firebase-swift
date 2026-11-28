@@ -50,8 +50,8 @@ do {
   let items = Fixtures.items(count: options.documents).sorted { $0.key < $1.key }
   try write(items, to: collection)
   let typedCollection = db.collection("typed")
-  try write(items.map { (key: $0.key, value: TypedItem($0.value, owner: collection.document($0.key))) },
-            to: typedCollection)
+  let typedItems = items.map { (key: $0.key, value: TypedItem($0.value, owner: collection.document($0.key))) }
+  try write(typedItems, to: typedCollection)
 
   try await FirestoreRead.run(
     target: "port",
@@ -80,6 +80,27 @@ do {
       },
     ]
   )
+
+  // F2 (BenchmarkScenarios/FirestoreWrite.swift): the same documents written
+  // again, up to the core's mutation, in batches that are never committed.
+  let encoder = Firestore.Encoder()
+  var batch = db.batch()
+  let encoded = try items.map { try encoder.encode($0.value) }
+  let typedEncoded = try typedItems.map { try encoder.encode($0.value) }
+  let references = items.map { collection.document($0.key) }
+  let typedReferences = typedItems.map { typedCollection.document($0.key) }
+  try FirestoreWrite.run(target: "port", options: options, reset: { batch = db.batch() }, steps: [
+    .init("F2-encode") { _ = try encoder.encode(items[$0].value) },
+    .init("F2-bridge") { _ = FirestoreBenchmarking.bridgeFields(of: encoded[$0]) },
+    .init("F2-set") { batch.setData(encoded[$0], forDocument: references[$0]) },
+    .init("F2-set-from") { try batch.setData(from: items[$0].value, forDocument: references[$0]) },
+  ])
+  try FirestoreWrite.run(target: "port", options: options, reset: { batch = db.batch() }, steps: [
+    .init("F2-typed-encode") { _ = try encoder.encode(typedItems[$0].value) },
+    .init("F2-typed-bridge") { _ = FirestoreBenchmarking.bridgeFields(of: typedEncoded[$0]) },
+    .init("F2-typed-set") { batch.setData(typedEncoded[$0], forDocument: typedReferences[$0]) },
+    .init("F2-typed-set-from") { try batch.setData(from: typedItems[$0].value, forDocument: typedReferences[$0]) },
+  ])
 } catch {
   FileHandle.standardError.write(Data("error: \(error)\n".utf8))
   exit(1)
