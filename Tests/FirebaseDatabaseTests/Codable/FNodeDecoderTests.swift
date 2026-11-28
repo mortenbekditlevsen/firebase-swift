@@ -97,6 +97,37 @@ struct FNodeDecoderTests {
         #expect(throws: DecodingError.self) { try decoder.decode(Int.self, from: .leaf(.bool(true))) }
     }
 
+    /// Infinities, and numbers beyond Decimal's range, throw, both ways: they
+    /// trapped, and became NaN.
+    @Test func decimalsMustFit() throws {
+        let decoder = FirebaseDataDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan"
+        )
+        func decimal(_ node: FNode) -> (new: Decimal?, old: Decimal?) {
+            let (new, old) = decodeBothWays(Decimal.self, node, decoder)
+            for result in [new, old] {
+                if case let .failure(error) = result, case .dataCorrupted = error as? DecodingError {
+                    continue
+                } else if case let .failure(error) = result {
+                    Issue.record("\(node): \(error)")
+                }
+            }
+            return (try? new.get(), try? old.get())
+        }
+        for node: FNode in [
+            .leaf(.double(1e300)), .leaf(.double(-1e300)), .leaf(.double(1e-300)),
+            .leaf(.string("inf")), .leaf(.string("-inf")),
+        ] {
+            let (new, old) = decimal(node)
+            #expect(new == nil && old == nil, "\(node)")
+        }
+        #expect(decimal(.leaf(.double(1.5))) == (Decimal(string: "1.5"), Decimal(string: "1.5")))
+        #expect(decimal(.leaf(.int64(.max))).new == Decimal(Int64.max))
+        let (new, old) = decimal(.leaf(.string("nan")))
+        #expect(new?.isNaN == true && old?.isNaN == true)
+    }
+
     @Test func missingAndNullValues() throws {
         let decoder = FNodeDecoder(.init())
         #expect(try decoder.decode(Int?.self, from: .empty) == nil)

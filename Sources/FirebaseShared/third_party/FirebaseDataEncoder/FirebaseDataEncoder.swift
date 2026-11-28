@@ -2578,7 +2578,10 @@ extension __JSONDecoder {
       return decimal
     } else {
       let doubleValue = try self.unbox(val, as: Double.self)!
-      return Decimal(doubleValue)
+      guard let decimal = Decimal(fitting: doubleValue) else {
+        throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: self.codingPath, debugDescription: "Parsed JSON number <\(doubleValue)> does not fit in \(type)."))
+      }
+      return decimal
     }
   }
 
