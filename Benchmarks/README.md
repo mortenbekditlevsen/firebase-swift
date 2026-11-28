@@ -114,6 +114,7 @@ without it, so upstream is built from source like the port.
 |---|---|---|
 | F1 | 10k documents of `BenchItem` (as S3 decodes), read from the cache | `F1-query`: the query until its snapshot is there. Then over every document: `F1-bridge` (port only: the core's values copied into the bridge's C++ map), `F1-data` (`data()`, to `[String: Any]`), `F1-data-as` (`data(as: BenchItem.self)`) and, port only, `F1-data-as-foundation` (`Firestore.Decoder` on `data()`, as `data(as:)` decoded before it read the core's values in place). |
 | F1-typed | 10k documents of `TypedItem`: a name, a `Timestamp`, a `Date` (stored as a timestamp), a `GeoPoint` and a `DocumentReference` | As F1: `F1-typed-query`, `F1-typed-data`, `F1-typed-data-as` and, port only, `F1-typed-data-as-foundation`. |
+| F2 | The F1 documents written again, in `WriteBatch`es that are never committed (committing waits for a server) | Over every document: `F2-encode` (`Firestore.Encoder` to `[String: Any]`), `F2-bridge` (port only: that copied into the bridge's C++ map), `F2-set` (`setData(_:forDocument:)` with the encoded data, which the core parses and validates into a mutation) and `F2-set-from` (`setData(from:forDocument:)`, all of it). `F2-typed-…` does the same with `TypedItem`. |
 
 Each step starts from the snapshot: the port's `data()` and `data(as:)` read
 the core's values in place, so neither includes the bridge copy, and

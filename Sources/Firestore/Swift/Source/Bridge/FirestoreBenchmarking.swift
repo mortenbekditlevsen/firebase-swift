@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// The internal steps of reading a document, for the benchmarks in
+/// The internal steps of reading and writing a document, for the benchmarks in
 /// `Benchmarks/FirestorePort`. Not API.
 @_spi(Benchmarking)
 public enum FirestoreBenchmarking {
@@ -21,5 +21,12 @@ public enum FirestoreBenchmarking {
   /// fields, so the copy can't be optimized away.
   public static func copyFields(of snapshot: DocumentSnapshot) -> Int {
     Int(snapshot.cppBridge.data(Int32(ServerTimestampBehavior.none.rawValue)).size())
+  }
+
+  /// The first step of `setData(_:)`: copying a document's values into the
+  /// bridge's C++ map, before the core parses them. Returns the number of
+  /// fields.
+  public static func bridgeFields(of data: [String: Any]) -> Int {
+    Int(toBridgeFieldValueMap(data).size())
   }
 }

@@ -82,22 +82,30 @@ enum FieldValueSentinel {
   case maximum(Any)
 }
 
+/// An `Optional`, whatever it wraps.
+private protocol OptionalValue {
+  var wrappedAsAny: Any? { get }
+}
+
+extension Optional: OptionalValue {
+  fileprivate var wrappedAsAny: Any? { map { $0 } }
+}
+
 /// The value inside an `Optional` boxed in `Any`, or nil for `.none`, so a
 /// nil in `[String: Any]` is stored as null, as it is upstream.
 private func unwrappingOptional(_ value: Any) -> Any? {
-  let mirror = Mirror(reflecting: value)
-  guard mirror.displayStyle == .optional else { return value }
-  return mirror.children.first.flatMap { unwrappingOptional($0.value) }
+  guard let optional = value as? any OptionalValue else { return value }
+  return optional.wrappedAsAny.flatMap(unwrappingOptional)
 }
 
 /// Converts an `NSNumber` by its Objective-C type, as upstream does.
 private func toBridgeFieldValue(_ number: NSNumber) -> CppBridgeFieldValue {
-  switch String(cString: number.objCType).first {
-  case "c", "B", "C":
+  switch UInt8(bitPattern: number.objCType.pointee) {
+  case UInt8(ascii: "c"), UInt8(ascii: "B"), UInt8(ascii: "C"):
     return CppBridgeFieldValue.FromBool(number.boolValue)
-  case "f", "d":
+  case UInt8(ascii: "f"), UInt8(ascii: "d"):
     return CppBridgeFieldValue.FromDouble(number.doubleValue)
-  case "L", "Q":
+  case UInt8(ascii: "L"), UInt8(ascii: "Q"):
     let value = number.uint64Value
     if value > UInt64(Int64.max) {
       invalidArgument("NSNumber (\(value)) is too large")
@@ -112,6 +120,55 @@ private func toBridgeFieldValue(_ number: NSNumber) -> CppBridgeFieldValue {
 /// store are passed as `Unsupported`, which fails with upstream's message when
 /// the data is parsed.
 func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
+  // The types encoders and JSON make, by their dynamic type, to the cases
+  // below they'd reach: casting through those costs more than converting
+  // (Docs/FirestorePerformance.md).
+  let type = type(of: value)
+  if type == String.self {
+    return CppBridgeFieldValue.FromString(std.string(value as! String))
+  } else if type is NSString.Type {
+    return CppBridgeFieldValue.FromString(std.string((value as AnyObject as! NSString) as String))
+  } else if type is NSNumber.Type {
+    return toBridgeFieldValue(value as AnyObject as! NSNumber)
+  } else if type == Int.self {
+    return CppBridgeFieldValue.FromInt64(Int64(value as! Int))
+  } else if type == Double.self {
+    return CppBridgeFieldValue.FromDouble(value as! Double)
+  } else if type == Bool.self {
+    return CppBridgeFieldValue.FromBool(value as! Bool)
+  } else if type is NSNull.Type {
+    return CppBridgeFieldValue.Null()
+  } else if type == [String: Any].self {
+    return CppBridgeFieldValue.FromMap(toBridgeFieldValueMap(value as! [String: Any]))
+  } else if type is NSDictionary.Type, let dictionary = value as? [String: Any] {
+    return CppBridgeFieldValue.FromMap(toBridgeFieldValueMap(dictionary))
+  } else if type == Timestamp.self {
+    let timestamp = value as! Timestamp
+    return CppBridgeFieldValue.FromTimestamp(timestamp.seconds, timestamp.nanoseconds)
+  } else if type == GeoPoint.self {
+    let geoPoint = value as! GeoPoint
+    return CppBridgeFieldValue.FromGeoPoint(geoPoint.latitude, geoPoint.longitude)
+  } else if type == DocumentReference.self {
+    return CppBridgeFieldValue.FromReference((value as! DocumentReference).cppBridge)
+  } else if type is FieldValue.Type {
+    return (value as! FieldValue).toBridgeFieldValue()
+  } else if type == [Any].self {
+    return toBridgeFieldValue(array: value as! [Any])
+  } else if type is NSArray.Type {
+    return toBridgeFieldValue(array: value as AnyObject as! NSArray)
+  }
+  return toBridgeFieldValue(other: value)
+}
+
+private func toBridgeFieldValue<Elements: Sequence>(array: Elements) -> CppBridgeFieldValue {
+  var cppArray = CppBridgeFieldValueVector()
+  for element in array {
+    cppArray.push_back(toBridgeFieldValue(element))
+  }
+  return CppBridgeFieldValue.FromArray(cppArray)
+}
+
+private func toBridgeFieldValue(other value: Any) -> CppBridgeFieldValue {
   guard let value = unwrappingOptional(value) else {
     return CppBridgeFieldValue.Null()
   }
@@ -195,11 +252,7 @@ func toBridgeFieldValue(_ value: Any) -> CppBridgeFieldValue {
       )
     }
   case let array as [Any]:
-    var cppArray = CppBridgeFieldValueVector()
-    for element in array {
-      cppArray.push_back(toBridgeFieldValue(element))
-    }
-    return CppBridgeFieldValue.FromArray(cppArray)
+    return toBridgeFieldValue(array: array)
   case let dictionary as [String: Any]:
     return CppBridgeFieldValue.FromMap(toBridgeFieldValueMap(dictionary))
   default:
