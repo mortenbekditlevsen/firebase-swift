@@ -40,7 +40,12 @@ public extension DocumentSnapshot {
   func data<T: Decodable>(as type: T.Type,
                           with serverTimestampBehavior: ServerTimestampBehavior = .none,
                           decoder: Firestore.Decoder = .init()) throws -> T {
-    let d: Any = data(with: serverTimestampBehavior) ?? NSNull()
-    return try decoder.decode(T.self, from: d, in: reference)
+    // firebase-swift: an existing document decodes from the core's values
+    // in place, without making the `[String: Any]` of `data(with:)`.
+    guard exists else {
+      let d: Any = NSNull()
+      return try decoder.decode(T.self, from: d, in: reference)
+    }
+    return try decoder.decode(T.self, from: self, serverTimestampBehavior: serverTimestampBehavior)
   }
 }

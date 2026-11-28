@@ -98,6 +98,14 @@ bridge in `Swift/Source/Bridge/`, so a few upstream files differ:
   Equality uses `==`, so 0 and -0 are equal (upstream compares bits).
 - `Codable/DocumentID.swift`: `DocumentID` is `Sendable` when its value is,
   so `Sendable` models can use `@DocumentID` (`firebase-swift:` comment).
+- `data(as:)` decodes the core's values in place
+  (`Codable/FirestoreValueDecoder.swift`, ours, through accessors in
+  `include/FirestoreBridge.h`), instead of decoding the `[String: Any]` of
+  `data(with:)`: `Codable/DocumentSnapshot+ReadDecodable.swift` and
+  `Codable/EncoderDecoder.swift` call it (`firebase-swift:` comments). It
+  decodes as before, errors included; values whose result could depend on
+  how `FirebaseDataDecoder` treats Foundation values go through it as before.
+  `Firestore.Decoder.decode(_:from:)` is unchanged.
 
 Upstream's integration tests (`Swift/Tests/Integration/`) are changed only
 where marked `Port note:`: deprecated settings, `NSErrorPointer` transaction

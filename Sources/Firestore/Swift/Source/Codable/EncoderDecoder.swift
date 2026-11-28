@@ -95,6 +95,22 @@ public extension Firestore {
 
     private func decode<T: Decodable>(_ t: T.Type, from data: Any,
                                       userInfo: [CodingUserInfoKey: Any]) throws -> T {
+      return try dataDecoder(userInfo: userInfo).decode(t, from: data)
+    }
+
+    /// firebase-swift: decodes the snapshot's values where the core keeps
+    /// them, as `decode(_:from:in:)` decodes `data(with:)` (FirestoreValueDecoder).
+    func decode<T: Decodable>(_ t: T.Type, from snapshot: DocumentSnapshot,
+                              serverTimestampBehavior: ServerTimestampBehavior) throws -> T {
+      var userInfo = self.userInfo
+      userInfo[CodingUserInfoKey.documentRefUserInfoKey] = snapshot.reference
+      let context = FirestoreDecodingContext(snapshot: snapshot,
+                                             serverTimestampBehavior: serverTimestampBehavior,
+                                             fallback: dataDecoder(userInfo: userInfo))
+      return try FirestoreValueDecoder(context: context).decode(t, from: snapshot)
+    }
+
+    private func dataDecoder(userInfo: [CodingUserInfoKey: Any]) -> FirebaseDataDecoder {
       let decoder = FirebaseDataDecoder()
       decoder.dateDecodingStrategy = dateDecodingStrategy
       decoder.dataDecodingStrategy = dataDecodingStrategy
@@ -103,7 +119,7 @@ public extension Firestore {
       decoder.passthroughTypeResolver = FirestorePassthroughTypes.self
       decoder.userInfo = userInfo
       // configure for firestore
-      return try decoder.decode(t, from: data)
+      return decoder
     }
 
     public init() {}
