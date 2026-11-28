@@ -38,9 +38,10 @@ it's the steps in between that differ:
 - **The port already decoded twice as fast as upstream**, because its
   `[String: Any]` holds Swift values, which the decoder casts more cheaply
   than upstream's bridged `NSDictionary` and `NSNumber`.
-- **`data()` is slower than upstream's**: the port converts twice (the core's
-  values to the bridge's C++ map, then to Swift), where upstream's
-  Objective-C writes Foundation values from the core's values at once.
+- **`data()` was slower than upstream's**: the port converted twice (the
+  core's values to the bridge's C++ map, then to Swift), where upstream's
+  Objective-C writes Foundation values from the core's values at once. It
+  no longer does (below).
 
 ## Decoding from the core's values
 
@@ -78,15 +79,29 @@ stored as one, a `GeoPoint` and a `DocumentReference`), `data(as:)` takes
 38 ms instead of 105 ms: each of those values costs about 0.5 µs through
 `FirebaseDataDecoder`.
 
+## `data()` from the core's values
+
+`data()` makes its `[String: Any]` the same way (`DocumentFields`): nulls,
+booleans, numbers, strings, maps and arrays from the core's values in place,
+and every other value converted as before, one at a time, instead of copying
+the whole document into the bridge's C++ map first. `DocumentFieldsTests`
+compares the result with the old conversion's, value for value and type for
+type (an `NSNumber` of an integer isn't one of a double), for every kind of
+value, nested ones and server timestamps included.
+
+`Benchmarks/results/a681a605-dirty-firestore-20261128-102205.jsonl`, 10k
+documents, medians of 20:
+
+| | Port before | **Port now** | Upstream |
+|---|---:|---:|---:|
+| `data()` | 18 ms | **5.7 ms** | 12.7 ms |
+
 ## Open
 
 - **Firestore's own types** go through `FirebaseDataDecoder` one by one
   (above). Reading `Timestamp`, `Date` (with the default `.timestamp`
   strategy), `GeoPoint` and `DocumentReference` in place too would take
   documents like that most of the rest of the way.
-- **`data()` is 1.4× slower than upstream's**: it converts twice (to the
-  bridge's C++ map, then to Swift). It could make Foundation values from the
-  core's values directly, as the decoder reads them.
 - **Decoding a non-finite number as `Decimal` stops the process**, on both
   paths (and probably upstream, whose `FirebaseDataDecoder` has the same
   code): it makes a `Decimal` of the `Double`, and Foundation traps on

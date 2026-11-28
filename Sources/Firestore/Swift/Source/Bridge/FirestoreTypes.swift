@@ -1361,9 +1361,7 @@ public class DocumentSnapshot: Hashable, @unchecked Sendable {
 
   public func data(with serverTimestampBehavior: ServerTimestampBehavior) -> [String: Any]? {
     guard exists else { return nil }
-    return fromBridgeFieldValueMap(
-      cppBridge.data(Int32(serverTimestampBehavior.rawValue)), firestore: firestore
-    )
+    return DocumentFields(snapshot: self, serverTimestampBehavior: serverTimestampBehavior).make()
   }
 
   /// The value of `field`, a dot-separated `String` or a `FieldPath`, or nil
@@ -1394,9 +1392,7 @@ public final class QueryDocumentSnapshot: DocumentSnapshot, @unchecked Sendable 
 
   override public func data(with serverTimestampBehavior: ServerTimestampBehavior)
     -> [String: Any] {
-    fromBridgeFieldValueMap(
-      cppBridge.data(Int32(serverTimestampBehavior.rawValue)), firestore: firestore
-    )
+    DocumentFields(snapshot: self, serverTimestampBehavior: serverTimestampBehavior).make()
   }
 }
 
