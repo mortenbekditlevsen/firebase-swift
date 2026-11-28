@@ -26,12 +26,14 @@ private typealias Bridge = firebase.firestore.swift_bridge
 /// `Firestore.Decoder` decodes the `[String: Any]` that `data()` makes of
 /// them, without making those (Docs/FirestorePerformance.md).
 ///
-/// It reads nulls, booleans, numbers, strings, maps and arrays in place. Where
-/// the result could depend on how `FirebaseDataDecoder` treats the Foundation
-/// value (an integer decoded as a `Bool`, a double as an `Int`, a `Date`, a
-/// timestamp, a reference, …), it converts that one value as `data()` would
-/// and lets `FirebaseDataDecoder` decode it, so the result is the same, errors
-/// included. The values belong to the snapshot, which must live during the
+/// It reads nulls, booleans, numbers, strings, maps and arrays in place, and
+/// timestamps, geo points and references decoded as their own types; a `Date`
+/// with a custom strategy (the default `.timestamp` is one) decodes with it,
+/// in place. Where the result could depend on how `FirebaseDataDecoder`
+/// treats the Foundation value (an integer decoded as a `Bool`, a double as an
+/// `Int`, a `Date` with another strategy, a blob, …), it converts that one
+/// value as `data()` would and lets `FirebaseDataDecoder` decode it, so the
+/// result is the same, errors included. The values belong to the snapshot, which must live during the
 /// decode.
 struct FirestoreValueDecoder {
   let context: FirestoreDecodingContext
@@ -65,6 +67,17 @@ enum FirestoreValue {
   }
 }
 
+extension CppFieldValueKind {
+  /// Whether the decoder's containers read values of this kind in place;
+  /// others decode as `data()` makes them.
+  var isReadInPlace: Bool {
+    switch self {
+    case .Null, .Boolean, .Integer, .Double, .String, .Map, .Array: return true
+    default: return false
+    }
+  }
+}
+
 /// The options and the snapshot, shared by the decoders and containers of one
 /// decode. (Unchecked: it doesn't change, and FirebaseDataDecoder, whose
 /// strategies these are, is unchecked too.)
@@ -88,13 +101,39 @@ final class FirestoreDecodingContext: @unchecked Sendable {
 
   func unwrap<T: Decodable>(_ value: FirestoreValue, as type: T.Type, at path: FirestoreCodingPath) throws -> T {
     let kind = value.kind
-    if kind == .Other || type == Date.self || type == Data.self || type == URL.self || type == Decimal.self {
+    if case let .value(ref) = value, let result = firestoreType(ref, kind, as: type) {
+      return result
+    } else if type == Date.self, kind != .Null, kind != .Other,
+              case let .custom(closure) = fallback.dateDecodingStrategy {
+      // As FirebaseDataDecoder decodes a Date with a custom strategy (the
+      // default, .timestamp, is one): the closure decodes the value, here in
+      // place.
+      return try closure(FirestoreValueDecoderAt(value: value, context: self, path: path)) as! T
+    } else if !kind.isReadInPlace || type == Date.self || type == Data.self || type == URL.self
+      || type == Decimal.self {
       return try decodeConverted(value, as: type, at: path)
     } else if let dictionary = type as? FirestoreStringKeyedDictionary.Type {
       // As FirebaseDataDecoder does, without converting the keys.
       return try dictionary.decode(from: value, context: self, at: path) as! T
     }
     return try T(from: FirestoreValueDecoderAt(value: value, context: self, path: path))
+  }
+
+  /// A timestamp, geo point or reference decoded as its own type, which
+  /// FirebaseDataDecoder passes through as `data()` makes it.
+  private func firestoreType<T>(_ ref: CppFieldValueRef, _ kind: CppFieldValueKind, as type: T.Type) -> T? {
+    switch kind {
+    case .Timestamp where type == Timestamp.self:
+      let timestamp = Bridge.TimestampOf(ref)
+      return Timestamp(seconds: timestamp.seconds, nanoseconds: timestamp.nanos) as? T
+    case .GeoPoint where type == GeoPoint.self:
+      let geoPoint = Bridge.GeoPointOf(ref)
+      return GeoPoint(latitude: geoPoint.latitude, longitude: geoPoint.longitude) as? T
+    case .Reference where type == DocumentReference.self:
+      return referencedDocument(ref, firestore: snapshot.firestore) as? T
+    default:
+      return nil
+    }
   }
 
   func isNull(_ value: FirestoreValue) -> Bool {

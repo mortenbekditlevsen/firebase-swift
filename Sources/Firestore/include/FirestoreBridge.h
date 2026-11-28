@@ -393,9 +393,21 @@ struct FieldBytes {
   size_t count;
 };
 
-/// The kinds the decoder reads in place. Other is everything else (timestamps,
-/// references, geo points, blobs, vectors, the BSON types, server timestamps),
-/// which it converts with DocumentSnapshotBridge::ConvertValue.
+/// A timestamp's fields.
+struct FieldTimestamp {
+  int64_t seconds;
+  int32_t nanos;
+};
+
+/// A geo point's fields.
+struct FieldGeoPoint {
+  double latitude;
+  double longitude;
+};
+
+/// The kinds the decoder reads in place. Other is everything else (blobs,
+/// vectors, the BSON types, server timestamps), which it converts with
+/// DocumentSnapshotBridge::ConvertValue.
 enum class FieldValueKind : int32_t {
   Null,
   Boolean,
@@ -404,6 +416,9 @@ enum class FieldValueKind : int32_t {
   String,
   Map,
   Array,
+  Timestamp,
+  GeoPoint,
+  Reference,
   Other,
 };
 
@@ -417,6 +432,10 @@ FieldBytes KeyAt(FieldMapRef map, size_t index) noexcept;
 FieldValueRef ValueAt(FieldMapRef map, size_t index) noexcept;
 FieldArrayRef ArrayOf(FieldValueRef value) noexcept;
 FieldValueRef ElementAt(FieldArrayRef array, size_t index) noexcept;
+FieldTimestamp TimestampOf(FieldValueRef value) noexcept;
+FieldGeoPoint GeoPointOf(FieldValueRef value) noexcept;
+/// A reference's document path ("coll/doc"), as data() makes it.
+std::string ReferencePathOf(FieldValueRef value) noexcept;
 
 // ---------------------------------------------------------------------------
 // DocumentSnapshotBridge

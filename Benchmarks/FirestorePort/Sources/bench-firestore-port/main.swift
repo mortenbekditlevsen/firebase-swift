@@ -36,15 +36,22 @@ do {
   db.settings = settings
   try await db.disableNetwork()
 
+  func write<Item: Encodable>(_ items: [(key: String, value: Item)], to collection: CollectionReference) throws {
+    for chunk in stride(from: 0, to: items.count, by: 500) {
+      let batch = db.batch()
+      for (key, item) in items[chunk ..< min(chunk + 500, items.count)] {
+        try batch.setData(from: item, forDocument: collection.document(key))
+      }
+      batch.commit { _ in } // Waits for a server, so it never completes.
+    }
+  }
+
   let collection = db.collection("items")
   let items = Fixtures.items(count: options.documents).sorted { $0.key < $1.key }
-  for chunk in stride(from: 0, to: items.count, by: 500) {
-    let batch = db.batch()
-    for (key, item) in items[chunk ..< min(chunk + 500, items.count)] {
-      try batch.setData(from: item, forDocument: collection.document(key))
-    }
-    batch.commit { _ in } // Waits for a server, so it never completes.
-  }
+  try write(items, to: collection)
+  let typedCollection = db.collection("typed")
+  try write(items.map { (key: $0.key, value: TypedItem($0.value, owner: collection.document($0.key))) },
+            to: typedCollection)
 
   try await FirestoreRead.run(
     target: "port",
@@ -60,7 +67,38 @@ do {
       },
     ]
   )
+  try await FirestoreRead.run(
+    target: "port",
+    options: options,
+    queryScenario: "F1-typed-query",
+    query: { try await typedCollection.getDocuments(source: .cache).documents },
+    steps: [
+      .init("F1-typed-data") { _ = $0.data() },
+      .init("F1-typed-data-as") { _ = try $0.data(as: TypedItem.self) },
+      .init("F1-typed-data-as-foundation") {
+        _ = try Firestore.Decoder().decode(TypedItem.self, from: $0.data(), in: $0.reference)
+      },
+    ]
+  )
 } catch {
   FileHandle.standardError.write(Data("error: \(error)\n".utf8))
   exit(1)
+}
+
+/// BenchItem's name, with four of Firestore's own types (F1-typed).
+struct TypedItem: Codable {
+  var name: String
+  var created: Timestamp
+  var updated: Date
+  var location: GeoPoint
+  var owner: DocumentReference
+
+  init(_ item: BenchItem, owner: DocumentReference) {
+    name = item.name
+    created = Timestamp(seconds: Int64(item.createdAt / 1000),
+                        nanoseconds: Int32(item.createdAt % 1000) * 1_000_000)
+    updated = Date(timeIntervalSince1970: Double(item.createdAt) / 1000)
+    location = GeoPoint(latitude: item.latitude, longitude: item.longitude)
+    self.owner = owner
+  }
 }

@@ -25,6 +25,11 @@ import Foundation
 ///   snapshot is there.
 /// - then each step over every document of the snapshot, e.g. `F1-data`
 ///   (`data()`) and `F1-data-as` (`data(as: BenchItem.self)`).
+///
+/// F1-typed does the same with documents of Firestore's own types (a
+/// `Timestamp`, a `Date`, a `GeoPoint` and a `DocumentReference`), which
+/// each SDK defines as `TypedItem`: `F1-typed-query`, `F1-typed-data`,
+/// `F1-typed-data-as`.
 public enum FirestoreRead {
   public struct Step<Document> {
     public var scenario: String
@@ -64,6 +69,7 @@ public enum FirestoreRead {
   public static func run<Document>(
     target: String,
     options: Options,
+    queryScenario: String = "F1-query",
     query: () async throws -> [Document],
     steps: [Step<Document>]
   ) async throws {
@@ -85,7 +91,7 @@ public enum FirestoreRead {
       var cpuStart = ProcessMetrics.cpuTime()
       var start = clock.now
       let documents = try await query()
-      try record("F1-query", clock.now - start, ProcessMetrics.cpuTime() - cpuStart)
+      try record(queryScenario, clock.now - start, ProcessMetrics.cpuTime() - cpuStart)
       guard documents.count == options.documents else {
         throw BenchmarkError("the query returned \(documents.count) documents, not \(options.documents)")
       }
