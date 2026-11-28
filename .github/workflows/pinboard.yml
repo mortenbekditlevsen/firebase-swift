@@ -46,11 +46,13 @@ jobs:
         run: apt-get update && apt-get install -y libgtk-4-dev
       # Not the checkouts, which SwiftPM recreates from .build/repositories:
       # on Windows, restoring them broke a symbolic link in
-      # xctest-dynamic-overlay, which then didn't compile.
+      # xctest-dynamic-overlay, which then didn't compile. .build's children
+      # rather than .build: the cache hands tar the paths it matched, and tar
+      # archives a directory with everything in it, exclusions or not.
       - uses: actions/cache@v4
         with:
           path: |
-            Examples/Pinboard/.build
+            Examples/Pinboard/.build/*
             !Examples/Pinboard/.build/checkouts
           key: pinboard-${{ runner.os }}-spm-${{ hashFiles('Examples/Pinboard/Package.resolved', 'Package.resolved') }}
           restore-keys: pinboard-${{ runner.os }}-spm-

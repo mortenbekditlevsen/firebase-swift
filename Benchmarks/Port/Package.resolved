@@ -1,5 +1,5 @@
 {
-  "originHash" : "010e3fc125738bd9008b29e91f0bf70e757ee0b58a4fe2eaa0f6d6f7ffeddfa6",
+  "originHash" : "c04dff2ffecfe1f72b878438788acb7170906269031d72dff174ff4255ef2d74",
   "pins" : [
     {
       "identity" : "benchmark",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mortenbekditlevsen/leveldb.git",
       "state" : {
-        "branch" : "1.22.2-headerfix",
-        "revision" : "7d2458cb9cca40f2158f6a62b4a4de03c8b10ebf"
+        "branch" : "1.22.2-windows",
+        "revision" : "5a6c4c5eb2f2158b0bfea51b36c9b3dcb3255dd9"
       }
     },
     {
@@ -94,10 +94,10 @@
     {
       "identity" : "swift-nio",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-nio.git",
+      "location" : "https://github.com/mortenbekditlevsen/swift-nio.git",
       "state" : {
-        "revision" : "2f58d8ef84438d6517fc78bcea2f8527e3c72936",
-        "version" : "2.105.0"
+        "branch" : "windows-2.105.2",
+        "revision" : "7704c739c8fc8b2cc77b8c2dfdf666af5178fe6b"
       }
     },
     {

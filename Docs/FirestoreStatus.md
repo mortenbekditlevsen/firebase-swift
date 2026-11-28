@@ -1,7 +1,7 @@
 # Firestore public API status
 
 What the Swift bridge (`Sources/Firestore/Swift/Source/Bridge/`, `include/FirestoreBridge.h`,
-`core/src/api/firestore_bridge.cc`) covers, compared with upstream 13.1.1's public API: the
+`core/src/api/firestore_bridge.cc`) covers, compared with upstream 13.2.0's public API: the
 Objective-C headers in `Sources/Firestore/Source/Public/FirebaseFirestore/` as Swift sees them,
 plus `Swift/Source/`. Upstream's `Swift/Tests/API/BasicCompileTests.swift`, which uses the
 whole API, compiles as part of `FirebaseFirestoreTests`; port notes in it mark where the port is

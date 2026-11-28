@@ -86,6 +86,43 @@ class ExistingValueProvider: ValueProvider {
     var value: FNode? { snapshot }
 }
 
+/// As `ExistingValueProvider`, but the snapshot is computed when a server value
+/// first needs it (an increment does), not up front. Computing it layers every
+/// pending write, which made each `set` cost O(pending writes).
+final class LazyExistingValueProvider: ValueProvider {
+    private enum Source {
+        case root(() -> FNode?)
+        case child(of: LazyExistingValueProvider, key: String)
+    }
+    private let source: Source
+    private var computed: FNode??
+
+    init(computing snapshot: @escaping () -> FNode?) {
+        source = .root(snapshot)
+    }
+
+    private init(parent: LazyExistingValueProvider, key: String) {
+        source = .child(of: parent, key: key)
+    }
+
+    func getChild(_ pathSegment: String) -> ValueProvider {
+        LazyExistingValueProvider(parent: self, key: pathSegment)
+    }
+
+    var value: FNode? {
+        if let computed { return computed }
+        let snapshot: FNode?
+        switch source {
+        case let .root(compute):
+            snapshot = compute()
+        case let .child(parent, key):
+            snapshot = parent.value?.getImmediateChild(key)
+        }
+        computed = .some(snapshot)
+        return snapshot
+    }
+}
+
 class FServerValues {
     private static func resolveDeferredValue(_ val: LeafValue, withExisting existing: ValueProvider, serverValues: ServerValues) -> LeafValue {
         guard case let .deferredValue(op) = val else {
@@ -94,7 +131,7 @@ class FServerValues {
         return serverValues.resolve(op, withExisting: existing)
     }
 
-    private static func resolveDeferredValueSnapshot(_ node: FNode,
+    static func resolveDeferredValueSnapshot(_ node: FNode,
                                                      withValueProvider existing: ValueProvider, serverValues: ServerValues) -> FNode {
 
         // Resolve priority if it's a deferred value
