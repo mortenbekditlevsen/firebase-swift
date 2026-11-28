@@ -98,20 +98,54 @@ private func unwrappingOptional(_ value: Any) -> Any? {
   return optional.wrappedAsAny.flatMap(unwrappingOptional)
 }
 
+/// How the bridge converts an `NSNumber`: by its Objective-C type, as upstream
+/// does. For integers, that depends on the platform (on Darwin, an `Int8`'s is
+/// a `char`, so a Boolean); `FirestoreBridgeEncoder` converts them as the
+/// bridge converts their `NSNumber`s.
+enum NSNumberKind {
+  case boolean, double, unsigned, signed
+
+  init(_ number: NSNumber) {
+    switch UInt8(bitPattern: number.objCType.pointee) {
+    case UInt8(ascii: "c"), UInt8(ascii: "B"), UInt8(ascii: "C"): self = .boolean
+    case UInt8(ascii: "f"), UInt8(ascii: "d"): self = .double
+    case UInt8(ascii: "L"), UInt8(ascii: "Q"): self = .unsigned
+    default: self = .signed
+    }
+  }
+
+  private static let kinds: [ObjectIdentifier: NSNumberKind] = [
+    ObjectIdentifier(Int.self): NSNumberKind(NSNumber(value: Int(0))),
+    ObjectIdentifier(Int8.self): NSNumberKind(NSNumber(value: Int8(0))),
+    ObjectIdentifier(Int16.self): NSNumberKind(NSNumber(value: Int16(0))),
+    ObjectIdentifier(Int32.self): NSNumberKind(NSNumber(value: Int32(0))),
+    ObjectIdentifier(Int64.self): NSNumberKind(NSNumber(value: Int64(0))),
+    ObjectIdentifier(UInt.self): NSNumberKind(NSNumber(value: UInt(0))),
+    ObjectIdentifier(UInt8.self): NSNumberKind(NSNumber(value: UInt8(0))),
+    ObjectIdentifier(UInt16.self): NSNumberKind(NSNumber(value: UInt16(0))),
+    ObjectIdentifier(UInt32.self): NSNumberKind(NSNumber(value: UInt32(0))),
+    ObjectIdentifier(UInt64.self): NSNumberKind(NSNumber(value: UInt64(0))),
+  ]
+
+  static func of<T: FixedWidthInteger>(_ type: T.Type) -> NSNumberKind {
+    kinds[ObjectIdentifier(type)] ?? .signed
+  }
+}
+
 /// Converts an `NSNumber` by its Objective-C type, as upstream does.
 private func toBridgeFieldValue(_ number: NSNumber) -> CppBridgeFieldValue {
-  switch UInt8(bitPattern: number.objCType.pointee) {
-  case UInt8(ascii: "c"), UInt8(ascii: "B"), UInt8(ascii: "C"):
+  switch NSNumberKind(number) {
+  case .boolean:
     return CppBridgeFieldValue.FromBool(number.boolValue)
-  case UInt8(ascii: "f"), UInt8(ascii: "d"):
+  case .double:
     return CppBridgeFieldValue.FromDouble(number.doubleValue)
-  case UInt8(ascii: "L"), UInt8(ascii: "Q"):
+  case .unsigned:
     let value = number.uint64Value
     if value > UInt64(Int64.max) {
       invalidArgument("NSNumber (\(value)) is too large")
     }
     return CppBridgeFieldValue.FromInt64(Int64(value))
-  default:
+  case .signed:
     return CppBridgeFieldValue.FromInt64(number.int64Value)
   }
 }
@@ -1015,9 +1049,17 @@ public final class DocumentReference: Hashable, @unchecked Sendable {
 
   private func setData(_ documentData: [String: Any], option: CppSetOption,
                        mergeFields: CppFieldPathVector, completion: ((Error?) -> Void)?) {
+    setData(fields: toBridgeFieldValueMap(documentData), option: option, mergeFields: mergeFields,
+            completion: completion)
+  }
+
+  /// Writes fields already converted, as `Firestore.Encoder.encodeFields` makes
+  /// them.
+  func setData(fields: CppBridgeFieldValueMap, option: CppSetOption,
+               mergeFields: CppFieldPathVector, completion: ((Error?) -> Void)?) {
     var bridge = cppBridge
     let (context, callback) = writeCallback(completion)
-    bridge.SetData(toBridgeFieldValueMap(documentData), option, mergeFields, context, callback)
+    bridge.SetData(fields, option, mergeFields, context, callback)
   }
 
   /// Overwrites the document, creating it if it doesn't exist.
@@ -1562,18 +1604,24 @@ public final class WriteBatch: @unchecked Sendable {
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       merge: Bool) -> WriteBatch {
-    validate(doc, belongsTo: firestore)
-    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), merge ? .Merge : .Overwrite,
-                      CppFieldPathVector())
-    return self
+    setData(fields: toBridgeFieldValueMap(data), forDocument: doc,
+            option: merge ? .Merge : .Overwrite, mergeFields: CppFieldPathVector())
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       mergeFields: [Any]) -> WriteBatch {
+    setData(fields: toBridgeFieldValueMap(data), forDocument: doc, option: .MergeFields,
+            mergeFields: toCppFieldPaths(mergeFields: mergeFields))
+  }
+
+  /// Writes fields already converted, as `Firestore.Encoder.encodeFields` makes
+  /// them.
+  @discardableResult
+  func setData(fields: CppBridgeFieldValueMap, forDocument doc: DocumentReference,
+               option: CppSetOption, mergeFields: CppFieldPathVector) -> WriteBatch {
     validate(doc, belongsTo: firestore)
-    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), .MergeFields,
-                      toCppFieldPaths(mergeFields: mergeFields))
+    cppBridge.SetData(doc.cppBridge, fields, option, mergeFields)
     return self
   }
 
@@ -1622,18 +1670,24 @@ public final class Transaction: @unchecked Sendable {
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       merge: Bool) -> Transaction {
-    validate(doc, belongsTo: firestore)
-    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), merge ? .Merge : .Overwrite,
-                      CppFieldPathVector())
-    return self
+    setData(fields: toBridgeFieldValueMap(data), forDocument: doc,
+            option: merge ? .Merge : .Overwrite, mergeFields: CppFieldPathVector())
   }
 
   @discardableResult
   public func setData(_ data: [String: Any], forDocument doc: DocumentReference,
                       mergeFields: [Any]) -> Transaction {
+    setData(fields: toBridgeFieldValueMap(data), forDocument: doc, option: .MergeFields,
+            mergeFields: toCppFieldPaths(mergeFields: mergeFields))
+  }
+
+  /// Writes fields already converted, as `Firestore.Encoder.encodeFields` makes
+  /// them.
+  @discardableResult
+  func setData(fields: CppBridgeFieldValueMap, forDocument doc: DocumentReference,
+               option: CppSetOption, mergeFields: CppFieldPathVector) -> Transaction {
     validate(doc, belongsTo: firestore)
-    cppBridge.SetData(doc.cppBridge, toBridgeFieldValueMap(data), .MergeFields,
-                      toCppFieldPaths(mergeFields: mergeFields))
+    cppBridge.SetData(doc.cppBridge, fields, option, mergeFields)
     return self
   }
 

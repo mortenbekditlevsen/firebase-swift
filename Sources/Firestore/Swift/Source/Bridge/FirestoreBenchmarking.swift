@@ -29,4 +29,11 @@ public enum FirestoreBenchmarking {
   public static func bridgeFields(of data: [String: Any]) -> Int {
     Int(toBridgeFieldValueMap(data).size())
   }
+
+  /// What the writes that take an `Encodable` encode: the value straight to
+  /// the bridge's C++ map (FirestoreBridgeEncoder). Returns the number of
+  /// fields.
+  public static func encodeFields<T: Encodable>(_ value: T, encoder: Firestore.Encoder) throws -> Int {
+    Int(try encoder.encodeFields(value).size())
+  }
 }
