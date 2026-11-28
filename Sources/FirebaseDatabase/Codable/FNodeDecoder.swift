@@ -76,7 +76,14 @@ final class FNodeDecodingContext: @unchecked Sendable {
             if case .leaf(.int64(let value)) = node.type {
                 return Decimal(value) as! T
             }
-            return Decimal(try float(node, as: Double.self, at: path)) as! T
+            let value = try float(node, as: Double.self, at: path)
+            guard let decimal = Decimal(fitting: value) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: path.keys,
+                    debugDescription: "Parsed JSON number \(value) does not fit in \(type)."
+                ))
+            }
+            return decimal as! T
         } else if let dictionary = type as? FNodeStringKeyedDictionary.Type {
             // As FirebaseDataDecoder does, without converting the keys.
             return try dictionary.decode(from: node, context: self, at: path) as! T

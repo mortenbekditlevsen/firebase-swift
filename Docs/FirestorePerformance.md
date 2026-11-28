@@ -87,8 +87,4 @@ stored as one, a `GeoPoint` and a `DocumentReference`), `data(as:)` takes
 - **`data()` is 1.4× slower than upstream's**: it converts twice (to the
   bridge's C++ map, then to Swift). It could make Foundation values from the
   core's values directly, as the decoder reads them.
-- **Decoding a non-finite number as `Decimal` stops the process**, on both
-  paths (and probably upstream, whose `FirebaseDataDecoder` has the same
-  code): it makes a `Decimal` of the `Double`, and Foundation traps on
-  infinity and NaN. It should throw `dataCorrupted`.
 - **Writing** (`setData(from:)`) still encodes to `[String: Any]` first.

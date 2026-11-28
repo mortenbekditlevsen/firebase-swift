@@ -125,6 +125,12 @@ them; `Swift/Tests/API/BasicCompileTests.swift` has them too.
 - **Booleans aren't decoded as numbers.** Upstream compares against
   `kCFBooleanTrue`/`kCFBooleanFalse`; that's kept on Darwin, and elsewhere a
   Swift `Bool` is recognized by its dynamic type.
+- **A `Decimal` must fit.** Upstream makes a `Decimal` of the number's
+  `Double`, which stops the process for an infinity and gives NaN for a
+  number beyond `Decimal`'s range (above about 1e160, below about 1e-110).
+  Both throw `dataCorrupted` here, as an integer that doesn't fit does; a NaN
+  still decodes as `Decimal.nan`. The Database's `FNodeDecoder` does the
+  same (`Decimal(fitting:)` in FirebaseShared).
 
 ## AppCheckCore (`Sources/FirebaseAppCheck/AppCheckCore`)
 

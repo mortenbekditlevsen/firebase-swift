@@ -105,11 +105,7 @@ struct FirestoreValueDecoderTests {
       checked += compare(Date.self, field, snapshot, behavior)
       checked += compare(Data.self, field, snapshot, behavior)
       checked += compare(URL.self, field, snapshot, behavior)
-      // FirebaseDataDecoder makes a Decimal of a non-finite double, which
-      // traps; both paths do.
-      if !["nan", "infinity"].contains(field) {
-        checked += compare(Decimal.self, field, snapshot, behavior)
-      }
+      checked += compare(Decimal.self, field, snapshot, behavior)
       checked += compare(Timestamp.self, field, snapshot, behavior)
       checked += compare(GeoPoint.self, field, snapshot, behavior)
       checked += compare(DocumentReference.self, field, snapshot, behavior)
@@ -138,7 +134,7 @@ struct FirestoreValueDecoderTests {
       checked += compare([Int]?.self, field, snapshot, behavior)
       checked += compare(Nested?.self, field, snapshot, behavior)
     }
-    #expect(checked == fields.count * 45 - 2)
+    #expect(checked == fields.count * 45)
   }
 
   /// `decodeIfPresent`, as synthesized `Decodable` reads optional properties:
