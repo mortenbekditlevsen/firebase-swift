@@ -38,9 +38,8 @@ public extension WriteBatch {
                              forDocument doc: DocumentReference,
                              encoder: Firestore.Encoder = Firestore
                                .Encoder()) throws -> WriteBatch {
-    let encoded = try encoder.encode(value)
-    setData(encoded, forDocument: doc)
-    return self
+    return setData(fields: try encoder.encodeFields(value), forDocument: doc, option: .Overwrite,
+                   mergeFields: CppFieldPathVector())
   }
 
   /// Encodes an instance of `Encodable` and overwrites the encoded data
@@ -63,9 +62,8 @@ public extension WriteBatch {
                              merge: Bool,
                              encoder: Firestore.Encoder = Firestore
                                .Encoder()) throws -> WriteBatch {
-    let encoded = try encoder.encode(value)
-    setData(encoded, forDocument: doc, merge: merge)
-    return self
+    return setData(fields: try encoder.encodeFields(value), forDocument: doc,
+                   option: merge ? .Merge : .Overwrite, mergeFields: CppFieldPathVector())
   }
 
   /// Encodes an instance of `Encodable` and writes the encoded data to the document referred
@@ -92,8 +90,7 @@ public extension WriteBatch {
                              mergeFields: [Any],
                              encoder: Firestore.Encoder = Firestore
                                .Encoder()) throws -> WriteBatch {
-    let encoded = try encoder.encode(value)
-    setData(encoded, forDocument: doc, mergeFields: mergeFields)
-    return self
+    return setData(fields: try encoder.encodeFields(value), forDocument: doc, option: .MergeFields,
+                   mergeFields: toCppFieldPaths(mergeFields: mergeFields))
   }
 }

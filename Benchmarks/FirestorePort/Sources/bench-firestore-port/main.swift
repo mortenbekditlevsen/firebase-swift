@@ -91,12 +91,14 @@ do {
   let typedReferences = typedItems.map { typedCollection.document($0.key) }
   try FirestoreWrite.run(target: "port", options: options, reset: { batch = db.batch() }, steps: [
     .init("F2-encode") { _ = try encoder.encode(items[$0].value) },
+    .init("F2-encode-fields") { _ = try FirestoreBenchmarking.encodeFields(items[$0].value, encoder: encoder) },
     .init("F2-bridge") { _ = FirestoreBenchmarking.bridgeFields(of: encoded[$0]) },
     .init("F2-set") { batch.setData(encoded[$0], forDocument: references[$0]) },
     .init("F2-set-from") { try batch.setData(from: items[$0].value, forDocument: references[$0]) },
   ])
   try FirestoreWrite.run(target: "port", options: options, reset: { batch = db.batch() }, steps: [
     .init("F2-typed-encode") { _ = try encoder.encode(typedItems[$0].value) },
+    .init("F2-typed-encode-fields") { _ = try FirestoreBenchmarking.encodeFields(typedItems[$0].value, encoder: encoder) },
     .init("F2-typed-bridge") { _ = FirestoreBenchmarking.bridgeFields(of: typedEncoded[$0]) },
     .init("F2-typed-set") { batch.setData(typedEncoded[$0], forDocument: typedReferences[$0]) },
     .init("F2-typed-set-from") { try batch.setData(from: typedItems[$0].value, forDocument: typedReferences[$0]) },

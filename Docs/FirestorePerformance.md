@@ -149,12 +149,48 @@ after: `Benchmarks/results/544a47d7-dirty-firestore-20261128-105911.jsonl`.
 | F2-typed `setData` | 69 ms | **16.7 ms** | 22.0 ms |
 | F2-typed `setData(from:)` | 122 ms | **68.7 ms** | 56.7 ms |
 
-What's left is the encoder: 57 ms of `setData(from:)`'s 97 (upstream's takes
-71), and 49 ms for the typed documents (upstream's 31). Its containers are
-`NSMutableDictionary`s of `NSNumber`s and `NSString`s, which the bridge then
-reads again; and since this port's Firestore types aren't `NSObject`s, it
-boxes each one (with a `Mirror`), and, when there are any, rebuilds the whole
+### Encoding straight to the bridge's values
+
+What was left was the encoder: 57 ms of `setData(from:)`'s 97 (upstream's
+takes 71), and 49 ms for the typed documents (upstream's 31). Its containers
+are `NSMutableDictionary`s of `NSNumber`s and `NSString`s, which the bridge
+then reads again; and since this port's Firestore types aren't `NSObject`s, it
+boxed each one (with a `Mirror`) and, when there were any, rebuilt the whole
 result afterwards to take them out.
+
+The writes that take an `Encodable` (`setData(from:)` with each option,
+`WriteBatch`, `Transaction`, `addDocument(from:)`) now encode with
+`FirestoreBridgeEncoder`, which makes the bridge's values directly, as the
+Database's `FNodeEncoder` makes nodes. `Firestore.Encoder.encode(_:)` is API
+and still makes the dictionary. The new encoder follows `FirebaseDataEncoder`
+rule for rule: its strategies, the types it treats specially in its order,
+`@DocumentID`, containers asked for twice, super encoders, values that encode
+nothing, its errors, and its coding paths, which leave nested containers'
+keys out of the paths of the values in them (a custom key strategy sees
+those). An integer becomes what the bridge makes of its `NSNumber` on the
+platform (on Darwin, an `Int8` is a Boolean). Its checks of each value's type
+are dynamic casts, slower than encoding most values, so it remembers their
+result for each type (Optionals excepted, whose result depends on the value).
+
+`FirestoreBridgeEncoderTests` compares every part of its result with
+`Firestore.Encoder`'s converted by the bridge, and errors by kind and path: for
+every kind of value, every strategy, enums with associated values (nested
+containers), subclasses (super encoders), property wrappers, Optionals and
+`any Encodable`, and the unusual (keys and containers used twice, empty
+values, top-level values that aren't documents). It also writes with every
+`(from:)` method and the dictionary one, and compares what the cache stores.
+It catches each of fifteen deliberate mistakes in the encoder and the
+writes.
+
+`Benchmarks/results/dca56230-dirty-firestore-20261128-115320.jsonl`, 10k
+documents, medians of 20 (`F2-encode-fields` is the new encoder alone):
+
+| | Before | **Now** | Upstream |
+|---|---:|---:|---:|
+| Encoding to the bridge's map | 57.7 + 17.9 ms | **31.9 ms** | – |
+| `setData(from:)` | 96.8 ms | **51.5 ms** (0.44×) | 118 ms |
+| F2-typed: encoding to the bridge's map | 49.7 + 5.5 ms | **19.3 ms** | – |
+| F2-typed `setData(from:)` | 68.7 ms | **31.1 ms** (0.55×) | 56.3 ms |
 
 ## Open
 
@@ -162,7 +198,8 @@ result afterwards to take them out.
   paths (and probably upstream, whose `FirebaseDataDecoder` has the same
   code): it makes a `Decimal` of the `Double`, and Foundation traps on
   infinity and NaN. It should throw `dataCorrupted`.
-- **Writing** (`setData(from:)`) still encodes to `[String: Any]` first
-  (above). An encoder that writes the bridge's values directly, as the
-  Database's `FNodeEncoder` writes nodes, would skip the Foundation
-  containers, the boxing and the bridge copy.
+- **`Firestore.Encoder.encode(_:)`** still makes `[String: Any]` the old way
+  (typed documents take 1.6× upstream's time); only the writes use the new
+  encoder. Its boxing of Firestore's types could be made cheaper.
+- **The core's parse** of the bridge's values (`UserDataParser`) is most of
+  what's left of `setData(from:)`: about 20 of its 51 ms.

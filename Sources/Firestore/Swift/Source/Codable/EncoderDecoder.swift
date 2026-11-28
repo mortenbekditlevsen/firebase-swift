@@ -59,6 +59,13 @@ public extension Firestore {
       return dictionaryValue
     }
 
+    /// `value`'s fields as the bridge takes them, as `encode(_:)` and the
+    /// bridge together make them, without the dictionary between
+    /// (FirestoreBridgeEncoder). The writes that take an `Encodable` use this.
+    func encodeFields<T: Encodable>(_ value: T) throws -> CppBridgeFieldValueMap {
+      try FirestoreBridgeEncoder(self).encode(value)
+    }
+
     public init() {}
   }
 

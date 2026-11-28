@@ -38,8 +38,8 @@ public extension DocumentReference {
   func setData<T: Encodable>(from value: T,
                              encoder: Firestore.Encoder = Firestore.Encoder(),
                              completion: ((Error?) -> Void)? = nil) throws {
-    let encoded = try encoder.encode(value)
-    setData(encoded, completion: completion)
+    setData(fields: try encoder.encodeFields(value), option: .Overwrite,
+            mergeFields: CppFieldPathVector(), completion: completion)
   }
 
   /// Encodes an instance of `Encodable` and overwrites the encoded data
@@ -62,8 +62,8 @@ public extension DocumentReference {
                              merge: Bool,
                              encoder: Firestore.Encoder = Firestore.Encoder(),
                              completion: ((Error?) -> Void)? = nil) throws {
-    let encoded = try encoder.encode(value)
-    setData(encoded, merge: merge, completion: completion)
+    setData(fields: try encoder.encodeFields(value), option: merge ? .Merge : .Overwrite,
+            mergeFields: CppFieldPathVector(), completion: completion)
   }
 
   /// Encodes an instance of `Encodable` and writes the encoded data to the document referred
@@ -90,7 +90,7 @@ public extension DocumentReference {
                              mergeFields: [Any],
                              encoder: Firestore.Encoder = Firestore.Encoder(),
                              completion: ((Error?) -> Void)? = nil) throws {
-    let encoded = try encoder.encode(value)
-    setData(encoded, mergeFields: mergeFields, completion: completion)
+    setData(fields: try encoder.encodeFields(value), option: .MergeFields,
+            mergeFields: toCppFieldPaths(mergeFields: mergeFields), completion: completion)
   }
 }

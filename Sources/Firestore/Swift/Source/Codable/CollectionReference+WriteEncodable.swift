@@ -41,7 +41,10 @@ public extension CollectionReference {
                                  encoder: Firestore.Encoder = Firestore.Encoder(),
                                  completion: ((Error?) -> Void)? = nil) throws
     -> DocumentReference {
-    let encoded = try encoder.encode(value)
-    return addDocument(data: encoded, completion: completion)
+    let fields = try encoder.encodeFields(value)
+    let document = document()
+    document.setData(fields: fields, option: .Overwrite, mergeFields: CppFieldPathVector(),
+                     completion: completion)
+    return document
   }
 }

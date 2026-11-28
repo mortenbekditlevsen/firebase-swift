@@ -97,7 +97,7 @@ struct BridgeFieldValueTests {
   @Test func convertsAsBefore() async throws {
     let firestore = try await FirestoreValueDecoderTests.offlineFirestore()
     for (name, value) in Self.values(firestore: firestore) {
-      #expect(describe(toBridgeFieldValue(value)) == describe(bridgeBefore(value)), "\(name)")
+      #expect(describeBridgeValue(toBridgeFieldValue(value)) == describeBridgeValue(bridgeBefore(value)), "\(name)")
     }
   }
 
@@ -120,22 +120,22 @@ struct BridgeFieldValueTests {
       var bytes = Data([9])
     }
     let encoded = try Firestore.Encoder().encode(Item(owner: firestore.document("coll/x")))
-    #expect(describe(toBridgeFieldValue(encoded)) == describe(bridgeBefore(encoded)))
+    #expect(describeBridgeValue(toBridgeFieldValue(encoded)) == describeBridgeValue(bridgeBefore(encoded)))
     #expect(Int(toBridgeFieldValueMap(encoded).size()) == encoded.count)
   }
 }
 
 /// Every part of a bridge value, whatever its tag; maps sorted by key.
-private func describe(_ value: CppBridgeFieldValue) -> String {
+func describeBridgeValue(_ value: CppBridgeFieldValue) -> String {
   var parts = ["tag \(value.tag().rawValue)"]
   switch value.tag() {
   case .Array, .SentinelArrayUnion, .SentinelArrayRemove, .SentinelIncrement, .SentinelMinimum,
        .SentinelMaximum:
     let array = value.array_value()
-    parts.append("[" + (0 ..< array.size()).map { describe(array[$0]) }.joined(separator: ", ") + "]")
+    parts.append("[" + (0 ..< array.size()).map { describeBridgeValue(array[$0]) }.joined(separator: ", ") + "]")
   case .Map:
     let map = value.map_value()
-    let entries = (0 ..< map.size()).map { "\(String(map[$0].first)): \(describe(map[$0].second))" }
+    let entries = (0 ..< map.size()).map { "\(String(map[$0].first)): \(describeBridgeValue(map[$0].second))" }
     parts.append("{" + entries.sorted().joined(separator: ", ") + "}")
   default:
     let vector = value.vector_value()
